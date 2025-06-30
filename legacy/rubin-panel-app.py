@@ -17,6 +17,7 @@ warnings.filterwarnings("ignore")
 
 import panel as pn
 
+
 def get_chain(callback_handlers: list[BaseCallbackHandler], input_prompt_template: str):
     # 1. Set up the vector database retriever.
     # This line of code will create a retriever object that
@@ -111,6 +112,7 @@ def get_chain(callback_handlers: list[BaseCallbackHandler], input_prompt_templat
         | olmo
     )
 
+
 async def callback(contents, user, instance):
     # 1. Create a panel callback handler
     # The Langchain PanelCallbackHandler is useful for rendering and streaming the chain of thought
@@ -139,8 +141,12 @@ async def callback(contents, user, instance):
 pn.extension()
 
 model_path = download_olmo_model()
-qdrant_path = Path("/workspaces/Rubin-RAG/resources/rubin_qdrant")
-qdrant_collection = "rubin_telescope"
+
+# Created via: https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb
+qdrant_path = Path.home() / ".cache/ssec_tutorials/scipy_qdrant"
+qdrant_collection = "arxiv_astro-ph_abstracts_astropy_github_documentation"
+# qdrant_path = Path("/workspaces/Rubin-RAG/resources/rubin_qdrant")
+# qdrant_collection = "rubin_telescope"
 
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L12-v2")
 
@@ -149,11 +155,7 @@ embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L
 # )
 
 client = QdrantClient(path=str(qdrant_path))
-db = Qdrant(
-    client=client,
-    collection_name=qdrant_collection,
-    embeddings=embedding
-)
+db = Qdrant(client=client, collection_name=qdrant_collection, embeddings=embedding)
 
 input_prompt_template = textwrap.dedent(
     """\
@@ -168,5 +170,5 @@ Question: {question}
 chat_interface = pn.chat.ChatInterface(callback=callback)
 
 # Enable serving the app on a web URL
-if __name__ == '__main__':
-    pn.serve({'/': chat_interface}, port=5006, websocket_origin='*', show=False)
+if __name__ == "__main__":
+    pn.serve({"/": chat_interface}, port=5006, websocket_origin="*", show=False)

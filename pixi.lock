@@ -8639,11 +8639,11 @@ packages:
   requires_python: '>=3.7'
 - pypi: ../ssec_tutorials
   name: ssec-tutorials
-  version: 0.1.dev8
-  sha256: 5c0ba95cd0bd1c52e959292e12dffc3d950626374f92c9df78d50b715dbc8fd9
+  version: 0.1.dev10
+  sha256: ba6a0701e4fc99936b58eac6d022cfb02c9aa28aa395378e08379a426e3cac6c
   requires_dist:
   - jsonlines>=4.0.0
-  - langchain~=0.3
+  - langchain~=0.3.26
   - torch~=2.7
   - jupyter-book ; extra == 'all'
   - nox ; extra == 'all'
