@@ -145,8 +145,6 @@ model_path = download_olmo_model()
 # Created via: https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb
 qdrant_path = Path.home() / ".cache/ssec_tutorials/scipy_qdrant"
 qdrant_collection = "arxiv_astro-ph_abstracts_astropy_github_documentation"
-# qdrant_path = Path("/workspaces/Rubin-RAG/resources/rubin_qdrant")
-# qdrant_collection = "rubin_telescope"
 
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L12-v2")
 
