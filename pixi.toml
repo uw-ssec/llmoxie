@@ -38,9 +38,7 @@ sentence-transformers = ">=3.1.0, <3.2"
 nltk = ">=3.9.1, <3.10"
 arxiv = ">=2.1.3, <2.2"
 pymupdf = ">=1.24.10, <1.25"
-# # ssec-tutorials = { git = "https://github.com/uw-ssec/ssec_tutorials.git", rev = "28e7755fb38aa330690944d79c1f1720dd1ad87e" }
-ssec_tutorials = { path = "../ssec_tutorials" }
-# # transformers = { git = "https://github.com/huggingface/transformers.git", rev = "298b3f1" }
+ssec-tutorials = { git = "https://github.com/uw-ssec/ssec_tutorials.git", rev = "98ca4cf84c06be6a4de99d3a4a1dff5a442c95c7" }
 transformers = "~=4.53.0"
 accelerate = ">=0.26.0"
 bitsandbytes = ">=0.42.0, <0.46"
