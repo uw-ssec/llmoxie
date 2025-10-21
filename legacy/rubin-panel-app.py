@@ -2,6 +2,8 @@ import textwrap
 from uuid import uuid4
 import warnings
 from pathlib import Path
+import json
+from datetime import datetime
 
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.callbacks import CallbackManager, BaseCallbackHandler
@@ -16,6 +18,50 @@ from ssec_tutorials import download_olmo_model
 warnings.filterwarnings("ignore")
 
 import panel as pn
+
+# Global storage for feedback data
+feedback_data = {}
+
+def create_feedback_buttons(doc_id, doc_content, chat_instance):
+    """Create feedback buttons for a retrieved document fragment."""
+    def record_feedback(rating):
+        feedback_entry = {
+            'doc_id': doc_id,
+            'doc_content': doc_content[:200] + "..." if len(doc_content) > 200 else doc_content,
+            'rating': rating,
+            'timestamp': datetime.now().isoformat()
+        }
+        feedback_data[f"{doc_id}_{datetime.now().timestamp()}"] = feedback_entry
+        
+        # Save feedback to file
+        feedback_file = Path.home() / ".cache/ssec_tutorials/rag_feedback.json"
+        feedback_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with open(feedback_file, 'r') as f:
+                existing_feedback = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing_feedback = {}
+        
+        existing_feedback.update(feedback_data)
+        
+        with open(feedback_file, 'w') as f:
+            json.dump(existing_feedback, f, indent=2)
+        
+        # Provide user feedback
+        chat_instance.send(
+            f"✅ Feedback recorded: {rating} for document fragment",
+            user="System",
+            avatar="📝"
+        )
+    
+    thumbs_up = pn.widgets.Button(name="👍 Relevant", button_type="primary", width=100, height=30)
+    thumbs_down = pn.widgets.Button(name="👎 Not Relevant", button_type="light", width=120, height=30)
+    
+    thumbs_up.on_click(lambda event: record_feedback('relevant'))
+    thumbs_down.on_click(lambda event: record_feedback('not_relevant'))
+    
+    return [thumbs_up, thumbs_down]
 
 
 def get_chain(callback_handlers: list[BaseCallbackHandler], input_prompt_template: str):
@@ -86,6 +132,29 @@ def get_chain(callback_handlers: list[BaseCallbackHandler], input_prompt_templat
     # as mentioned in https://github.com/langchain-ai/langchain/issues/7290
     def show_docs(docs):
         for callback_handler in callback_handlers:
+            # Display individual document fragments with feedback buttons
+            if hasattr(callback_handler, 'instance'):
+                chat_instance = callback_handler.instance
+                
+                for i, doc in enumerate(docs):
+                    doc_id = f"doc_{uuid4().hex[:8]}"
+                    doc_content = doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content
+                    
+                    # Create feedback buttons for this document
+                    feedback_buttons = create_feedback_buttons(doc_id, doc.page_content, chat_instance)
+                    
+                    # Create a message for each retrieved context fragment
+                    context_message = pn.chat.ChatMessage(
+                        f"**📄 Context Fragment {i+1}:**\n\n{doc_content}",
+                        user="Retriever",
+                        avatar="🔍",
+                        footer_objects=feedback_buttons,
+                        show_timestamp=False
+                    )
+                    
+                    # Add the context message to the chat
+                    chat_instance.objects.append(context_message)
+            
             callback_handler.on_retriever_end(
                 docs,  # pass the retrieved documents to the callback handler
                 run_id=uuid4(),  # generate a random run id
