@@ -9,6 +9,9 @@ on:
             - ".github/workflows/proxy-container.yml"
     workflow_dispatch:
 
+permissions:
+    id-token: write
+    attestations: write
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}/proxy
