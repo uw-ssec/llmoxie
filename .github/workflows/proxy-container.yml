@@ -9,9 +9,6 @@ on:
             - ".github/workflows/proxy-container.yml"
     workflow_dispatch:
 
-permissions:
-    id-token: write
-    attestations: write
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}/proxy
@@ -58,10 +55,3 @@ jobs:
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
                   platforms: linux/amd64,linux/arm64
-
-            - name: Generate artifact attestation
-              uses: actions/attest-build-provenance@v1
-              with:
-                  subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-                  subject-digest: ${{ steps.build.outputs.digest }}
-                  push-to-registry: true
