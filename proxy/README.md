@@ -13,17 +13,7 @@ A FastAPI-based proxy service for the OpenAI API with streaming support.
 
 ## Setup
 
-1. **Install dependencies:**
-
-   ```bash
-   # From the project root
-   pixi add fastapi uvicorn httpx python-dotenv fsspec
-
-   # Optional: For Azure Blob Storage logging
-   pixi add adlfs  # Azure Data Lake Storage for fsspec
-   ```
-
-2. **Configure environment variables:**
+1. **Configure environment variables:**
 
    Copy the example environment file and add your OpenAI API key:
 
@@ -32,17 +22,11 @@ A FastAPI-based proxy service for the OpenAI API with streaming support.
    # Edit .env and add your OPENAI_API_KEY
    ```
 
-3. **Run the proxy:**
+2. **Run the proxy:**
 
    ```bash
    # From the proxy directory
    python main.py
-   ```
-
-   Or with uvicorn directly:
-
-   ```bash
-   uvicorn main:app --reload --port 8888
    ```
 
 ## Docker Deployment
@@ -59,69 +43,13 @@ curl http://localhost:8888/health
 
 Once running, the proxy will be available at `http://localhost:8000`.
 
-### Example: Chat completion (non-streaming)
-
-```bash
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-3.5-turbo",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-### Example: Chat completion (streaming)
-
-```bash
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-3.5-turbo",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true
-  }'
-```
-
-### Example: List models
-
-```bash
-curl http://localhost:8000/v1/models
-```
-
-### Health check
-
-```bash
-curl http://localhost:8000/health
-```
-
-## Configuration
-
-Configure the proxy using environment variables in `.env`:
-
-### Core Settings
-
-| Variable          | Required | Default                  | Description                |
-| ----------------- | -------- | ------------------------ | -------------------------- |
-| `OPENAI_API_KEY`  | Yes      | -                        | Your OpenAI API key        |
-| `OPENAI_BASE_URL` | No       | `https://api.openai.com` | OpenAI API base URL        |
-| `PROXY_PORT`      | No       | `8000`                   | Port for the proxy server  |
-| `PROXY_TIMEOUT`   | No       | `300`                    | Request timeout in seconds |
-
-### Logging Settings
-
-| Variable                     | Required | Default      | Description                       |
-| ---------------------------- | -------- | ------------ | --------------------------------- |
-| `STORAGE_TYPE`               | No       | `local`      | Storage type: `local` or `azure`  |
-| `LOCAL_LOG_DIR`              | No       | `logs`       | Directory for local log files     |
-| `AZURE_STORAGE_ACCOUNT_NAME` | If Azure | -            | Azure Storage account name        |
-| `AZURE_STORAGE_ACCOUNT_KEY`  | If Azure | -            | Azure Storage account key         |
-| `AZURE_STORAGE_CONTAINER`    | No       | `proxy-logs` | Azure Blob Storage container name |
-
 **Log File Naming:**
 
-- Files are automatically named: `{model}_{YYYYMMDD}.jsonl`
-- Example: `gpt-4_20241021.jsonl`, `gpt-3.5-turbo_20241021.jsonl`
-- Each file contains all requests/responses for that model on that day
+- **With authentication:** `{user_id}_{model}_{YYYYMMDD}.jsonl`
+  - Example: `abc-123-def_gpt-4_20241021.jsonl`
+- **Without authentication:** `{model}_{YYYYMMDD}.jsonl`
+  - Example: `gpt-4_20241021.jsonl`
+- Each file contains all requests/responses for that user/model on that day
 
 ### Local Storage Example
 
@@ -186,32 +114,8 @@ Each log entry is a single JSON line with:
   operations
 - Both storage backends support efficient append operations
 
-## Future Enhancements
-
-- [ ] Rate limiting
-- [ ] Caching
-- [ ] Authentication for proxy clients
-- [ ] Metrics and monitoring
-- [ ] Support for other cloud storage backends (S3, GCS)
-
 ## API Endpoints
 
 - `GET /` - Service information
 - `GET /health` - Health check
 - `* /v1/{path}` - Proxy to OpenAI API v1 endpoints
-
-## CI/CD
-
-The proxy container is automatically built and pushed to GitHub Container
-Registry on:
-
-- Push to `main` branch (when files in `proxy/` change)
-- Manual workflow dispatch
-
-**Image tags:**
-
-- `latest` - Most recent build
-- `YYYYMMDD` - Date-based tag (e.g., `20241022`)
-- `YYYYMMDD-sha-abc123` - Date + git SHA
-
-**Registry:** `ghcr.io/uw-ssec/llmaven/proxy`

@@ -25,10 +25,6 @@ docker-py = ">=7.1.0,<7.2"
 testcontainers = ">=4.8.0,<4.9"
 tenacity = "==8.5.0"
 pytest = ">=8.3.5,<9"
-fastapi = ">=0.119.1,<0.120"
-uvicorn = ">=0.38.0,<0.39"
-httpx = ">=0.28.1,<0.29"
-python-dotenv = ">=1.1.1,<2"
 
 [pypi-dependencies]
 langchain = "~=0.3.26"
@@ -48,6 +44,29 @@ bitsandbytes = ">=0.42.0, <0.46"
 llama_cpp_python = "~=0.3.9"
 openai = ">=2.3"
 
+
+[feature.infra.dependencies]
+python = "3.11.*"
+azure-data-tables = ">=12.7.0,<13"
+python-dotenv = ">=1.1.1,<2"
+typer = ">=0.20.0,<0.21"
+rich = ">=14.2.0,<15"
+
+[feature.infra.pypi-dependencies]
+pulumi = ">=3.203.0, <4"
+pulumi-azure-native = ">=3.8.0, <4"
+
+[feature.proxy.dependencies]
+python = "3.11.*"
+adlfs = ">=2025.8.0, <2026"
+aiohttp = ">=3.13.0,<4"
+propcache = ">=0.2.0"
+fastapi = ">=0.119.1,<0.120"
+uvicorn = ">=0.38.0,<0.39"
+httpx = ">=0.28.1,<0.29"
+python-dotenv = ">=1.1.1,<2"
+azure-data-tables = ">=12.7.0,<13"
+
 [target.linux-64.pypi-dependencies]
 llama-cpp-python = { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp311-cp311-linux_x86_64.whl" }
 
@@ -58,3 +77,9 @@ tenacity = "==8.5.0"
 
 [environments]
 frontend = { features = ["frontend"], no-default-feature = true }
+infra = { features = [
+    "infra",
+], solve-group = "infra", no-default-feature = true }
+proxy = { features = [
+    "proxy",
+], solve-group = "proxy", no-default-feature = true }

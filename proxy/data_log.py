@@ -66,19 +66,25 @@ class DataLogger:
             # log at debug level so it can be inspected if needed.
             logger.debug("Could not create base path '%s': %s", self.base_path, e)
 
-    def _get_log_filename(self, model: Optional[str] = None) -> str:
+    def _get_log_filename(self, model: Optional[str] = None, user_id: Optional[str] = None) -> str:
         """
-        Generate log filename based on model and date.
+        Generate log filename based on user, model and date.
 
         Args:
             model: Model name from request (e.g., "gpt-4")
+            user_id: Optional user ID from authentication
 
         Returns:
-            Filename in format: {model}_{YYYYMMDD}.jsonl
+            Filename in format: {user_id}_{model}_{YYYYMMDD}.jsonl (if user_id provided)
+                           or: {model}_{YYYYMMDD}.jsonl (if no user_id)
         """
         date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
         model_name = model.replace("/", "_") if model else "unknown"
-        return f"{model_name}_{date_str}.jsonl"
+        
+        if user_id:
+            return f"{user_id}_{model_name}_{date_str}.jsonl"
+        else:
+            return f"{model_name}_{date_str}.jsonl"
 
     def _get_full_path(self, filename: str) -> str:
         return f"{self.base_path}/{filename}"
@@ -97,8 +103,11 @@ class DataLogger:
             body = log_entry["request"]["body"]
             if isinstance(body, dict):
                 model = body.get("model")
+        
+        # Extract user_id if present
+        user_id = log_entry.get("user_id")
 
-        filename = self._get_log_filename(model)
+        filename = self._get_log_filename(model, user_id)
         full_path = self._get_full_path(filename)
         log_line = json.dumps(log_entry) + '\n'
 
@@ -115,6 +124,7 @@ class DataLogger:
         path: str,
         request_headers: Dict[str, str],
         request_body: Any,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a log entry structure for a request.
@@ -124,11 +134,12 @@ class DataLogger:
             path: Request path
             request_headers: Request headers
             request_body: Parsed request body
+            user_id: Optional user ID from authentication
 
         Returns:
             Log entry dictionary with request data
         """
-        return {
+        entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "request": {
                 "method": method,
@@ -138,6 +149,12 @@ class DataLogger:
             },
             "response": {},
         }
+        
+        # Add user_id if provided
+        if user_id:
+            entry["user_id"] = user_id
+        
+        return entry
 
     def add_response_to_entry(
         self,

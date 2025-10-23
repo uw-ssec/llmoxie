@@ -1,0 +1,10 @@
+name: llmaven-infra
+runtime: python
+description: Azure infrastructure for LLMaven proxy service
+
+config:
+  pulumi:tags:
+    value:
+      project: llmaven
+      component: proxy
+      managed-by: pulumi
