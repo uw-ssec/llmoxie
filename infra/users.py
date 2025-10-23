@@ -2,16 +2,7 @@
 """
 CLI utility to manage users in the LLMaven proxy authentication system.
 
-This script provides commands to:
-- Add new users
-- List existing users
-- Delete users
-- Generate API keys
-
-Usage:
-    python users.py add "John Doe"
-    python users.py list
-    python users.py delete <user-id>
+see python infra/users.py --help for usage.
 """
 
 import os
@@ -51,34 +42,24 @@ def get_table_client():
             "must be set in environment or .env file",
             style="red"
         )
-        console.print("\n[yellow]Run 'pixi run setup-proxy' first to create the infrastructure[/yellow]")
+        console.print("\n[yellow]See infra/README.md for setup instructions[/yellow]")
         raise typer.Exit(1)
     
     account_url = f"https://{account_name}.table.core.windows.net"
     credential = AzureNamedKeyCredential(account_name, account_key)
-    
+   
     table_service = TableServiceClient(
         endpoint=account_url,
         credential=credential
     )
-    
+   
     return table_service.get_table_client(TABLE_NAME)
-
-
-def generate_user_id() -> str:
-    """Generate a unique user ID."""
-    return str(uuid.uuid4())
-
-
-def generate_api_key() -> str:
-    """Generate a secure random API key (64 characters)."""
-    return secrets.token_hex(32)
 
 
 @app.command()
 def add(
     user_name: str = typer.Argument(..., help="User's full name"),
-    user_id: Optional[str] = typer.Option(None, "--user-id", "-u", help="Custom user ID (default: auto-generated GUID)"),
+    user_id: Optional[str] = typer.Option(None, "--user-id", "-u", help="Custom user ID (default: auto-generated GUID)")
 ):
     """
     Add a new user to the authentication system.
@@ -90,8 +71,8 @@ def add(
         
         # Generate credentials
         if not user_id:
-            user_id = generate_user_id()
-        api_key = generate_api_key()
+            user_id = str(uuid.uuid4())
+        api_key = secrets.token_hex(32)
         created_at = datetime.utcnow().isoformat() + "Z"
         
         # Create entity
@@ -252,7 +233,6 @@ def delete(
     except Exception as e:
         console.print(f"\n[red]✗ Unexpected error:[/red] {e}", style="red")
         raise typer.Exit(1)
-
 
 
 if __name__ == "__main__":

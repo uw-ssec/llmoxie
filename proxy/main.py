@@ -47,7 +47,18 @@ key_store = None
 if AUTH_ENABLED:
     key_store = UserKeyStore()
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    logger.info("Starting OpenAI API Proxy...")
+    if key_store:
+        logger.info("Starting background cache refresh for user keys...")
+        key_store.start_background_refresh()
+        logger.info("Authentication enabled with background refresh")
+    else:
+        logger.info("Authentication disabled")
 
+        
 async def verify_api_key(authorization: Optional[str] = Header(None)) -> Optional[dict]:
     """
     Verify API key from Authorization header.
