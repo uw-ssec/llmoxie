@@ -1,17 +1,36 @@
 from langchain.schema import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from core.retriever.retriever import Retriever
 
+TEXT_SPLITTER = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,
+)
+
 def json_to_document(json_data):
-    """Convert JSON dict to LangChain Document object."""
-    return Document(
-        page_content=json_data["page_content"],
-        metadata=json_data["metadata"]
-    )
+    """Convert JSON dict to chunked LangChain Document objects."""
+    text = json_data.get("page_content", "")
+    if not text:
+        return []
+
+    base_metadata = dict(json_data.get("metadata") or {})
+    documents = []
+
+    for idx, chunk in enumerate(TEXT_SPLITTER.split_text(text)):
+        metadata = base_metadata.copy()
+        metadata["chunk_index"] = idx
+        documents.append(Document(page_content=chunk, metadata=metadata))
+
+    return documents
 
 def perform_retrieval(documents, query, existing_collection, existing_qdrant_path, embedding_model):
     # Convert each JSON document to a LangChain Document object
     if documents:
-        docs = [json_to_document(doc) for doc in documents]
+        docs = []
+        for doc in documents:
+            docs.extend(json_to_document(doc))
+        if not docs:
+            raise ValueError("Document payload did not yield any text chunks for retrieval.")
     
     # Instantiate the retriever with the provided embedding model
     retriever = Retriever(model_name=embedding_model)
