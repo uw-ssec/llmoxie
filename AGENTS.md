@@ -87,26 +87,26 @@ LLMaven has been refactored into a modern, modular architecture with three disti
 
 ```mermaid
 graph TB
-    subgraph LLMaven[LLMaven Project]
-        subgraph API[LLMaven API - FastAPI + CLI]
-            REST[REST API v1]
-            UI[Streamlit UI]
-            CLI[CLI Interface]
-            VDB[Vector DB]
+    subgraph LLMaven["LLMaven Project"]
+        subgraph API["LLMaven API - FastAPI + CLI"]
+            REST["REST API v1"]
+            UI["Streamlit UI"]
+            CLI["CLI Interface"]
+            VDB["Vector DB"]
         end
 
-        subgraph Core[Core Libraries - src/llmaven]
-            Retriever[Retriever]
-            Generator[Generator]
-            Embeddings[Embeddings]
-            Schemas[Schemas]
-            Services[Services]
+        subgraph Core["Core Libraries - src/llmaven"]
+            Retriever["Retriever"]
+            Generator["Generator"]
+            Embeddings["Embeddings"]
+            Schemas["Schemas"]
+            Services["Services"]
         end
 
-        subgraph Archive[Archived Code - archive/]
-            Proxy[OpenAI Proxy]
-            Infra[Infrastructure]
-            Legacy[Legacy Panel UI]
+        subgraph Archive["Archived Code - archive/"]
+            Proxy["OpenAI Proxy"]
+            Infra["Infrastructure"]
+            Legacy["Legacy Panel UI"]
         end
     end
 

@@ -27,25 +27,25 @@ LLMaven consists of several components that work together:
 ```mermaid
 graph TB
     subgraph Main[LLMaven Architecture]
-        UI[Streamlit UI<br/>Port 8501] --> Backend[FastAPI Backend<br/>Port 8000]
+        UI["Streamlit UI<br/>Port 8501"] --> Backend["FastAPI Backend<br/>Port 8000"]
 
         Backend --> EndpointsGroup
 
         subgraph EndpointsGroup[API Endpoints]
-            Retrieve[/v1/retrieve]
-            Generate[/v1/generate]
+            Retrieve["Retrieve<br/>/v1/retrieve"]
+            Generate["Generate<br/>/v1/generate"]
         end
 
-        Retrieve --> RetService[Retrieval Service]
-        Generate --> GenService[Generation Service]
+        Retrieve --> RetService["Retrieval Service"]
+        Generate --> GenService["Generation Service"]
 
-        RetService --> Qdrant[Qdrant Vector Store<br/>Embeddings]
-        GenService --> HF[HuggingFace Transformers<br/>LLM]
+        RetService --> Qdrant["Qdrant Vector Store<br/>Embeddings"]
+        GenService --> HF["HuggingFace Transformers<br/>LLM"]
     end
 
     subgraph Optional[Optional Components]
-        Proxy[OpenAI Proxy<br/>Port 8888]
-        Azure[Azure Infrastructure]
+        Proxy["OpenAI Proxy<br/>Port 8888"]
+        Azure["Azure Infrastructure"]
     end
 
     style Main fill:#f9f9f9,stroke:#333,stroke-width:2px
