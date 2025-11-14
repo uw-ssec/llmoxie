@@ -5,7 +5,7 @@ on:
         branches:
             - main
         paths:
-            - "proxy/**"
+            - "archive/proxy/**"
             - ".github/workflows/proxy-container.yml"
     workflow_dispatch:
 
