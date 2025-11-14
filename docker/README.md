@@ -28,6 +28,22 @@ This Docker setup provides a production-ready infrastructure for LLMaven that in
 
 All services are orchestrated using Docker Compose and can be managed either directly with `docker-compose` commands or through convenient Pixi tasks.
 
+### Directory Structure
+
+```
+docker/
+├── docker-compose.yml          # Main orchestration file
+├── .env.example                # Template for environment variables
+├── config.yaml                 # LiteLLM proxy configuration
+├── create_service_dbs.sql      # PostgreSQL database initialization
+├── dockerfiles/
+│   ├── litellm.dockerfile      # Custom LiteLLM image with mlflow
+│   └── mlflow.dockerfile       # Custom MLflow image with dependencies
+└── README.md                   # This file
+```
+
+**Important**: Copy `.env.example` to `.env` and configure your credentials before starting services.
+
 ## Architecture
 
 ```
@@ -99,7 +115,8 @@ All services are orchestrated using Docker Compose and can be managed either dir
 Copy the example environment file and configure your credentials:
 
 ```bash
-cd /Users/lsetiawan/Repos/SSEC/llmaven/docker
+# Navigate to the docker directory
+cd docker
 cp .env.example .env
 ```
 
@@ -134,6 +151,8 @@ pixi run -e llmaven up
 docker-compose up -d
 ```
 
+**Note**: The first time you run this command, Docker will build custom images for LiteLLM and MLflow. This may take a few minutes. Subsequent starts will be much faster.
+
 ### 3. Verify Services
 
 Check that all services are running:
@@ -165,13 +184,12 @@ Once all services are healthy:
 
 **Purpose**: Unified API gateway for multiple LLM providers
 
-**Image**: `ghcr.io/berriai/litellm:v1.79.1-stable`
+**Image**: Custom build from `dockerfiles/litellm.dockerfile`
+- Base image: `ghcr.io/berriai/litellm:v1.79.1-stable`
+- Pre-installed packages: `mlflow==3.6.0`
 
 **Ports**:
 - `4000:4000`: LiteLLM Proxy API - hardcoded mapping
-
-**Volume Mounts**:
-- `./config.yaml:/app/config.yaml`: LiteLLM configuration file
 
 **Features**:
 - OpenAI-compatible API interface
@@ -181,15 +199,16 @@ Once all services are healthy:
 - Load balancing and fallback support
 - API key management with master key authentication
 
-**Configuration**: `/Users/lsetiawan/Repos/SSEC/llmaven/docker/config.yaml`
+**Configuration**: `config.yaml` in the docker directory
+- Copied into the image at build time at `/app/config.yaml`
 
-**Container Name**: `litellm` (no llmaven prefix)
+**Container Name**: `llmaven_litellm`
 
 **Network**: `llmaven-network`
 
 **Dependencies**: Waits for PostgreSQL (healthy) and MLflow (healthy)
 
-**Startup**: Automatically installs `mlflow` Python package, then starts with command:
+**Startup Command**:
   - `litellm --config /app/config.yaml`
 
 **Restart Policy**: Not explicitly set (defaults to `no` - doesn't restart automatically)
@@ -210,7 +229,9 @@ Once all services are healthy:
 
 **Purpose**: Experiment tracking, model registry, and ML lifecycle management
 
-**Image**: `ghcr.io/mlflow/mlflow:latest`
+**Image**: Custom build from `dockerfiles/mlflow.dockerfile`
+- Base image: `ghcr.io/mlflow/mlflow:v3.6.0`
+- Pre-installed packages: `psycopg2-binary==2.9.11`, `boto3==1.40.73`
 
 **Ports**:
 - `${MLFLOW_PORT}:${MLFLOW_PORT}`: MLflow UI/API (default: 8080:8080) - uses environment variable
@@ -234,7 +255,7 @@ Once all services are healthy:
 
 **Dependencies**: Waits for PostgreSQL (healthy), MinIO (healthy), and createbuckets (completed successfully)
 
-**Startup**: Automatically installs `psycopg2-binary` and `boto3` Python packages, then starts MLflow server with:
+**Startup Command**: MLflow server with:
   - `--allowed-hosts '*'`: Accepts connections from any hostname
   - `--cors-allowed-origins '*'`: Enables CORS for all origins
 
@@ -363,7 +384,7 @@ POSTGRES_PORT=5432                  # PostgreSQL port
 
 ```bash
 # MinIO Configuration
-MINIO_HOST=minio                                              # MinIO hostname
+MINIO_HOST=${MINIO_HOST:-minio}                               # MinIO hostname (defaults to 'minio')
 MINIO_PORT=9000                                               # MinIO API port
 MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID:-minioadmin}             # MinIO admin user
 MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY:-minioadmin}     # MinIO admin password
@@ -380,7 +401,7 @@ AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}                 # Uses MinIO root p
 
 ```bash
 # MLflow Configuration
-MLFLOW_HOST=0.0.0.0                                                                              # Bind to all interfaces
+MLFLOW_HOST=${MLFLOW_HOST:-mlflow}                                                              # MLflow hostname (defaults to 'mlflow')
 MLFLOW_PORT=8080                                                                                 # MLflow UI/API port
 MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/mlflow_db
 MLFLOW_DEFAULT_ARTIFACT_ROOT=s3://mlflow/
@@ -388,7 +409,7 @@ MLFLOW_S3_ENDPOINT_URL=${S3_ENDPOINT_URL}                                       
 MLFLOW_S3_IGNORE_TLS="true"                                                                     # Required for local MinIO
 ```
 
-**Note**: MLflow automatically installs `psycopg2-binary` and `boto3` packages on container startup.
+**Note**: The MLflow Docker image is built with `psycopg2-binary` and `boto3` pre-installed (see `dockerfiles/mlflow.dockerfile`).
 
 #### LiteLLM Configuration
 
@@ -398,11 +419,11 @@ LITELLM_DB=litellm_db
 LITELLM_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/litellm_db
 DATABASE_URL=${LITELLM_DATABASE_URL}                                  # Required by LiteLLM
 MLFLOW_TRACKING_URI=http://${MLFLOW_HOST}:${MLFLOW_PORT}             # Uses MLflow variables
-MLFLOW_EXPERIMENT_NAME="litellm-proxy"
+MLFLOW_EXPERIMENT_NAME="Default"
 LITELLM_MASTER_KEY=sk-1234                                            # Change in production!
 ```
 
-**Note**: LiteLLM automatically installs the `mlflow` package on container startup for logging integration.
+**Note**: The LiteLLM Docker image is built with `mlflow` pre-installed (see `dockerfiles/litellm.dockerfile`).
 
 #### LLM Provider API Keys
 
@@ -421,7 +442,7 @@ AZURE_API_VERSION=2024-12-01-preview
 
 ### LiteLLM Model Configuration
 
-The file `/Users/lsetiawan/Repos/SSEC/llmaven/docker/config.yaml` defines LLM models and routing:
+The file `config.yaml` defines LLM models and routing:
 
 ```yaml
 model_list:
@@ -469,7 +490,7 @@ Then add the corresponding API keys to your `.env` file.
 
 #### Alternative: S3 Logging
 
-To enable S3 logging instead of MLflow logging, uncomment the S3 configuration in `config.yaml`:
+To enable S3 logging instead of MLflow logging, edit `config.yaml` and replace the current `litellm_settings` section with:
 
 ```yaml
 litellm_settings:
@@ -477,17 +498,78 @@ litellm_settings:
   success_callback: ["s3"]
   failure_callback: ["s3"]
   s3_callback_params:
-    s3_bucket_name: llmaven
-    s3_region_name: us-east-1
+    s3_bucket_name: os.environ/S3_BUCKET_NAME
+    s3_region_name: os.environ/S3_REGION_NAME
     s3_aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
     s3_aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
-    s3_endpoint_url: os.environ/S3_ENDPOINT_URL
-    s3_path: litellm-logs/
+    s3_endpoint_url: os.environ/AWS_ENDPOINT_URL
+    s3_path: os.environ/S3_PATH_PREFIX
+```
+
+Then add the corresponding environment variables to your `.env` file and rebuild the LiteLLM image:
+
+```bash
+# Add to .env
+S3_BUCKET_NAME=llmaven
+S3_REGION_NAME=us-east-1
+S3_PATH_PREFIX=litellm-logs/
+
+# Rebuild LiteLLM image to include updated config.yaml
+docker-compose build litellm
+docker-compose up -d litellm
+```
+
+### Custom Docker Images
+
+LLMaven uses custom Docker images for LiteLLM and MLflow to pre-install required dependencies, improving startup time and reliability.
+
+#### MLflow Dockerfile
+
+Located at `dockerfiles/mlflow.dockerfile`:
+
+```dockerfile
+FROM ghcr.io/mlflow/mlflow:v3.6.0
+
+RUN pip install --no-cache-dir "psycopg2-binary==2.9.11" "boto3==1.40.73"
+
+ENTRYPOINT ["mlflow", "server"]
+```
+
+Pre-installs PostgreSQL database adapter and AWS S3 client for artifact storage.
+
+#### LiteLLM Dockerfile
+
+Located at `dockerfiles/litellm.dockerfile`:
+
+```dockerfile
+FROM ghcr.io/berriai/litellm:v1.79.1-stable
+
+RUN pip install --no-cache-dir "mlflow==3.6.0"
+
+RUN mkdir -p /app
+
+COPY config.yaml /app/config.yaml
+```
+
+Pre-installs MLflow for logging integration and copies the LiteLLM configuration file into the image.
+
+**Building the Images**: The images are automatically built when you run `docker-compose up` or `pixi run -e llmaven up`. To rebuild after changes:
+
+```bash
+# Rebuild all custom images
+docker-compose build
+
+# Rebuild specific service
+docker-compose build mlflow
+docker-compose build litellm
+
+# Force rebuild without cache
+docker-compose build --no-cache
 ```
 
 ### Database Initialization
 
-The file `/Users/lsetiawan/Repos/SSEC/llmaven/docker/create_service_dbs.sql` automatically creates required databases on first startup:
+The file `create_service_dbs.sql` automatically creates required databases on first startup:
 
 - Creates `mlflow_db` for MLflow backend storage
 - Creates `litellm_db` for LiteLLM proxy data
@@ -561,6 +643,8 @@ All LLM requests are automatically logged to MLflow. Access the UI at http://loc
 - Track costs and token usage
 - Analyze response patterns
 
+**Note**: By default, LiteLLM logs to the "Default" experiment. You can customize this by setting `MLFLOW_EXPERIMENT_NAME` in your `.env` file.
+
 #### Programmatic MLflow Access
 
 ```python
@@ -570,7 +654,7 @@ import mlflow
 mlflow.set_tracking_uri("http://localhost:8080")
 
 # Get experiment by name
-experiment = mlflow.get_experiment_by_name("litellm-proxy")
+experiment = mlflow.get_experiment_by_name("Default")
 
 # Search runs
 runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
@@ -691,7 +775,7 @@ LLMaven integrates with [Pixi](https://pixi.sh), a modern package manager for re
 
 ### Available Pixi Tasks
 
-From the `/Users/lsetiawan/Repos/SSEC/llmaven/pixi.toml` configuration:
+From the `pixi.toml` configuration in the project root:
 
 ```bash
 # Start all services
@@ -747,7 +831,8 @@ iwr -useb https://pixi.sh/install.ps1 | iex
 After installation, initialize the environment:
 
 ```bash
-cd /Users/lsetiawan/Repos/SSEC/llmaven
+# Navigate to the project root
+cd path/to/llmaven
 pixi install
 ```
 
@@ -834,7 +919,7 @@ docker-compose logs --tail=100 litellm
 All LiteLLM requests are automatically logged to MLflow:
 
 1. Open MLflow UI: http://localhost:8080
-2. Navigate to the `litellm-proxy` experiment
+2. Navigate to the experiment (default: "Default", or custom name set via `MLFLOW_EXPERIMENT_NAME`)
 3. View runs showing:
    - Model used
    - Prompt and completion
@@ -1278,4 +1363,4 @@ with mlflow.start_run():
 
 ---
 
-**Note**: This documentation is for the LLMaven Docker infrastructure. For information about the main LLMaven application and features, see the [root README](/Users/lsetiawan/Repos/SSEC/llmaven/README.md).
+**Note**: This documentation is for the LLMaven Docker infrastructure. For information about the main LLMaven application and features, see the [root README](../README.md).
