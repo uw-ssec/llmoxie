@@ -111,6 +111,8 @@ services:
         condition: service_healthy
       mlflow:
         condition: service_healthy
+    volumes:
+      - ./config.yaml:/app/config.yaml
     command:
       - --config
       - /app/config.yaml
