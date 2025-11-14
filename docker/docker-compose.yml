@@ -60,16 +60,19 @@ services:
       - llmaven-network
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/mlflow.dockerfile
     container_name: llmaven_mlflow
     env_file:
       - .env
     ports:
       - "${MLFLOW_PORT}:${MLFLOW_PORT}"  # MLflow UI
-    command: >
-      /bin/bash -c "
-        pip install --no-cache-dir psycopg2-binary boto3 && mlflow server --allowed-hosts '*' --cors-allowed-origins '*'
-      "
+    command:
+      - --allowed-hosts
+      - "*" 
+      - --cors-allowed-origins
+      - "*"
     depends_on:
       db:
         condition: service_healthy
@@ -93,9 +96,10 @@ services:
       - llmaven-network
 
   litellm:
-    image: ghcr.io/berriai/litellm:v1.79.1-stable
-    volumes:
-      - ./config.yaml:/app/config.yaml
+    build:
+      context: .
+      dockerfile: dockerfiles/litellm.dockerfile
+    container_name: llmaven_litellm
     ports:
       - "4000:4000" # Map the container port to the host, change the host port if necessary
     env_file:
@@ -105,8 +109,9 @@ services:
         condition: service_healthy
       mlflow:
         condition: service_healthy
-    entrypoint: >
-      /bin/bash -c "pip install --no-cache-dir mlflow && litellm --config /app/config.yaml"
+    command:
+      - --config
+      - /app/config.yaml
     healthcheck:  # Defines the health check configuration for the container
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness || exit 1" ]  # Command to execute for health check
       interval: 30s  # Perform health check every 30 seconds
