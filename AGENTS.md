@@ -33,9 +33,9 @@ pixi run serve-panel       # Original Panel UI
 | `app/routers/` | `src/llmaven/v1/endpoints/` | Migrated |
 | `core/` | `src/llmaven/core/` | Migrated |
 | `frontend/` | `src/llmaven/frontend/` | Migrated |
-| `proxy/` | `proxy/` | Unchanged |
-| `infra/` | `infra/` | Unchanged |
-| `legacy/` | `legacy/` | Reference only |
+| `proxy/` | `archive/proxy/` | Archived (unused) |
+| `infra/` | `archive/infra/` | Archived (unused) |
+| `legacy/` | `archive/legacy/` | Archived (unused) |
 
 ---
 
@@ -87,52 +87,35 @@ LLMaven has been refactored into a modern, modular architecture with three disti
 
 ```mermaid
 graph TB
-    subgraph LLMaven["LLMaven Project"]
-        subgraph API["LLMaven API<br/>(FastAPI + CLI)"]
-            REST["REST API (v1)"]
-            UI["Streamlit UI"]
-            CLI["CLI Interface"]
-            VDB["Vector DB"]
-            Legacy["Legacy: Panel UI"]
+    subgraph LLMaven[LLMaven Project]
+        subgraph API[LLMaven API - FastAPI + CLI]
+            REST[REST API v1]
+            UI[Streamlit UI]
+            CLI[CLI Interface]
+            VDB[Vector DB]
         end
 
-        subgraph Proxy["OpenAI Proxy"]
-            FastAPI["FastAPI Proxy"]
-            Auth["Auth Layer"]
-            Logging["Logging"]
-            Streaming["Streaming"]
+        subgraph Core[Core Libraries - src/llmaven]
+            Retriever[Retriever]
+            Generator[Generator]
+            Embeddings[Embeddings]
+            Schemas[Schemas]
+            Services[Services]
         end
 
-        subgraph Infra["Infrastructure"]
-            IaC["Azure IaC"]
-            Pulumi["Pulumi"]
-            Tables["Table Store"]
-        end
-
-        subgraph Core["Core Libraries<br/>(src/llmaven/)"]
-            Retriever["Retriever"]
-            Generator["Generator"]
-            Embeddings["Embeddings"]
-            Schemas["Schemas"]
-            Services["Services"]
-        end
-
-        subgraph Storage["Azure Storage"]
-            Blob["Azure Blob Storage<br/>(Logs)"]
-            TableStore["Azure Tables<br/>(User Keys)"]
+        subgraph Archive[Archived Code - archive/]
+            Proxy[OpenAI Proxy]
+            Infra[Infrastructure]
+            Legacy[Legacy Panel UI]
         end
     end
 
     API --> Core
-    Proxy --> Blob
-    Infra --> TableStore
 
     style LLMaven fill:#f9f9f9,stroke:#333,stroke-width:2px
     style API fill:#e1f5ff,stroke:#01579b,stroke-width:2px
-    style Proxy fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style Infra fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style Core fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style Storage fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style Archive fill:#e0e0e0,stroke:#757575,stroke-width:2px,stroke-dasharray: 5 5
 ```
 
 ### Current Architecture (Post-Refactor)
@@ -140,9 +123,10 @@ graph TB
 The project recently underwent a major refactoring to create a modern, installable Python package with:
 
 1. **LLMaven API Package** (src/llmaven/): Installable package with CLI and API
-2. **OpenAI Proxy Service** (proxy/): Standalone authentication and logging proxy
-3. **Infrastructure as Code** (infra/): Azure resource provisioning
-4. **Legacy Applications** (legacy/): Original Panel-based chat UI (still functional)
+2. **Archived Code** (archive/): Unused components moved to archive:
+   - OpenAI Proxy Service (archive/proxy/): Standalone authentication and logging proxy
+   - Infrastructure as Code (archive/infra/): Azure resource provisioning
+   - Legacy Applications (archive/legacy/): Original Panel-based chat UI
 
 ### Architectural Patterns
 
@@ -230,26 +214,27 @@ llmaven/
 │       ├── app.py               # Streamlit RAG chatbot interface
 │       └── config.py            # Frontend-specific configuration
 │
-├── proxy/                        # OpenAI API proxy service (standalone)
-│   ├── main.py                   # FastAPI proxy server
-│   ├── auth.py                   # Azure Table Storage authentication
-│   ├── data_log.py               # Request/response logging
-│   ├── requirements.txt          # Proxy-specific dependencies
-│   ├── Dockerfile               # Multi-stage production container
-│   └── .env.example             # Configuration template
-│
-├── infra/                        # Infrastructure as Code (Pulumi + Azure)
-│   ├── __main__.py              # Pulumi program (storage + tables)
-│   ├── users.py                 # User management utilities
-│   ├── Pulumi.yaml              # Pulumi project configuration
-│   └── README.md                # Infrastructure setup guide
-│
-├── legacy/                       # Original/reference implementations
-│   ├── rubin-panel-app.py       # Panel-based chat UI (original demo)
-│   ├── rubin-app-gpu.py         # GPU-optimized variant
-│   ├── download_models.py       # Model download utilities
-│   ├── vector_store.py          # Legacy vector store utilities
-│   └── notebooks/               # Jupyter notebooks for experiments
+├── archive/                      # Archived code (unused)
+│   ├── proxy/                   # OpenAI API proxy service (archived)
+│   │   ├── main.py              # FastAPI proxy server
+│   │   ├── auth.py              # Azure Table Storage authentication
+│   │   ├── data_log.py          # Request/response logging
+│   │   ├── requirements.txt     # Proxy-specific dependencies
+│   │   ├── Dockerfile          # Multi-stage production container
+│   │   └── .env.example        # Configuration template
+│   │
+│   ├── infra/                   # Infrastructure as Code (archived)
+│   │   ├── __main__.py         # Pulumi program (storage + tables)
+│   │   ├── users.py            # User management utilities
+│   │   ├── Pulumi.yaml         # Pulumi project configuration
+│   │   └── README.md           # Infrastructure setup guide
+│   │
+│   └── legacy/                  # Original/reference implementations (archived)
+│       ├── rubin-panel-app.py  # Panel-based chat UI (original demo)
+│       ├── rubin-app-gpu.py    # GPU-optimized variant
+│       ├── download_models.py  # Model download utilities
+│       ├── vector_store.py     # Legacy vector store utilities
+│       └── notebooks/          # Jupyter notebooks for experiments
 │
 ├── tests/                        # Test suite
 │   ├── test_retriever.py        # Retrieval API integration tests
@@ -264,7 +249,7 @@ llmaven/
 │
 ├── .github/                      # GitHub configuration
 │   ├── workflows/
-│   │   └── proxy-container.yml  # Docker build/push for proxy
+│   │   └── proxy-container.yml  # Docker build/push for proxy (may be outdated)
 │   ├── dependabot.yml           # Dependency updates
 │   └── release.yml              # Release configuration
 │
@@ -290,9 +275,9 @@ llmaven/
 | `src/llmaven/services/` | Business logic | Orchestration and service-level logic |
 | `src/llmaven/schemas/` | API contracts | Request/response data models |
 | `src/llmaven/frontend/` | Streamlit UI | User interface changes |
-| `proxy/` | OpenAI API proxy | Authentication, logging, proxy features |
-| `infra/` | Cloud infrastructure | Azure resource modifications |
-| `legacy/` | Original implementations | Reference only; use for Panel UI |
+| `archive/proxy/` | OpenAI API proxy (archived) | **Do not modify** - archived code |
+| `archive/infra/` | Cloud infrastructure (archived) | **Do not modify** - archived code |
+| `archive/legacy/` | Original implementations (archived) | **Do not modify** - reference only |
 | `tests/` | Test suite | Adding tests for new features |
 | `docker/` | Container orchestration | Multi-service deployment setup |
 
@@ -692,22 +677,6 @@ llmaven ui  # Starts on localhost:8501
 
 ---
 
-### 4.14 Infrastructure (`infra/__main__.py`)
-
-**Responsibility**: Provision Azure resources via Pulumi
-
-**Resources Created**:
-1. Azure Resource Group
-2. Storage Account (Standard LRS, Hot tier)
-3. Table Storage table (`userkeys`)
-4. Blob Storage container (`proxy-logs`)
-
-**Outputs**:
-- `resourceGroupName`
-- `storageAccountName`
-- `storageAccountKey`
-- `envVars` - Shell export commands
-
 ---
 
 ## 5. Technology Stack
@@ -812,19 +781,6 @@ pixi run serve-panel
 # Open browser at http://localhost:5006
 ```
 
-#### Option 3: OpenAI Proxy
-```bash
-cd proxy
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your OPENAI_API_KEY and OPENAI_BASE_URL
-
-# Run proxy
-python main.py
-# Proxy available at http://localhost:8888
-```
-
 #### Option 3: Docker Compose (Multi-Service)
 ```bash
 # Using pixi with docker feature
@@ -855,42 +811,6 @@ pixi run start-jlab
 export EMBEDDING_MODEL_NAME="sentence-transformers/all-MiniLM-L12-v2"
 ```
 
-#### OpenAI Proxy
-```bash
-# Required
-export OPENAI_API_KEY="sk-..."
-export OPENAI_BASE_URL="https://api.openai.com"
-
-# Optional
-export PROXY_PORT=8888
-export PROXY_TIMEOUT=300
-export AUTH_ENABLED=true  # Enable authentication
-
-# Storage
-export STORAGE_TYPE=azure
-export AZURE_STORAGE_ACCOUNT_NAME=myaccount
-export AZURE_STORAGE_ACCOUNT_KEY=key
-export AZURE_STORAGE_CONTAINER=proxy-logs
-```
-
-#### Infrastructure Deployment
-```bash
-# Enter infra environment
-pixi shell -e infra
-cd infra
-
-# Login to Pulumi (local backend)
-pulumi login --local
-
-# Create/select stack
-pulumi stack init dev
-
-# Deploy
-pulumi up
-
-# Export credentials to shell
-source <(pulumi stack output envVars)
-```
 
 ### Debugging
 
@@ -1093,11 +1013,6 @@ sample_documents = [
 - ✅ Document processing
 - ✅ Vector store creation
 - ⚠️ Generation API (partial)
-- ❌ Proxy authentication (missing)
-- ❌ Proxy logging (missing)
-- ❌ Infrastructure (manual testing only)
-
-**Priority**: Add proxy tests for authentication and logging modules
 
 ---
 
@@ -1202,57 +1117,7 @@ Content-Type: application/json
 
 **Model Caching**: Models are cached in `generation_service.py` to avoid reloading
 
-### 9.2 OpenAI Proxy API
-
-**Base URL**: `http://localhost:8888`
-
-#### Health Check
-
-```http
-GET /health
-```
-
-**Response**:
-```json
-{
-  "status": "healthy",
-  "downstream": "https://api.openai.com"
-}
-```
-
-#### Proxy OpenAI Endpoints
-
-```http
-POST /v1/chat/completions
-Authorization: Bearer sk-proxy-key-123  (if AUTH_ENABLED=true)
-Content-Type: application/json
-
-{
-  "model": "gpt-4",
-  "messages": [
-    {"role": "user", "content": "Hello!"}
-  ],
-  "stream": true
-}
-```
-
-**Behavior**:
-1. Validates API key (if `AUTH_ENABLED=true`)
-2. Logs request to storage
-3. Forwards to `OPENAI_BASE_URL`
-4. Streams response back to client
-5. Logs complete response
-
-**Supported Methods**: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`
-
-**All OpenAI v1 Endpoints**:
-- `/v1/chat/completions` (streaming supported)
-- `/v1/completions`
-- `/v1/embeddings`
-- `/v1/models`
-- Any other `/v1/*` endpoint
-
-### 9.3 Streamlit UI
+### 9.2 Streamlit UI
 
 **URL**: `http://localhost:8501` (default Streamlit port)
 
@@ -1264,9 +1129,11 @@ Content-Type: application/json
 
 **Backend Dependency**: Requires `app/main.py` running on port 8000
 
-### 9.4 Panel UI
+### 9.3 Panel UI (Archived)
 
 **URL**: `http://localhost:5006`
+
+**Note**: The Panel UI is archived and located in `archive/legacy/`. It may still be functional but is no longer actively maintained.
 
 **Features**:
 - LangChain integration
@@ -1275,6 +1142,8 @@ Content-Type: application/json
 - OLMo model with llama.cpp
 
 **Standalone**: Runs independently without FastAPI backend
+
+**Location**: `archive/legacy/rubin-panel-app.py`
 
 ---
 
@@ -1336,130 +1205,6 @@ Content-Type: application/json
    └─→ Show: Generated Answer + Retrieved Documents
 ```
 
-### 10.2 Proxy Request Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   Proxy Request Flow                             │
-└─────────────────────────────────────────────────────────────────┘
-
-1. Client Request
-   │
-   ├─→ POST https://proxy.example.com/v1/chat/completions
-   │   └─ Authorization: Bearer sk-proxy-abc123
-   │
-2. Authentication (if AUTH_ENABLED=true)
-   │
-   ├─→ Extract Bearer Token
-   ├─→ Check In-Memory Cache
-   │   ├─ (Cache Hit) → Return User Info
-   │   └─ (Cache Miss) → Query Azure Table Storage
-   │       ├─ Validate API Key
-   │       ├─ Cache User Info (5-min TTL)
-   │       └─ Return User Info or 401 Unauthorized
-   │
-3. Request Logging (Pre-Forward)
-   │
-   ├─→ Parse Request Body
-   ├─→ Extract Model Name
-   ├─→ Create Log Entry
-   │   ├─ timestamp
-   │   ├─ user_id (if authenticated)
-   │   ├─ request: {method, path, headers, body}
-   │   └─ response: {} (empty, filled later)
-   │
-4. Forward to OpenAI API
-   │
-   ├─→ Build Downstream Request
-   │   ├─ URL: OPENAI_BASE_URL + /v1/chat/completions
-   │   ├─ Headers: Authorization: Bearer OPENAI_API_KEY
-   │   └─ Body: [original request body]
-   │
-   ├─→ Send Request (httpx AsyncClient)
-   │
-5. Response Handling
-   │
-   ├─→ Detect Response Type
-   │   ├─ Streaming (text/event-stream)
-   │   │   ├─→ Stream Chunks to Client
-   │   │   ├─→ Collect Chunks for Logging
-   │   │   └─→ Log Complete Response After Stream Ends
-   │   │
-   │   └─ Non-Streaming (application/json)
-   │       ├─→ Read Full Response
-   │       ├─→ Log Request + Response
-   │       └─→ Return Response to Client
-   │
-6. Response Logging (Post-Forward)
-   │
-   ├─→ Add Response to Log Entry
-   │   ├─ status_code
-   │   ├─ headers
-   │   ├─ body
-   │   └─ streaming: true/false
-   │
-   ├─→ Determine Log Filename
-   │   ├─ With Auth: {user_id}_{model}_{YYYYMMDD}.jsonl
-   │   └─ Without Auth: {model}_{YYYYMMDD}.jsonl
-   │
-   └─→ Append to Storage
-       ├─ Local: logs/{filename}
-       └─ Azure: az://proxy-logs/{filename}
-```
-
-### 10.3 Infrastructure Deployment Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Infrastructure Deployment Flow                      │
-└─────────────────────────────────────────────────────────────────┘
-
-1. Developer Runs `pulumi up`
-   │
-2. Pulumi Reads Configuration
-   │
-   ├─→ Pulumi.dev.yaml (stack config)
-   ├─→ infra/__main__.py (program)
-   └─→ Environment Variables
-   │
-3. Azure Authentication
-   │
-   ├─→ `az login` (Azure CLI)
-   └─→ Use Default Credentials
-   │
-4. Resource Creation (Declarative)
-   │
-   ├─→ Create Resource Group
-   │   └─ Name: {storageAccountName}-rg
-   │   └─ Location: eastus2
-   │
-   ├─→ Create Storage Account
-   │   ├─ SKU: Standard_LRS
-   │   ├─ Kind: StorageV2
-   │   ├─ Access Tier: Hot
-   │   └─ HTTPS Only: true
-   │
-   ├─→ Create Table Storage Table
-   │   └─ Name: userkeys
-   │
-   └─→ Create Blob Container
-       └─ Name: proxy-logs
-   │
-5. Output Credentials
-   │
-   ├─→ Export Storage Account Name
-   ├─→ Export Storage Account Key (secret)
-   └─→ Export Environment Variables
-       └─ `source <(pulumi stack output envVars)`
-   │
-6. Developer Configures Proxy
-   │
-   ├─→ Set Environment Variables in .env
-   │   ├─ AZURE_STORAGE_ACCOUNT_NAME
-   │   └─ AZURE_STORAGE_ACCOUNT_KEY
-   │
-   └─→ Restart Proxy Service
-```
 
 ---
 
@@ -1487,8 +1232,8 @@ Content-Type: application/json
 | `src/llmaven/main.py` | `uvicorn llmaven.main:app` | FastAPI app (direct) |
 | `src/llmaven/frontend/app.py` | `streamlit run app.py` | Streamlit UI (direct) |
 | `legacy/rubin-panel-app.py` | `pixi run serve-panel` | Legacy Panel chat UI |
-| `proxy/main.py` | `python main.py` or `uvicorn main:app` | OpenAI proxy |
-| `infra/__main__.py` | `pulumi up` | Infrastructure deployment |
+| `archive/proxy/main.py` | `python main.py` or `uvicorn main:app` | OpenAI proxy (archived) |
+| `archive/infra/__main__.py` | `pulumi up` | Infrastructure deployment (archived) |
 
 ### Key Library Files
 
@@ -1503,15 +1248,15 @@ Content-Type: application/json
 | `src/llmaven/schemas/generate.py` | GenerationRequest schema |
 | `src/llmaven/v1/endpoints/retrieve.py` | Retrieve endpoint handler |
 | `src/llmaven/v1/endpoints/generate.py` | Generate endpoint handler |
-| `proxy/auth.py` | API key authentication |
-| `proxy/data_log.py` | Request/response logging |
+| `archive/proxy/auth.py` | API key authentication (archived) |
+| `archive/proxy/data_log.py` | Request/response logging (archived) |
 
 ### Docker & CI/CD
 
 | File | Purpose |
 |------|---------|
-| `proxy/Dockerfile` | Multi-stage Alpine container |
-| `.github/workflows/proxy-container.yml` | GitHub Actions: build/push proxy image |
+| `archive/proxy/Dockerfile` | Multi-stage Alpine container (archived) |
+| `.github/workflows/proxy-container.yml` | GitHub Actions: build/push proxy image (may be outdated) |
 | `.devcontainer/Dockerfile` | VS Code dev container |
 
 ---
@@ -1593,80 +1338,7 @@ EMBEDDING_MODEL = "intfloat/multilingual-e5-large-instruct"
 
 **Important**: Changing embedding models requires re-indexing the vector database
 
-### 12.3 Add a New User to Proxy
-
-**Scenario**: Create API key for user `alice@example.com`
-
-**Option 1: Using Azure Portal**
-1. Navigate to Storage Account → Tables → `userkeys`
-2. Add Entity:
-   - PartitionKey: `users`
-   - RowKey: `alice-uuid-123`
-   - api_key: `sk-proxy-alice-abc123`
-   - user_name: `Alice Smith`
-   - created_at: `2025-01-15T10:00:00Z`
-
-**Option 2: Using `infra/users.py` (if implemented)**
-```bash
-pixi shell -e infra
-python infra/users.py add --user-id alice-uuid-123 --name "Alice Smith"
-# Outputs: sk-proxy-alice-abc123
-```
-
-**Verification**:
-```bash
-curl -H "Authorization: Bearer sk-proxy-alice-abc123" \
-     http://localhost:8888/v1/models
-```
-
-### 12.4 Deploy Proxy to Production
-
-**Steps**:
-
-1. **Build Docker Image**:
-```bash
-cd proxy
-docker build -t llmaven-proxy:latest .
-```
-
-2. **Test Locally**:
-```bash
-docker run -p 8888:8888 \
-  -e OPENAI_API_KEY=sk-... \
-  -e OPENAI_BASE_URL=https://api.openai.com \
-  -e AUTH_ENABLED=true \
-  -e STORAGE_TYPE=azure \
-  -e AZURE_STORAGE_ACCOUNT_NAME=myaccount \
-  -e AZURE_STORAGE_ACCOUNT_KEY=key \
-  llmaven-proxy:latest
-```
-
-3. **Push to Registry** (automatic via GitHub Actions):
-```bash
-git add proxy/
-git commit -m "Update proxy configuration"
-git push origin main
-# GitHub Actions builds and pushes to ghcr.io
-```
-
-4. **Deploy to Azure Container Instances** (manual):
-```bash
-az container create \
-  --resource-group llmaven-rg \
-  --name llmaven-proxy \
-  --image ghcr.io/uw-ssec/llmaven/proxy:latest \
-  --ports 8888 \
-  --environment-variables \
-    OPENAI_API_KEY=sk-... \
-    OPENAI_BASE_URL=https://api.openai.com \
-    AUTH_ENABLED=true \
-    STORAGE_TYPE=azure \
-    AZURE_STORAGE_ACCOUNT_NAME=myaccount \
-  --secure-environment-variables \
-    AZURE_STORAGE_ACCOUNT_KEY=key
-```
-
-### 12.5 Add New Vector Database Collection
+### 12.3 Add New Vector Database Collection
 
 **Scenario**: Index arXiv papers on climate science
 
@@ -1717,7 +1389,7 @@ EXISTING_QDRANT_PATH = "data/vector_stores/arxiv_climate_science"
 pixi run serve-panel
 ```
 
-### 12.6 Debug Slow Retrieval
+### 12.4 Debug Slow Retrieval
 
 **Symptoms**: Vector search takes >5 seconds
 
@@ -1849,53 +1521,7 @@ olmo = LlamaCpp(
 
 ---
 
-### 13.3 Proxy Issues
-
-**Problem**: 401 Unauthorized despite valid API key
-
-**Cause**: Cache not refreshed, or table schema incorrect
-
-**Debug**:
-```python
-# Check cache
-from proxy.auth import UserKeyStore
-store = UserKeyStore()
-print(store.key_cache)  # Should contain your API key
-
-# Force refresh
-store._refresh_cache()
-```
-
----
-
-**Problem**: Logs not appearing in Azure Blob Storage
-
-**Cause**: Credentials or container name incorrect
-
-**Debug**:
-```python
-from proxy.data_log import DataLogger
-
-logger = DataLogger()
-print(f"Storage Type: {logger.storage_type}")
-print(f"Base Path: {logger.base_path}")
-
-# Test write
-test_entry = {"timestamp": "2025-01-15T10:00:00", "test": True}
-logger.log_entry(test_entry)
-```
-
----
-
-**Problem**: Streaming responses not working
-
-**Cause**: Content-Type header not detected as `text/event-stream`
-
-**Debug**: Check `proxy/main.py` lines 177-181. Ensure OpenAI returns correct headers.
-
----
-
-### 13.4 Dependency Conflicts
+### 13.3 Dependency Conflicts
 
 **Problem**: `pixi install` fails with solver error
 
@@ -1908,28 +1534,24 @@ logger.log_entry(test_entry)
 
 ---
 
-**Problem**: Import errors for Azure packages
+**Problem**: Import errors for packages
 
 **Cause**: Using wrong pixi environment
 
 **Solution**:
 ```bash
-# For proxy
-pixi shell -e proxy
-python proxy/main.py
-
-# For infrastructure
-pixi shell -e infra
-cd infra && pulumi up
-
 # For main app
-pixi shell  # Default environment
-python legacy/rubin-panel-app.py
+pixi shell -e llmaven
+llmaven serve
+
+# For frontend
+pixi shell -e llmaven
+llmaven ui
 ```
 
 ---
 
-### 13.5 Performance Issues
+### 13.4 Performance Issues
 
 **Problem**: Panel UI is slow to respond
 
@@ -1956,7 +1578,7 @@ uvicorn app.main:app --timeout-keep-alive 300
 
 ---
 
-### 13.6 Platform-Specific Issues
+### 13.5 Platform-Specific Issues
 
 **macOS ARM64**:
 - llama-cpp-python may require manual build with Metal support
@@ -1968,7 +1590,7 @@ uvicorn app.main:app --timeout-keep-alive 300
 
 ---
 
-### 13.7 Configuration Mistakes
+### 13.6 Configuration Mistakes
 
 **Problem**: `.env` file not loaded
 
@@ -1978,21 +1600,7 @@ uvicorn app.main:app --timeout-keep-alive 300
 ```bash
 # Always run from project root
 cd /path/to/llmaven
-cd proxy
-python main.py  # Loads .env from current directory
-```
-
----
-
-**Problem**: `OPENAI_API_KEY` not set in proxy
-
-**Cause**: Forgot to copy `.env.example` to `.env`
-
-**Solution**:
-```bash
-cd proxy
-cp .env.example .env
-# Edit .env with your actual key
+llmaven serve
 ```
 
 ---
@@ -2090,24 +1698,11 @@ Now raises ValueError with actionable error message.
 pixi add <package>
 
 # Add to specific environment
-pixi add --feature proxy <package>
+pixi add --feature llmaven <package>
 
 # Add PyPI package
 pixi add --pypi <package>
 ```
-
-**Proxy Requirements** (`proxy/requirements.txt`):
-```bash
-# Add package
-echo "new-package>=1.0.0" >> proxy/requirements.txt
-
-# Rebuild Docker image
-docker build -t llmaven-proxy:latest proxy/
-```
-
-**Rationale for Dual Management**:
-- `pixi.toml`: Development environment (all features)
-- `proxy/requirements.txt`: Production proxy (minimal dependencies)
 
 ### 14.5 Documentation Standards
 
@@ -2271,17 +1866,6 @@ pytest --cov=app --cov=core           # Run with coverage
 pre-commit run --all-files            # Run all pre-commit hooks
 flake8 app/ core/ proxy/              # Lint Python code
 
-# Proxy
-cd proxy && python main.py            # Run proxy locally
-docker build -t llmaven-proxy .       # Build proxy container
-
-# Infrastructure
-cd infra                              # Navigate to infra
-pulumi login --local                  # Login to Pulumi (local)
-pulumi stack init dev                 # Create stack
-pulumi up                             # Deploy infrastructure
-pulumi destroy                        # Destroy resources
-source <(pulumi stack output envVars) # Export credentials
 
 # Git
 git checkout -b feature/my-feature    # Create feature branch
@@ -2304,13 +1888,6 @@ Problem: Application not working
 │
 ├─ Is it a model loading issue?
 │  ├─ Yes → Check GPU memory, try 4-bit quantization
-│  └─ No → Continue
-│
-├─ Is it a proxy issue?
-│  ├─ Yes
-│  │  ├─ 401 Unauthorized? → Check API keys, refresh cache
-│  │  ├─ Logs not appearing? → Verify Azure credentials
-│  │  └─ Streaming not working? → Check Content-Type headers
 │  └─ No → Continue
 │
 ├─ Is it a dependency issue?
@@ -2346,34 +1923,6 @@ flowchart TD
     style G fill:#e0f2f1,stroke:#00897b,stroke-width:2px
 ```
 
-### Proxy Architecture
-
-```mermaid
-flowchart TD
-    A[Client] -->|POST /v1/chat/completions<br/>Authorization: Bearer sk-proxy-key| B[FastAPI Proxy]
-
-    subgraph Proxy[FastAPI Proxy Service]
-        B --> C[Authentication Middleware<br/>Azure Table Storage + Cache]
-        C --> D[Request Logger<br/>Create log entry]
-        D --> E[Forward to OpenAI API<br/>httpx AsyncClient]
-        E --> F[Stream Response to Client<br/>Collect chunks for logging]
-        F --> G[Response Logger<br/>Append to storage]
-    end
-
-    G --> H[Azure Blob Storage<br/>Logs]
-    C --> I[Azure Table Storage<br/>User Keys]
-
-    style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style Proxy fill:#fff3e0,stroke:#f57c00,stroke-width:3px
-    style C fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style D fill:#fff9c4,stroke:#f9a825,stroke-width:2px
-    style E fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    style G fill:#e0f2f1,stroke:#00897b,stroke-width:2px
-    style H fill:#ffebee,stroke:#c62828,stroke-width:2px
-    style I fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
-```
-
 ---
 
 ## Appendix E: Environment Variables Reference
@@ -2384,26 +1933,6 @@ flowchart TD
 |----------|---------|-------------|
 | `EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-large-instruct` | HuggingFace embedding model |
 
-### Proxy Service
-
-| Variable | Default | Required | Description |
-|----------|---------|----------|-------------|
-| `OPENAI_API_KEY` | - | Yes | OpenAI API key |
-| `OPENAI_BASE_URL` | - | Yes | OpenAI API base URL |
-| `PROXY_PORT` | 8888 | No | Proxy server port |
-| `PROXY_TIMEOUT` | 300 | No | Request timeout (seconds) |
-| `AUTH_ENABLED` | true | No | Enable API key auth |
-| `STORAGE_TYPE` | local | No | `local` or `azure` |
-| `LOCAL_LOG_DIR` | logs | No | Local log directory |
-| `AZURE_STORAGE_ACCOUNT_NAME` | - | If `STORAGE_TYPE=azure` | Azure account name |
-| `AZURE_STORAGE_ACCOUNT_KEY` | - | If `STORAGE_TYPE=azure` | Azure account key |
-| `AZURE_STORAGE_CONTAINER` | proxy-logs | No | Azure blob container |
-
-### Infrastructure
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| Configured via Pulumi stack files (`Pulumi.dev.yaml`) | | See `infra/README.md` |
 
 ---
 

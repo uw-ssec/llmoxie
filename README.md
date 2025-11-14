@@ -29,9 +29,9 @@ graph TB
     subgraph Main[LLMaven Architecture]
         UI[Streamlit UI<br/>Port 8501] --> Backend[FastAPI Backend<br/>Port 8000]
 
-        Backend --> Endpoints[API Endpoints]
+        Backend --> EndpointsGroup
 
-        subgraph Endpoints[API Endpoints]
+        subgraph EndpointsGroup[API Endpoints]
             Retrieve[/v1/retrieve]
             Generate[/v1/generate]
         end
@@ -51,7 +51,7 @@ graph TB
     style Main fill:#f9f9f9,stroke:#333,stroke-width:2px
     style UI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style Backend fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style Endpoints fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style EndpointsGroup fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     style RetService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
     style GenService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
     style Qdrant fill:#fff9c4,stroke:#f9a825,stroke-width:2px
@@ -173,7 +173,9 @@ The UI will open automatically in your browser at http://localhost:8501
 3. **View Results**: See retrieved document chunks and AI-generated answers
 4. **Chat History**: All interactions are stored in the session
 
-### Option 2: Using the Legacy Panel App
+### Option 2: Using the Legacy Panel App (Archived)
+
+**Note**: The Panel app is archived and located in `archive/legacy/`. It may still be functional but is no longer actively maintained.
 
 For backward compatibility, you can use the original Panel-based application:
 
@@ -331,18 +333,19 @@ llmaven/
 │       └── endpoints/        # Endpoint implementations
 │           ├── retrieve.py
 │           └── generate.py
-├── proxy/                    # OpenAI API proxy service
-│   ├── main.py               # Proxy server
-│   ├── auth.py               # API key authentication
-│   ├── data_log.py           # Request/response logging
-│   └── README.md             # Proxy documentation
-├── infra/                    # Infrastructure as code
-│   ├── __main__.py           # Pulumi program
-│   ├── users.py              # User management
-│   └── README.md             # Infrastructure docs
-├── legacy/                   # Legacy Panel application
-│   ├── rubin-panel-app.py    # Original Panel app
-│   └── vector_store.py       # Legacy vector store utilities
+├── archive/                  # Archived code (unused)
+│   ├── proxy/                # OpenAI API proxy service (archived)
+│   │   ├── main.py           # Proxy server
+│   │   ├── auth.py           # API key authentication
+│   │   ├── data_log.py       # Request/response logging
+│   │   └── README.md         # Proxy documentation
+│   ├── infra/                # Infrastructure as code (archived)
+│   │   ├── __main__.py       # Pulumi program
+│   │   ├── users.py          # User management
+│   │   └── README.md         # Infrastructure docs
+│   └── legacy/               # Legacy Panel application (archived)
+│       ├── rubin-panel-app.py # Original Panel app
+│       └── vector_store.py   # Legacy vector store utilities
 ├── tests/                    # Test suite
 │   ├── test_retriever.py
 │   └── test_generator.py
@@ -392,73 +395,40 @@ llmaven serve --env development --reload
 
 Changes to Python files will automatically restart the server.
 
-## OpenAI Proxy Service
+## Archived Components
 
-LLMaven includes an optional OpenAI API proxy for logging and usage tracking.
+The following components have been moved to the `archive/` directory and are no longer actively maintained:
 
-### Setup
+### OpenAI Proxy Service (Archived)
 
-1. **Configure environment** (`proxy/.env`):
-   ```bash
-   OPENAI_API_KEY=your-api-key-here
-   STORAGE_TYPE=local  # or 'azure'
-   LOCAL_LOG_DIR=logs
-   ```
+An optional OpenAI API proxy for logging and usage tracking. Located in `archive/proxy/`.
 
-2. **Start the proxy**:
-   ```bash
-   pixi run -e proxy python proxy/main.py
-   ```
-
-3. **Use the proxy**:
-   Point your OpenAI client to `http://localhost:8888`
-
-### Features
-
+**Features**:
 - Full OpenAI API v1 compatibility
 - Streaming support for chat completions
 - Request/response logging
 - Azure Blob Storage integration
 - API key authentication
-- Daily log rotation
 
-See [proxy/README.md](/Users/lsetiawan/Repos/SSEC/llmaven/proxy/README.md) for detailed documentation.
+See `archive/proxy/README.md` for documentation.
 
-## Infrastructure Deployment
+### Infrastructure as Code (Archived)
 
-Deploy LLMaven infrastructure to Azure using Pulumi.
+Pulumi-based Azure infrastructure deployment. Located in `archive/infra/`.
 
-### Prerequisites
+**Resources**:
+- Azure Resource Group
+- Storage Account
+- Table Storage
+- Blob Storage containers
 
-- Azure CLI (`az login`)
-- Pulumi CLI
+See `archive/infra/README.md` for documentation.
 
-### Deploy
+### Legacy Panel App (Archived)
 
-```bash
-# Enter infrastructure environment
-pixi shell -e infra
+Original Panel-based chat UI. Located in `archive/legacy/`.
 
-cd infra
-
-# Login to Pulumi (local backend)
-pulumi login --local
-
-# Create stack
-pulumi stack init dev
-
-# Deploy
-pulumi up
-```
-
-### Export Credentials
-
-```bash
-cd infra
-source <(pulumi stack output envVars)
-```
-
-See [infra/README.md](/Users/lsetiawan/Repos/SSEC/llmaven/infra/README.md) for detailed documentation.
+See the "Option 2" in the Usage section above for running the legacy app.
 
 ## Vector Database Setup
 
