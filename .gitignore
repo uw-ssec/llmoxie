@@ -177,7 +177,6 @@ models-preprocessing/
 # Raw data (large files)
 data/raw/
 data/vector_stores/
-resources/
 
 # Model
 models/

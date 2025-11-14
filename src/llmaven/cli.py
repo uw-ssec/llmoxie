@@ -242,6 +242,50 @@ def ui(
 
 
 @app.command()
+def init(
+    environment: str = typer.Option(
+        "dev",
+        "--environment",
+        "-e",
+        help="Environment to configure (dev, staging, prod)",
+    ),
+    output: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output path for configuration file",
+    ),
+    interactive: bool = typer.Option(
+        True,
+        "--interactive/--no-interactive",
+        help="Interactive mode with prompts",
+    ),
+) -> None:
+    """Initialize LLMaven deployment configuration.
+
+    Generates llmaven-config.yaml with sensible defaults for the specified environment.
+
+    Examples:
+        Interactive setup for dev:
+            llmaven init
+
+        Generate prod config non-interactively:
+            llmaven init -e prod -o llmaven-config.prod.yaml --no-interactive
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.init import initialize_config
+
+    output_path = Path(output) if output else Path("llmaven-config.yaml")
+
+    initialize_config(
+        environment=environment,
+        output_path=output_path,
+        interactive=interactive,
+    )
+
+
+@app.command()
 def version() -> None:
     """Display the LLMaven version."""
     from llmaven import __version__

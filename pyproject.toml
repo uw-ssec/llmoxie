@@ -52,6 +52,13 @@ test = [
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
 ]
+deploy = [
+    "pulumi>=3.100.0",
+    "pulumi-azure-native>=2.0.0",
+    "pulumi-azuread>=5.0.0",
+    "pulumi-random>=4.0.0",
+    "pyyaml>=6.0.0",
+]
 
 [project.scripts]
 llmaven = "llmaven.cli:main"
