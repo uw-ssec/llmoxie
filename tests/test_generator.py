@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from fastapi.testclient import TestClient
-from app.main import app
+from llmaven.main import app
 
 client = TestClient(app)
 

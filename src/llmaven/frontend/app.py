@@ -3,16 +3,7 @@ import requests
 import json
 import time
 from langchain.document_loaders import PyMuPDFLoader
-from config import (
-    API_BASE_URL, 
-    EMBEDDING_MODEL, 
-    GENERATION_MODEL, 
-    RETRIEVAL_K, 
-    EXISTING_COLLECTION, 
-    EXISTING_QDRANT_PATH, 
-    expand_query, 
-    format_prompt
-)
+from llmaven.frontend.config import config, expand_query, format_prompt
 
 st.title("RAG Chatbot")
 
@@ -63,11 +54,11 @@ if query := st.chat_input("Your question:"):
             retrieve_payload = {
                 "documents": documents,
                 "query": expand_query(query),
-                "existing_collection": EXISTING_COLLECTION,
-                "existing_qdrant_path": EXISTING_QDRANT_PATH,
-                "embedding_model": EMBEDDING_MODEL
+                "existing_collection": config.existing_collection,
+                "existing_qdrant_path": config.existing_qdrant_path,
+                "embedding_model": config.embedding_model
             }
-            retrieve_response = requests.post(f"{API_BASE_URL}/retrieve/", json=retrieve_payload)
+            retrieve_response = requests.post(f"{config.api_base_url}/retrieve/", json=retrieve_payload)
             retrieved_docs = retrieve_response.json().get("docs", []) if retrieve_response.status_code == 200 else []
         except Exception as e:
             retrieved_docs = []
@@ -86,9 +77,9 @@ if query := st.chat_input("Your question:"):
         try:
             generate_payload = {
                 "prompt": format_prompt(retrieved_text, query),
-                "generation_model": GENERATION_MODEL
+                "generation_model": config.generation_model
             }
-            generate_response = requests.post(f"{API_BASE_URL}/generate/", json=generate_payload)
+            generate_response = requests.post(f"{config.api_base_url}/generate/", json=generate_payload)
             generated_answer = generate_response.json().get("answer", "") if generate_response.status_code == 200 else "⚠️ Failed to generate response."
         except Exception as e:
             generated_answer = "⚠️ Failed to generate response."

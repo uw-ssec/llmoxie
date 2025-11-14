@@ -1,6 +1,6 @@
 import logging
 import os
-from core.generator.language_model import LanguageModel
+from llmaven.core.generator.language_model import LanguageModel
 
 # Enable Hugging Face logs
 import transformers

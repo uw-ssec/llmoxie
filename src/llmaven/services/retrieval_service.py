@@ -1,5 +1,5 @@
 from langchain.schema import Document
-from core.retriever.retriever import Retriever
+from ..core.retriever.retriever import Retriever
 
 def json_to_document(json_data):
     """Convert JSON dict to LangChain Document object."""

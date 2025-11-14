@@ -79,6 +79,7 @@ tenacity = "==8.5.0"
 
 
 [environments]
+llmaven = { features = ["docker", "llmaven"], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -86,3 +87,45 @@ infra = { features = [
 proxy = { features = [
     "proxy",
 ], solve-group = "proxy", no-default-feature = true }
+
+# === LLMaven API dependencies and tasks ===
+
+[feature.llmaven.pypi-dependencies]
+llmaven = { path = ".", editable = true, extras = ["test"]}
+
+[feature.llmaven.dependencies]
+python = "3.12.*"
+
+[feature.llmaven.tasks]
+api-server = { cmd = "llmaven serve" }
+ui = { cmd = "llmaven ui" }
+
+# === LLMaven API dependencies and tasks
+
+
+# === Docker related dependencies and tasks ===
+
+[feature.docker.dependencies]
+docker-compose = "*"
+docker-cli = "*"
+
+[feature.docker.tasks]
+# Start LLMaven services
+up = { cmd = "docker-compose up -d", cwd = "docker" }
+
+# Stop LLMaven services
+down = { cmd = "docker-compose down", cwd = "docker" }
+
+# View logs
+logs = { cmd = "docker-compose logs -f", cwd = "docker" }
+
+# Check service status
+status = { cmd = "docker-compose ps", cwd = "docker" }
+
+# Restart services
+restart = { cmd = "docker-compose restart", cwd = "docker" }
+
+# Clean up volumes (WARNING: This will delete all data)
+clean = { cmd = "docker-compose down -v", cwd = "docker" }
+
+# === End Docker related dependencies and tasks ===

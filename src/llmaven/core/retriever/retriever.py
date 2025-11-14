@@ -1,7 +1,7 @@
 from pathlib import Path
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
-from core.embeddings.embedding_model import get_embedding_model
+from ..embeddings.embedding_model import get_embedding_model
 import shutil
 
 class Retriever:
