@@ -77,7 +77,6 @@ llama-cpp-python = { url = "https://github.com/abetlen/llama-cpp-python/releases
 streamlit = "*"
 tenacity = "==8.5.0"
 
-
 [environments]
 llmaven = { features = ["docker", "llmaven"], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }

@@ -1,0 +1,127 @@
+services:
+  # Postgresql Service
+  db:
+    image: postgres:16
+    restart: always
+    container_name: llmaven_db
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./create_service_dbs.sql:/docker-entrypoint-initdb.d/create_service_dbs.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llmaven-network
+
+  # MinIO Service
+  minio:
+    image: minio/minio:latest
+    container_name: llmaven_minio
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console
+    env_file:
+      - .env
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: always
+    networks:
+      - llmaven-network
+
+  # MinIO Create Buckets service
+  createbuckets:
+    image: quay.io/minio/mc:latest
+    depends_on:
+      - minio
+    env_file:
+      - .env
+    restart: on-failure
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set dockerminio $${S3_ENDPOINT_URL} $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      /usr/bin/mc mb dockerminio/mlflow;
+      /usr/bin/mc mb dockerminio/llmaven;
+      exit 0;
+      "
+    networks:
+      - llmaven-network
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: llmaven_mlflow
+    env_file:
+      - .env
+    ports:
+      - "${MLFLOW_PORT}:${MLFLOW_PORT}"  # MLflow UI
+    command: >
+      /bin/bash -c "
+        pip install --no-cache-dir psycopg2-binary boto3 && mlflow server --allowed-hosts '*' --cors-allowed-origins '*'
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://${MLFLOW_HOST}:${MLFLOW_PORT}/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: always
+    networks:
+      - llmaven-network
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.79.1-stable
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    ports:
+      - "4000:4000" # Map the container port to the host, change the host port if necessary
+    env_file:
+      - .env # Load local .env file
+    depends_on:
+      db:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    entrypoint: >
+      /bin/bash -c "pip install --no-cache-dir mlflow && litellm --config /app/config.yaml"
+    healthcheck:  # Defines the health check configuration for the container
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness || exit 1" ]  # Command to execute for health check
+      interval: 30s  # Perform health check every 30 seconds
+      timeout: 10s   # Health check command times out after 10 seconds
+      retries: 3     # Retry up to 3 times if health check fails
+      start_period: 40s  # Wait 40 seconds after container start before beginning health checks
+    networks:
+      - llmaven-network
+
+volumes:
+  postgres_data:
+    name: llmaven_postgres_data # Named volume for Postgres data persistence
+  minio_data:
+    driver: local
+
+networks:
+  llmaven-network:
+    driver: bridge
