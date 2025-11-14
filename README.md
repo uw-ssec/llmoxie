@@ -12,13 +12,10 @@ LLMaven's scientific goal is to create accessible AI tools for researchers who n
 - **Streamlit Frontend**: Interactive chat interface for document Q&A
 - **RAG Architecture**: Combines retrieval from vector databases with language model generation
 - **Vector Database**: Qdrant-based document storage with semantic search (MMR - Maximal Marginal Relevance)
-- **Multiple Storage Backends**: Support for local and Azure Blob Storage
 - **Flexible Models**:
   - Embedding models via HuggingFace (default: sentence-transformers/all-MiniLM-L12-v2)
   - Generation models via HuggingFace Transformers (default: allenai/OLMo-2-1124-7B-Instruct)
   - Quantization support (4-bit/8-bit) for efficient inference
-- **OpenAI Proxy Service**: Optional proxy with logging and authentication
-- **Infrastructure as Code**: Pulumi-based Azure deployment
 
 ## Architecture
 
@@ -43,11 +40,6 @@ graph TB
         GenService --> HF["HuggingFace Transformers<br/>LLM"]
     end
 
-    subgraph Optional[Optional Components]
-        Proxy["OpenAI Proxy<br/>Port 8888"]
-        Azure["Azure Infrastructure"]
-    end
-
     style Main fill:#f9f9f9,stroke:#333,stroke-width:2px
     style UI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style Backend fill:#fff3e0,stroke:#f57c00,stroke-width:2px
@@ -56,9 +48,6 @@ graph TB
     style GenService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
     style Qdrant fill:#fff9c4,stroke:#f9a825,stroke-width:2px
     style HF fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    style Optional fill:#eceff1,stroke:#455a64,stroke-width:2px
-    style Proxy fill:#e0f2f1,stroke:#00897b,stroke-width:2px
-    style Azure fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
 ```
 
 ### Core Components
@@ -86,12 +75,6 @@ graph TB
    - Quantized model loading (4-bit/8-bit)
    - HuggingFace Pipeline integration
    - Configurable generation parameters
-
-5. **OpenAI Proxy** (`/proxy/main.py`)
-   - Proxy service for OpenAI API
-   - Request/response logging
-   - API key authentication
-   - Azure Blob Storage integration
 
 ## Installation
 
@@ -523,18 +506,6 @@ See [CODE_OF_CONDUCT.md](/Users/lsetiawan/Repos/SSEC/llmaven/CODE_OF_CONDUCT.md)
 
 This project is licensed under the BSD License - see the [LICENSE](/Users/lsetiawan/Repos/SSEC/llmaven/LICENSE) file for details.
 
-## Citation
-
-If you use LLMaven in your research, please cite:
-
-```bibtex
-@software{llmaven2024,
-  title = {LLMaven: An AI-Powered Tool Library for Scientific Research},
-  author = {UW SSEC Team},
-  year = {2024},
-  url = {https://github.com/uw-ssec/llmaven}
-}
-```
 
 ## Acknowledgments
 
