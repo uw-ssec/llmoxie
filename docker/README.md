@@ -46,43 +46,47 @@ docker/
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       LLMaven Stack                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────┐      ┌──────────────┐                    │
-│  │   LiteLLM    │      │   MLflow     │                    │
-│  │    Proxy     │─────▶│   Tracking   │                    │
-│  │  (Port 4000) │      │  (Port 8080) │                    │
-│  └──────┬───────┘      └──────┬───────┘                    │
-│         │                     │                             │
-│         │                     │                             │
-│         ▼                     ▼                             │
-│  ┌──────────────────────────────────┐                      │
-│  │        PostgreSQL Database        │                      │
-│  │          (Port 5432)              │                      │
-│  │  - mlflow_db: MLflow backend      │                      │
-│  │  - litellm_db: LiteLLM storage    │                      │
-│  └───────────────────────────────────┘                      │
-│                                                              │
-│  ┌──────────────────────────────────┐                      │
-│  │      MinIO Object Storage         │                      │
-│  │   API: 9000 | Console: 9001      │                      │
-│  │  - mlflow: ML artifacts           │                      │
-│  │  - llmaven: General storage       │                      │
-│  └───────────────────────────────────┘                      │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "LLMaven Docker Stack"
+        subgraph "Application Layer"
+            LiteLLM["🤖 LiteLLM Proxy<br/>Port 4000<br/><br/>OpenAI-compatible API<br/>Multi-provider support<br/>Request logging"]
+            MLflow["📊 MLflow Tracking<br/>Port 8080<br/><br/>Experiment tracking<br/>Model registry<br/>Metrics visualization"]
+        end
+
+        subgraph "Data Layer"
+            PostgreSQL["🗄️ PostgreSQL<br/>Port 5432<br/><br/>Databases:<br/>• mlflow_db<br/>• litellm_db<br/>• llmaven"]
+            MinIO["💾 MinIO S3 Storage<br/>API: 9000 | Console: 9001<br/><br/>Buckets:<br/>• mlflow (artifacts)<br/>• llmaven (general)"]
+        end
+
+        subgraph "External"
+            Apps["📱 Applications<br/><br/>Python SDK<br/>cURL<br/>LangChain"]
+            Providers["☁️ LLM Providers<br/><br/>Azure OpenAI<br/>OpenAI<br/>Anthropic"]
+        end
+    end
+
+    Apps -->|"Chat Completions<br/>HTTP POST"| LiteLLM
+    LiteLLM -->|"Route requests"| Providers
+    LiteLLM -->|"Log requests/<br/>responses"| MLflow
+    LiteLLM -->|"Store config<br/>& metrics"| PostgreSQL
+    MLflow -->|"Store artifacts<br/>(models, plots)"| MinIO
+    MLflow -->|"Store metadata<br/>(runs, params)"| PostgreSQL
+
+    style LiteLLM fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    style MLflow fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style PostgreSQL fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style MinIO fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style Apps fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
+    style Providers fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
 ```
 
 ### Data Flow
 
-1. **LLM Requests**: Applications send requests to LiteLLM Proxy (port 4000)
-2. **Request Routing**: LiteLLM routes to configured LLM providers (Azure OpenAI, etc.)
-3. **Logging**: All requests/responses logged to MLflow for experiment tracking
-4. **Artifacts**: Model artifacts and experiment data stored in MinIO
-5. **Metadata**: Configuration and metrics stored in PostgreSQL databases
+1. **LLM Requests**: Applications send chat completion requests to LiteLLM Proxy (port 4000) using OpenAI-compatible API
+2. **Request Routing**: LiteLLM routes requests to configured LLM providers (Azure OpenAI, OpenAI, Anthropic, etc.)
+3. **Automatic Logging**: All requests and responses are automatically logged to MLflow for experiment tracking and analysis
+4. **Artifact Storage**: MLflow stores model artifacts, plots, and experiment data in MinIO S3-compatible storage
+5. **Metadata Storage**: Configuration, metrics, and run metadata are stored in PostgreSQL databases (mlflow_db, litellm_db)
 
 ## Prerequisites
 
