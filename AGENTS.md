@@ -4,6 +4,41 @@
 
 ---
 
+## Quick Reference: Recent Architecture Changes
+
+**IMPORTANT**: LLMaven has been refactored from a collection of standalone scripts into a modern, installable Python package:
+
+### What Changed
+- **Package Structure**: Code moved from `app/` and `core/` to `src/llmaven/` (standard Python package layout)
+- **CLI Interface**: New `llmaven` command with `serve`, `ui`, and `version` subcommands
+- **API Versioning**: Endpoints moved to `/v1/` prefix (was `/api/`)
+- **Configuration**: Pydantic Settings with environment variable support
+- **Schemas**: Explicit Pydantic models for request/response validation
+- **Installability**: Package can be installed via `pip install -e .` or `pixi`
+
+### Current Entry Points
+```bash
+# New (Recommended)
+llmaven serve              # Start FastAPI backend
+llmaven ui                 # Launch Streamlit frontend
+
+# Legacy (Still Works)
+pixi run serve-panel       # Original Panel UI
+```
+
+### Directory Mapping
+| Old Location | New Location | Status |
+|--------------|--------------|--------|
+| `app/` | `src/llmaven/` | Migrated |
+| `app/routers/` | `src/llmaven/v1/endpoints/` | Migrated |
+| `core/` | `src/llmaven/core/` | Migrated |
+| `frontend/` | `src/llmaven/frontend/` | Migrated |
+| `proxy/` | `proxy/` | Unchanged |
+| `infra/` | `infra/` | Unchanged |
+| `legacy/` | `legacy/` | Reference only |
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#1-project-overview)
@@ -48,7 +83,7 @@ LLMaven is a scientific research tool that democratizes AI-based research by pro
 
 ### High-Level Architecture
 
-LLMaven consists of three distinct but related systems:
+LLMaven has been refactored into a modern, modular architecture with three distinct but related systems:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -56,24 +91,40 @@ LLMaven consists of three distinct but related systems:
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌────────────────────┐  ┌──────────────────┐  ┌─────────────┐ │
-│  │   RAG Application  │  │  OpenAI Proxy    │  │ Infrastructure │
-│  │                    │  │                  │  │               │ │
-│  │ • Panel UI         │  │ • FastAPI Proxy  │  │ • Azure IaC   │ │
-│  │ • FastAPI Backend  │  │ • Auth Layer     │  │ • Pulumi      │ │
-│  │ • Streamlit UI     │  │ • Logging        │  │ • Table Store │ │
-│  │ • Vector DB        │  │ • Streaming      │  │               │ │
+│  │   LLMaven API      │  │  OpenAI Proxy    │  │Infrastructure│ │
+│  │  (FastAPI + CLI)   │  │                  │  │              │ │
+│  │                    │  │ • FastAPI Proxy  │  │ • Azure IaC  │ │
+│  │ • REST API (v1)    │  │ • Auth Layer     │  │ • Pulumi     │ │
+│  │ • Streamlit UI     │  │ • Logging        │  │ • Table Store│ │
+│  │ • CLI Interface    │  │ • Streaming      │  │              │ │
+│  │ • Vector DB        │  │                  │  │              │ │
+│  │                    │  │                  │  │              │ │
+│  │ Legacy:            │  │                  │  │              │ │
+│  │ • Panel UI         │  │                  │  │              │ │
 │  └────────────────────┘  └──────────────────┘  └─────────────┘ │
 │           │                      │                     │         │
 │           ▼                      ▼                     ▼         │
 │  ┌────────────────────┐  ┌──────────────────┐  ┌─────────────┐ │
-│  │  Core Libraries    │  │  Azure Blob      │  │ Azure Tables │ │
-│  │                    │  │  Storage         │  │ (User Keys)  │ │
-│  │ • Retriever        │  │  (Logs)          │  │              │ │
-│  │ • Generator        │  │                  │  │              │ │
-│  │ • Embeddings       │  │                  │  │              │ │
+│  │  Core Libraries    │  │  Azure Blob      │  │ Azure Tables│ │
+│  │  (src/llmaven/)    │  │  Storage         │  │ (User Keys) │ │
+│  │                    │  │  (Logs)          │  │             │ │
+│  │ • Retriever        │  │                  │  │             │ │
+│  │ • Generator        │  │                  │  │             │ │
+│  │ • Embeddings       │  │                  │  │             │ │
+│  │ • Schemas          │  │                  │  │             │ │
+│  │ • Services         │  │                  │  │             │ │
 │  └────────────────────┘  └──────────────────┘  └─────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Current Architecture (Post-Refactor)
+
+The project recently underwent a major refactoring to create a modern, installable Python package with:
+
+1. **LLMaven API Package** (src/llmaven/): Installable package with CLI and API
+2. **OpenAI Proxy Service** (proxy/): Standalone authentication and logging proxy
+3. **Infrastructure as Code** (infra/): Azure resource provisioning
+4. **Legacy Applications** (legacy/): Original Panel-based chat UI (still functional)
 
 ### Architectural Patterns
 
@@ -128,65 +179,86 @@ response = language_model.inference(prompt_with_context)
 
 ```
 llmaven/
-├── app/                          # FastAPI RAG application (modular backend)
-│   ├── main.py                   # FastAPI app entry point
-│   ├── routers/                  # API route handlers
-│   │   ├── retrieve.py           # Retrieval endpoint
-│   │   └── generate.py           # Generation endpoint
-│   └── services/                 # Business logic layer
-│       ├── retrieval_service.py  # Retrieval orchestration
-│       └── generation_service.py # Generation + model caching
+├── src/llmaven/                  # Main LLMaven package (installable)
+│   ├── __init__.py              # Package initialization with version
+│   ├── main.py                  # FastAPI application entry point
+│   ├── cli.py                   # CLI commands (serve, ui, version)
+│   ├── config.py                # Web service configuration
+│   │
+│   ├── v1/                      # API version 1 endpoints
+│   │   ├── router.py            # Main v1 router aggregator
+│   │   └── endpoints/           # Individual endpoint modules
+│   │       ├── retrieve.py      # Document retrieval endpoint
+│   │       └── generate.py      # Text generation endpoint
+│   │
+│   ├── schemas/                 # Pydantic request/response models
+│   │   ├── retrieve.py          # RetrieveRequest schema
+│   │   └── generate.py          # GenerationRequest schema
+│   │
+│   ├── services/                # Business logic layer
+│   │   ├── retrieval_service.py # Retrieval orchestration
+│   │   └── generation_service.py# Generation + model caching
+│   │
+│   ├── core/                    # Core ML/AI components
+│   │   ├── embeddings/
+│   │   │   └── embedding_model.py  # HuggingFace embeddings
+│   │   ├── retriever/
+│   │   │   └── retriever.py     # Qdrant vector DB operations
+│   │   └── generator/
+│   │       ├── language_model.py   # HuggingFace LLM with quantization
+│   │       └── embedding_model.py  # Alternative embedding utilities
+│   │
+│   └── frontend/                # Streamlit UI components
+│       ├── app.py               # Streamlit RAG chatbot interface
+│       └── config.py            # Frontend-specific configuration
 │
-├── core/                         # Reusable ML/AI components (library code)
-│   ├── embeddings/
-│   │   └── embedding_model.py    # HuggingFace embeddings wrapper
-│   ├── retriever/
-│   │   └── retriever.py          # Qdrant vector DB + retrieval logic
-│   └── generator/
-│       ├── language_model.py     # HuggingFace LLM with quantization
-│       └── embedding_model.py    # Alternate embedding utilities
-│
-├── proxy/                        # OpenAI API proxy service
+├── proxy/                        # OpenAI API proxy service (standalone)
 │   ├── main.py                   # FastAPI proxy server
 │   ├── auth.py                   # Azure Table Storage authentication
-│   ├── data_log.py               # Request/response logging (local/Azure)
+│   ├── data_log.py               # Request/response logging
 │   ├── requirements.txt          # Proxy-specific dependencies
 │   ├── Dockerfile               # Multi-stage production container
 │   └── .env.example             # Configuration template
 │
-├── frontend/                     # Streamlit UI (alternative interface)
-│   ├── app.py                   # Streamlit RAG chatbot
-│   └── config.py                # Frontend configuration
-│
 ├── infra/                        # Infrastructure as Code (Pulumi + Azure)
 │   ├── __main__.py              # Pulumi program (storage + tables)
 │   ├── users.py                 # User management utilities
+│   ├── Pulumi.yaml              # Pulumi project configuration
 │   └── README.md                # Infrastructure setup guide
 │
 ├── legacy/                       # Original/reference implementations
-│   ├── rubin-panel-app.py       # Panel-based chat UI (primary demo)
+│   ├── rubin-panel-app.py       # Panel-based chat UI (original demo)
 │   ├── rubin-app-gpu.py         # GPU-optimized variant
 │   ├── download_models.py       # Model download utilities
-│   └── notebooks/               # Jupyter notebooks
+│   ├── vector_store.py          # Legacy vector store utilities
+│   └── notebooks/               # Jupyter notebooks for experiments
 │
 ├── tests/                        # Test suite
-│   ├── test_retriever.py        # Retrieval API tests
+│   ├── test_retriever.py        # Retrieval API integration tests
 │   ├── test_generator.py        # Generation tests
-│   └── debug_language_model.py  # Debug utilities
+│   └── debug_language_model.py  # Debugging utilities
 │
-├── eval/                         # Evaluation notebooks
-│   └── Scrape-discourse.ipynb   # Data collection tools
+├── eval/                         # Evaluation and data collection
+│   └── Scrape-discourse.ipynb   # Data collection notebooks
 │
-├── .github/workflows/            # CI/CD pipelines
-│   └── proxy-container.yml      # Docker build/push for proxy
+├── docker/                       # Docker compose configurations
+│   └── .env                     # Docker environment variables
+│
+├── .github/                      # GitHub configuration
+│   ├── workflows/
+│   │   └── proxy-container.yml  # Docker build/push for proxy
+│   ├── dependabot.yml           # Dependency updates
+│   └── release.yml              # Release configuration
 │
 ├── .devcontainer/               # Dev container configs
 │   └── Dockerfile              # Development environment
 │
+├── pyproject.toml               # Python project metadata & dependencies
 ├── pixi.toml                    # Pixi package manager config
 ├── pixi.lock                    # Locked dependencies
 ├── .pre-commit-config.yaml      # Pre-commit hooks
 ├── .flake8                      # Linting configuration
+├── AGENTS.md                    # This file - technical reference
 └── README.md                    # User-facing documentation
 ```
 
@@ -194,19 +266,107 @@ llmaven/
 
 | Directory | Purpose | When to Modify |
 |-----------|---------|----------------|
-| `app/` | Backend API for RAG | Adding new API endpoints, service logic |
-| `core/` | Shared ML components | Changing retrieval/generation algorithms |
-| `proxy/` | OpenAI API proxy | Authentication, logging, or proxy features |
-| `frontend/` | Streamlit UI | User interface changes |
+| `src/llmaven/` | Main installable package | Core API development, adding features |
+| `src/llmaven/v1/` | API version 1 endpoints | Adding/modifying REST endpoints |
+| `src/llmaven/core/` | ML/AI components | Changing retrieval/generation algorithms |
+| `src/llmaven/services/` | Business logic | Orchestration and service-level logic |
+| `src/llmaven/schemas/` | API contracts | Request/response data models |
+| `src/llmaven/frontend/` | Streamlit UI | User interface changes |
+| `proxy/` | OpenAI API proxy | Authentication, logging, proxy features |
 | `infra/` | Cloud infrastructure | Azure resource modifications |
-| `legacy/` | Reference code | Avoid modifying; prefer `app/` for new features |
+| `legacy/` | Original implementations | Reference only; use for Panel UI |
 | `tests/` | Test suite | Adding tests for new features |
+| `docker/` | Container orchestration | Multi-service deployment setup |
 
 ---
 
 ## 4. Key Components
 
-### 4.1 Retriever (`core/retriever/retriever.py`)
+### 4.1 CLI Interface (`src/llmaven/cli.py`)
+
+**Responsibility**: Command-line interface for running LLMaven services
+
+**Commands**:
+```python
+llmaven serve    # Start the FastAPI backend server
+llmaven ui       # Launch the Streamlit frontend
+llmaven version  # Display version information
+```
+
+**Key Features**:
+- **serve**: Supports both development (uvicorn) and production (gunicorn) modes
+- **ui**: Automatically launches Streamlit with configurable host/port
+- **Environment-aware**: Development vs production configurations
+- **Worker management**: Auto-calculates optimal worker count for production
+
+**Usage Examples**:
+```bash
+# Development mode with auto-reload
+llmaven serve --env development --reload
+
+# Production mode with 4 workers
+llmaven serve --env production --workers 4
+
+# Launch UI on custom port
+llmaven ui --port 8080 --no-browser
+
+# Check version
+llmaven version
+```
+
+**Design Decisions**:
+- Uses Typer for CLI framework (type-safe, auto-documented)
+- Supports both uvicorn (dev) and gunicorn (prod) deployment modes
+- Integrated with package entry point for easy installation
+
+---
+
+### 4.2 FastAPI Application (`src/llmaven/main.py`)
+
+**Responsibility**: Main REST API application with endpoints and middleware
+
+**Key Features**:
+- **CORS Middleware**: Configurable cross-origin support
+- **Exception Handlers**: Consistent error response format
+- **API Documentation**: Auto-generated OpenAPI/Swagger docs
+- **Versioned Routes**: v1 API prefix for future compatibility
+
+**Endpoints**:
+```python
+GET  /              # API information and available routes
+GET  /ping          # Health check endpoint
+GET  /docs          # Swagger UI documentation
+GET  /redoc         # ReDoc documentation
+/v1/retrieve/       # Document retrieval (see v1 endpoints)
+/v1/generate/       # Text generation (see v1 endpoints)
+```
+
+**Configuration**:
+- Environment-based via `config.py` (Pydantic Settings)
+- Supports `.env` file with `API_` prefix
+- CORS, title, description, version all configurable
+
+---
+
+### 4.3 API v1 Router (`src/llmaven/v1/router.py`)
+
+**Responsibility**: Aggregate all v1 endpoints into single router
+
+**Design Pattern**: Modular router composition
+```python
+router = APIRouter(prefix="/v1")
+router.include_router(generate.router)  # /v1/generate
+router.include_router(retrieve.router)  # /v1/retrieve
+```
+
+**Why Versioned**:
+- Allows future API versions (v2, v3) without breaking changes
+- Clear deprecation path for older endpoints
+- Client compatibility across versions
+
+---
+
+### 4.4 Retriever (`src/llmaven/core/retriever/retriever.py`)
 
 **Responsibility**: Manage vector database operations and document retrieval
 
@@ -241,7 +401,14 @@ retriever.get_vector_store(
 docs = retriever.retrieve_docs("What is dark matter?")
 ```
 
-### 4.2 Language Model (`core/generator/language_model.py`)
+**Important Notes**:
+- Storage location: `data/vector_stores/` (auto-created)
+- Temp collection cleanup: Automatically deletes `temp_collection` before recreating
+- MMR search: Balances relevance and diversity in results
+
+---
+
+### 4.5 Language Model (`src/llmaven/core/generator/language_model.py`)
 
 **Responsibility**: Load and run HuggingFace language models with quantization
 
@@ -270,7 +437,9 @@ generation_config = {
 }
 ```
 
-### 4.3 Embedding Model (`core/embeddings/embedding_model.py`)
+---
+
+### 4.6 Embedding Model (`src/llmaven/core/embeddings/embedding_model.py`)
 
 **Responsibility**: Provide text embeddings for semantic search
 
@@ -284,9 +453,97 @@ def get_embedding_model(model_name: str = None) -> HuggingFaceEmbeddings
 
 **Common Models**:
 - `sentence-transformers/all-MiniLM-L12-v2` (fast, lightweight)
-- `intfloat/multilingual-e5-large-instruct` (multilingual, high-quality)
+- `intfloat/multilingual-e5-large-instruct` (multilingual, high-quality, default)
 
-### 4.4 OpenAI Proxy (`proxy/main.py`)
+---
+
+### 4.7 Retrieval Service (`src/llmaven/services/retrieval_service.py`)
+
+**Responsibility**: Orchestrate document retrieval operations
+
+**Key Function**:
+```python
+def perform_retrieval(documents, query, existing_collection,
+                      existing_qdrant_path, embedding_model)
+```
+
+**Workflow**:
+1. Convert JSON documents to LangChain Document objects
+2. Instantiate Retriever with specified embedding model
+3. Create temporary vector store OR load existing collection
+4. Retrieve relevant documents using query
+5. Format response with metadata and content preview (500 chars)
+
+**Design Decisions**:
+- Supports both ad-hoc document indexing and pre-built collections
+- Returns status code 200 on success for consistent API responses
+- Limits page_content preview to 500 characters to reduce payload size
+
+---
+
+### 4.8 Generation Service (`src/llmaven/services/generation_service.py`)
+
+**Responsibility**: Manage language model lifecycle and text generation
+
+**Key Features**:
+- **Global Model Cache**: `MODEL_INSTANCES` dict prevents re-loading models
+- **Lazy Loading**: Models loaded on first request, cached for subsequent requests
+- **8-bit Quantization**: Default quantization for memory efficiency
+
+**Functions**:
+```python
+def get_model(generation_model)      # Retrieve or create cached model
+def generate_answer(prompt, model)   # Generate text response
+```
+
+**Model Lifecycle**:
+```python
+# First request: Load and cache
+model = LanguageModel(model_name="allenai/OLMo-2-1124-7B-Instruct")
+model.load_language_model(quantization="8bit")
+model.load_hg_pipeline()
+MODEL_INSTANCES[model_name] = model  # Cache
+
+# Subsequent requests: Use cached instance
+model = MODEL_INSTANCES[model_name]  # Fast retrieval
+```
+
+**Why Caching**:
+- Model loading can take 30-60 seconds
+- Avoids re-loading for each request
+- Reduces memory footprint with shared instances
+
+---
+
+### 4.9 Pydantic Schemas (`src/llmaven/schemas/`)
+
+**Responsibility**: Define API request/response contracts
+
+**RetrieveRequest** (`retrieve.py`):
+```python
+class RetrieveRequest(BaseModel):
+    documents: Optional[List[Dict[str, Any]]] = []
+    query: str
+    existing_collection: Optional[str] = None
+    existing_qdrant_path: Optional[str] = None
+    embedding_model: str
+```
+
+**GenerationRequest** (`generate.py`):
+```python
+class GenerationRequest(BaseModel):
+    prompt: str
+    generation_model: str
+```
+
+**Design Pattern**: Pydantic for automatic validation and serialization
+- Type checking at runtime
+- Automatic OpenAPI schema generation
+- Clear error messages for invalid requests
+
+---
+
+### 4.10 OpenAI Proxy (`proxy/main.py`)
 
 **Responsibility**: Transparent proxy for OpenAI API with logging and auth
 
@@ -318,7 +575,9 @@ Client Request
 - **Content**: JSONL with request/response pairs
 - **Storage**: Local filesystem or Azure Blob Storage
 
-### 4.5 Data Logger (`proxy/data_log.py`)
+---
+
+### 4.11 Data Logger (`proxy/data_log.py`)
 
 **Responsibility**: Unified logging interface for local and cloud storage
 
@@ -342,7 +601,9 @@ AZURE_STORAGE_ACCOUNT_KEY=key
 AZURE_STORAGE_CONTAINER=proxy-logs
 ```
 
-### 4.6 User Authentication (`proxy/auth.py`)
+---
+
+### 4.12 User Authentication (`proxy/auth.py`)
 
 **Responsibility**: API key validation with Azure Table Storage backend
 
@@ -371,7 +632,49 @@ if user_info:
     user_name = user_info["user_name"]
 ```
 
-### 4.7 Infrastructure (`infra/__main__.py`)
+---
+
+### 4.13 Streamlit Frontend (`src/llmaven/frontend/app.py`)
+
+**Responsibility**: Interactive web UI for RAG chatbot
+
+**Key Features**:
+- **Chat Interface**: Message history with role-based display
+- **File Upload**: PDF document processing with PyMuPDF
+- **Real-time Retrieval**: Shows retrieved document chunks
+- **Streaming Generation**: Displays AI-generated responses
+- **Session State**: Maintains conversation history
+
+**Configuration** (`src/llmaven/frontend/config.py`):
+```python
+class FrontendConfig(BaseSettings):
+    api_base_url: str = "http://localhost:8000/v1"  # FastAPI backend
+    embedding_model: str = "sentence-transformers/all-MiniLM-L12-v2"
+    generation_model: str = "allenai/OLMo-2-1124-7B-Instruct"
+    existing_collection: str = "rubin_telescope"
+    existing_qdrant_path: str = "data/vector_stores/rubin_qdrant"
+    retrieval_k: int = 2
+```
+
+**Helper Functions**:
+- `expand_query()`: Adds domain-specific keywords (e.g., "LSST" for "Rubin")
+- `format_prompt()`: Creates astrophysics-focused prompt template
+
+**Usage Flow**:
+1. User uploads PDFs or types query
+2. Frontend calls `/v1/retrieve/` API
+3. Displays retrieved document chunks
+4. Calls `/v1/generate/` with context
+5. Shows AI-generated response
+
+**Launch Command**:
+```bash
+llmaven ui  # Starts on localhost:8501
+```
+
+---
+
+### 4.14 Infrastructure (`infra/__main__.py`)
 
 **Responsibility**: Provision Azure resources via Pulumi
 
@@ -464,21 +767,31 @@ pre-commit install
 
 ### Running the Application
 
-#### Option 1: Panel Chat UI (Primary)
+#### Option 1: LLMaven API + Streamlit UI (Recommended)
+```bash
+# Method A: Using pixi environment
+pixi shell -e llmaven
+
+# Start the FastAPI backend
+llmaven serve --env development --reload
+# Server runs at http://localhost:8000
+
+# In a new terminal, start Streamlit UI
+llmaven ui
+# UI opens at http://localhost:8501
+```
+
+```bash
+# Method B: Direct installation
+pip install -e .
+llmaven serve --env development --reload
+llmaven ui
+```
+
+#### Option 2: Panel Chat UI (Legacy)
 ```bash
 pixi run serve-panel
 # Open browser at http://localhost:5006
-```
-
-#### Option 2: Streamlit UI
-```bash
-# First, start the FastAPI backend
-cd app
-uvicorn main:app --reload --port 8000
-
-# Then, start Streamlit frontend
-cd ../frontend
-streamlit run app.py
 ```
 
 #### Option 3: OpenAI Proxy
@@ -494,9 +807,26 @@ python main.py
 # Proxy available at http://localhost:8888
 ```
 
-#### Option 4: JupyterLab
+#### Option 3: Docker Compose (Multi-Service)
+```bash
+# Using pixi with docker feature
+pixi shell -e llmaven
+
+# Start all services
+pixi run up
+# Services: API, UI, Proxy, Vector DB
+
+# View logs
+pixi run logs
+
+# Stop services
+pixi run down
+```
+
+#### Option 4: JupyterLab (Development)
 ```bash
 pixi run start-jlab
+# Opens Jupyter Lab for notebook development
 ```
 
 ### Environment Configuration
@@ -755,14 +1085,38 @@ sample_documents = [
 
 ## 9. API/Interfaces
 
-### 9.1 RAG Application API
+### 9.1 LLMaven API
 
-**Base URL**: `http://localhost:8000/api`
+**Base URL**: `http://localhost:8000`
+
+#### Health Check
+
+```http
+GET /
+```
+
+**Response**:
+```json
+{
+  "message": "LLMaven API",
+  "version": "0.1.0",
+  "docs": "/docs",
+  "ping": "/ping"
+}
+```
+
+#### Ping Endpoint
+
+```http
+GET /ping
+```
+
+**Response**: `"pong"`
 
 #### Retrieve Endpoint
 
 ```http
-POST /api/retrieve/
+POST /v1/retrieve/
 Content-Type: application/json
 
 {
@@ -807,7 +1161,7 @@ Content-Type: application/json
 #### Generate Endpoint
 
 ```http
-POST /api/generate/
+POST /v1/generate/
 Content-Type: application/json
 
 {
@@ -1097,7 +1451,10 @@ Content-Type: application/json
 
 | File | Purpose | Critical Fields |
 |------|---------|----------------|
+| `pyproject.toml` | Python package metadata | `dependencies`, `scripts` (llmaven CLI), `version` |
 | `pixi.toml` | Package manager config | `dependencies`, `pypi-dependencies`, `environments`, `tasks` |
+| `src/llmaven/config.py` | API configuration | `api_title`, `api_version`, `cors_origins` |
+| `src/llmaven/frontend/config.py` | Frontend configuration | `api_base_url`, `embedding_model`, `generation_model` |
 | `.env` (proxy) | Proxy runtime config | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `STORAGE_TYPE`, `AUTH_ENABLED` |
 | `.flake8` | Linting rules | `max-line-length = 120` |
 | `.pre-commit-config.yaml` | Git hooks | Code quality checks |
@@ -1107,9 +1464,11 @@ Content-Type: application/json
 
 | File | Command | Purpose |
 |------|---------|---------|
-| `legacy/rubin-panel-app.py` | `pixi run serve-panel` | Primary interactive chat demo |
-| `app/main.py` | `uvicorn app.main:app` | FastAPI RAG backend |
-| `frontend/app.py` | `streamlit run app.py` | Streamlit UI |
+| `src/llmaven/cli.py` | `llmaven serve` | FastAPI API server (CLI) |
+| `src/llmaven/cli.py` | `llmaven ui` | Streamlit frontend (CLI) |
+| `src/llmaven/main.py` | `uvicorn llmaven.main:app` | FastAPI app (direct) |
+| `src/llmaven/frontend/app.py` | `streamlit run app.py` | Streamlit UI (direct) |
+| `legacy/rubin-panel-app.py` | `pixi run serve-panel` | Legacy Panel chat UI |
 | `proxy/main.py` | `python main.py` or `uvicorn main:app` | OpenAI proxy |
 | `infra/__main__.py` | `pulumi up` | Infrastructure deployment |
 
@@ -1117,11 +1476,15 @@ Content-Type: application/json
 
 | File | Purpose |
 |------|---------|
-| `core/retriever/retriever.py` | Vector DB + retrieval logic |
-| `core/generator/language_model.py` | HuggingFace LLM wrapper |
-| `core/embeddings/embedding_model.py` | Embedding model factory |
-| `app/services/retrieval_service.py` | Retrieval orchestration |
-| `app/services/generation_service.py` | Generation + model caching |
+| `src/llmaven/core/retriever/retriever.py` | Vector DB + retrieval logic |
+| `src/llmaven/core/generator/language_model.py` | HuggingFace LLM wrapper |
+| `src/llmaven/core/embeddings/embedding_model.py` | Embedding model factory |
+| `src/llmaven/services/retrieval_service.py` | Retrieval orchestration |
+| `src/llmaven/services/generation_service.py` | Generation + model caching |
+| `src/llmaven/schemas/retrieve.py` | RetrieveRequest schema |
+| `src/llmaven/schemas/generate.py` | GenerationRequest schema |
+| `src/llmaven/v1/endpoints/retrieve.py` | Retrieve endpoint handler |
+| `src/llmaven/v1/endpoints/generate.py` | Generate endpoint handler |
 | `proxy/auth.py` | API key authentication |
 | `proxy/data_log.py` | Request/response logging |
 
@@ -1853,13 +2216,33 @@ class RetrieveRequest(BaseModel):
 ## Appendix B: Quick Reference Commands
 
 ```bash
-# Development
-pixi install                          # Install dependencies
-pixi run serve-panel                  # Run Panel UI
+# Installation
+pixi install                          # Install all dependencies
+pixi shell -e llmaven                 # Enter llmaven environment
+pip install -e .                      # Install package (editable mode)
+
+# Development - New API
+llmaven serve --env development --reload  # Start API server with auto-reload
+llmaven ui                            # Start Streamlit UI
+llmaven version                       # Show version
+
+# Development - Legacy
+pixi run serve-panel                  # Run Panel UI (legacy)
 pixi run start-jlab                   # Start JupyterLab
-pixi shell                            # Enter dev environment
+
+# Docker
+pixi shell -e llmaven
+pixi run up                           # Start all services
+pixi run down                         # Stop all services
+pixi run logs                         # View logs
+pixi run status                       # Check service status
+
+# Environment Management
+pixi shell                            # Enter default environment
+pixi shell -e llmaven                 # Enter llmaven environment
 pixi shell -e proxy                   # Enter proxy environment
 pixi shell -e infra                   # Enter infrastructure environment
+pixi shell -e frontend                # Enter frontend environment
 
 # Testing
 pytest                                # Run all tests
