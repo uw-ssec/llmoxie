@@ -85,36 +85,54 @@ LLMaven is a scientific research tool that democratizes AI-based research by pro
 
 LLMaven has been refactored into a modern, modular architecture with three distinct but related systems:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         LLMaven Project                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌────────────────────┐  ┌──────────────────┐  ┌─────────────┐ │
-│  │   LLMaven API      │  │  OpenAI Proxy    │  │Infrastructure│ │
-│  │  (FastAPI + CLI)   │  │                  │  │              │ │
-│  │                    │  │ • FastAPI Proxy  │  │ • Azure IaC  │ │
-│  │ • REST API (v1)    │  │ • Auth Layer     │  │ • Pulumi     │ │
-│  │ • Streamlit UI     │  │ • Logging        │  │ • Table Store│ │
-│  │ • CLI Interface    │  │ • Streaming      │  │              │ │
-│  │ • Vector DB        │  │                  │  │              │ │
-│  │                    │  │                  │  │              │ │
-│  │ Legacy:            │  │                  │  │              │ │
-│  │ • Panel UI         │  │                  │  │              │ │
-│  └────────────────────┘  └──────────────────┘  └─────────────┘ │
-│           │                      │                     │         │
-│           ▼                      ▼                     ▼         │
-│  ┌────────────────────┐  ┌──────────────────┐  ┌─────────────┐ │
-│  │  Core Libraries    │  │  Azure Blob      │  │ Azure Tables│ │
-│  │  (src/llmaven/)    │  │  Storage         │  │ (User Keys) │ │
-│  │                    │  │  (Logs)          │  │             │ │
-│  │ • Retriever        │  │                  │  │             │ │
-│  │ • Generator        │  │                  │  │             │ │
-│  │ • Embeddings       │  │                  │  │             │ │
-│  │ • Schemas          │  │                  │  │             │ │
-│  │ • Services         │  │                  │  │             │ │
-│  └────────────────────┘  └──────────────────┘  └─────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph LLMaven["LLMaven Project"]
+        subgraph API["LLMaven API<br/>(FastAPI + CLI)"]
+            REST["REST API (v1)"]
+            UI["Streamlit UI"]
+            CLI["CLI Interface"]
+            VDB["Vector DB"]
+            Legacy["Legacy: Panel UI"]
+        end
+
+        subgraph Proxy["OpenAI Proxy"]
+            FastAPI["FastAPI Proxy"]
+            Auth["Auth Layer"]
+            Logging["Logging"]
+            Streaming["Streaming"]
+        end
+
+        subgraph Infra["Infrastructure"]
+            IaC["Azure IaC"]
+            Pulumi["Pulumi"]
+            Tables["Table Store"]
+        end
+
+        subgraph Core["Core Libraries<br/>(src/llmaven/)"]
+            Retriever["Retriever"]
+            Generator["Generator"]
+            Embeddings["Embeddings"]
+            Schemas["Schemas"]
+            Services["Services"]
+        end
+
+        subgraph Storage["Azure Storage"]
+            Blob["Azure Blob Storage<br/>(Logs)"]
+            TableStore["Azure Tables<br/>(User Keys)"]
+        end
+    end
+
+    API --> Core
+    Proxy --> Blob
+    Infra --> TableStore
+
+    style LLMaven fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style API fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    style Proxy fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style Infra fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style Core fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style Storage fill:#fce4ec,stroke:#880e4f,stroke-width:2px
 ```
 
 ### Current Architecture (Post-Refactor)
@@ -2310,80 +2328,50 @@ Problem: Application not working
 
 ### RAG Pipeline
 
-```
-User Query
-    ↓
-┌───────────────────────────────────────────────┐
-│          Embedding Model                      │
-│  (sentence-transformers/all-MiniLM-L12-v2)   │
-└───────────────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────────────┐
-│         Vector Database (Qdrant)              │
-│                                               │
-│  Collection: arxiv_astro-ph_abstracts         │
-│  Search: MMR (k=2)                            │
-└───────────────────────────────────────────────┘
-    ↓
-Retrieved Documents (Top 2)
-    ↓
-┌───────────────────────────────────────────────┐
-│         Prompt Template                       │
-│                                               │
-│  "You are an astrophysics expert...          │
-│   Context: [retrieved docs]                  │
-│   Question: [user query]"                    │
-└───────────────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────────────┐
-│    Language Model (OLMo-7B-Instruct)         │
-│    Quantization: 8-bit                        │
-│    Max Tokens: 512                            │
-└───────────────────────────────────────────────┘
-    ↓
-Generated Answer
+```mermaid
+flowchart TD
+    A[User Query] --> B[Embedding Model<br/>sentence-transformers/all-MiniLM-L12-v2]
+    B --> C[Vector Database - Qdrant<br/>Collection: arxiv_astro-ph_abstracts<br/>Search: MMR k=2]
+    C --> D[Retrieved Documents<br/>Top 2]
+    D --> E[Prompt Template<br/>You are an astrophysics expert...<br/>Context: retrieved docs<br/>Question: user query]
+    E --> F[Language Model<br/>OLMo-7B-Instruct<br/>Quantization: 8-bit<br/>Max Tokens: 512]
+    F --> G[Generated Answer]
+
+    style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style C fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style D fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style E fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style G fill:#e0f2f1,stroke:#00897b,stroke-width:2px
 ```
 
 ### Proxy Architecture
 
-```
-┌──────────────┐
-│    Client    │
-└──────┬───────┘
-       │ POST /v1/chat/completions
-       │ Authorization: Bearer sk-proxy-key
-       ↓
-┌──────────────────────────────────────────┐
-│          FastAPI Proxy                   │
-│                                          │
-│  ┌────────────────────────────────────┐ │
-│  │  Authentication Middleware         │ │
-│  │  (Azure Table Storage + Cache)     │ │
-│  └────────────────────────────────────┘ │
-│                 ↓                        │
-│  ┌────────────────────────────────────┐ │
-│  │  Request Logger                    │ │
-│  │  (Create log entry)                │ │
-│  └────────────────────────────────────┘ │
-│                 ↓                        │
-│  ┌────────────────────────────────────┐ │
-│  │  Forward to OpenAI API             │ │
-│  │  (httpx AsyncClient)               │ │
-│  └────────────────────────────────────┘ │
-│                 ↓                        │
-│  ┌────────────────────────────────────┐ │
-│  │  Stream Response to Client         │ │
-│  │  (Collect chunks for logging)      │ │
-│  └────────────────────────────────────┘ │
-│                 ↓                        │
-│  ┌────────────────────────────────────┐ │
-│  │  Response Logger                   │ │
-│  │  (Append to storage)               │ │
-│  └────────────────────────────────────┘ │
-└──────────────────────────────────────────┘
-       │
-       ├─→ Azure Blob Storage (logs)
-       └─→ Azure Table Storage (user keys)
+```mermaid
+flowchart TD
+    A[Client] -->|POST /v1/chat/completions<br/>Authorization: Bearer sk-proxy-key| B[FastAPI Proxy]
+
+    subgraph Proxy[FastAPI Proxy Service]
+        B --> C[Authentication Middleware<br/>Azure Table Storage + Cache]
+        C --> D[Request Logger<br/>Create log entry]
+        D --> E[Forward to OpenAI API<br/>httpx AsyncClient]
+        E --> F[Stream Response to Client<br/>Collect chunks for logging]
+        F --> G[Response Logger<br/>Append to storage]
+    end
+
+    G --> H[Azure Blob Storage<br/>Logs]
+    C --> I[Azure Table Storage<br/>User Keys]
+
+    style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Proxy fill:#fff3e0,stroke:#f57c00,stroke-width:3px
+    style C fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style D fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style E fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style G fill:#e0f2f1,stroke:#00897b,stroke-width:2px
+    style H fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style I fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
 ```
 
 ---

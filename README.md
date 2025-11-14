@@ -24,47 +24,41 @@ LLMaven's scientific goal is to create accessible AI tools for researchers who n
 
 LLMaven consists of several components that work together:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      LLMaven Architecture                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────────┐         ┌─────────────────────┐          │
-│  │  Streamlit UI    │ ───────>│   FastAPI Backend   │          │
-│  │  (Port 8501)     │         │   (Port 8000)       │          │
-│  └──────────────────┘         └─────────────────────┘          │
-│         │                              │                         │
-│         │                              ▼                         │
-│         │                     ┌──────────────────┐              │
-│         │                     │  API Endpoints   │              │
-│         │                     ├──────────────────┤              │
-│         │                     │ /v1/retrieve     │              │
-│         │                     │ /v1/generate     │              │
-│         │                     └──────────────────┘              │
-│         │                              │                         │
-│         │                  ┌───────────┴───────────┐            │
-│         │                  ▼                       ▼            │
-│         │         ┌─────────────────┐    ┌──────────────────┐  │
-│         │         │ Retrieval       │    │ Generation       │  │
-│         │         │ Service         │    │ Service          │  │
-│         │         └─────────────────┘    └──────────────────┘  │
-│         │                  │                       │            │
-│         │                  ▼                       ▼            │
-│         │         ┌─────────────────┐    ┌──────────────────┐  │
-│         │         │  Qdrant Vector  │    │ HuggingFace      │  │
-│         │         │  Store          │    │ Transformers     │  │
-│         │         │  (Embeddings)   │    │ (LLM)            │  │
-│         │         └─────────────────┘    └──────────────────┘  │
-│         │                                                        │
-│         └────────────────────────────────────────────────────────┘
-│                                                                  │
-│  Optional Components:                                           │
-│  ┌──────────────────┐         ┌─────────────────────┐          │
-│  │  OpenAI Proxy    │         │  Azure              │          │
-│  │  (Port 8888)     │         │  Infrastructure     │          │
-│  └──────────────────┘         └─────────────────────┘          │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Main[LLMaven Architecture]
+        UI[Streamlit UI<br/>Port 8501] --> Backend[FastAPI Backend<br/>Port 8000]
+
+        Backend --> Endpoints[API Endpoints]
+
+        subgraph Endpoints[API Endpoints]
+            Retrieve[/v1/retrieve]
+            Generate[/v1/generate]
+        end
+
+        Retrieve --> RetService[Retrieval Service]
+        Generate --> GenService[Generation Service]
+
+        RetService --> Qdrant[Qdrant Vector Store<br/>Embeddings]
+        GenService --> HF[HuggingFace Transformers<br/>LLM]
+    end
+
+    subgraph Optional[Optional Components]
+        Proxy[OpenAI Proxy<br/>Port 8888]
+        Azure[Azure Infrastructure]
+    end
+
+    style Main fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style UI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Backend fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style Endpoints fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style RetService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style GenService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style Qdrant fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style HF fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style Optional fill:#eceff1,stroke:#455a64,stroke-width:2px
+    style Proxy fill:#e0f2f1,stroke:#00897b,stroke-width:2px
+    style Azure fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
 ```
 
 ### Core Components
