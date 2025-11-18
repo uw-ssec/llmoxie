@@ -182,3 +182,6 @@ data/vector_stores/
 models/
 # Proxy logs
 logs/*.jsonl
+
+# LLMaven Configs
+llmaven-config*.yaml

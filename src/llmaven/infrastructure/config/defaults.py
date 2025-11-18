@@ -40,6 +40,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             name="llmaven",
             environment=environment,
             location="eastus",
+            enable_passphrase=False,
         ),
         "azure": AzureConfig(
             subscription_id="",  # User must provide
@@ -244,6 +245,7 @@ project:
   name: llmaven
   environment: {environment}  # dev, staging, prod
   location: eastus  # Azure region
+  enable_passphrase: false  # Set to true to require PULUMI_CONFIG_PASSPHRASE
 
 # Azure Subscription
 azure:

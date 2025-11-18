@@ -16,6 +16,10 @@ class ProjectConfig(BaseModel):
         default="dev", description="Environment (dev, staging, prod)"
     )
     location: str = Field(default="eastus", description="Azure region")
+    enable_passphrase: bool = Field(
+        default=False,
+        description="Enable Pulumi passphrase protection (requires PULUMI_CONFIG_PASSPHRASE)",
+    )
 
     @field_validator("environment")
     @classmethod

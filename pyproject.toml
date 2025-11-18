@@ -58,6 +58,8 @@ deploy = [
     "pulumi-azuread>=5.0.0",
     "pulumi-random>=4.0.0",
     "pyyaml>=6.0.0",
+    "grpcio==1.60.1",
+    "grpcio-status==1.60.1"
 ]
 
 [project.scripts]

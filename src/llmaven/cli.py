@@ -286,6 +286,290 @@ def init(
 
 
 @app.command()
+def validate(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Fail on warnings (useful for CI/CD)",
+    ),
+    skip_secrets: bool = typer.Option(
+        False,
+        "--skip-secrets",
+        help="Skip secrets validation (use with caution)",
+    ),
+) -> None:
+    """Validate LLMaven deployment configuration.
+
+    Validates:
+    - Configuration file syntax and schema
+    - Azure prerequisites and permissions
+    - Resource quotas and limits
+    - Secrets presence via LLMAVEN_SECRETS_* environment variables
+    - Cost estimation
+
+    Examples:
+        Validate default config:
+            llmaven validate
+
+        Strict validation for CI/CD:
+            llmaven validate --config llmaven-config.prod.yaml --strict
+
+        Skip secrets check (infrastructure-only validation):
+            llmaven validate --skip-secrets
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.validate import ValidationError, validate_config
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+
+    try:
+        validate_config(
+            config_path=config_path,
+            strict=strict,
+            skip_secrets=skip_secrets,
+        )
+    except ValidationError as e:
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Validation failed: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command()
+def deploy(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+    preview: bool = typer.Option(
+        False,
+        "--preview",
+        "-p",
+        help="Preview changes without deploying",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Automatically approve deployment",
+    ),
+) -> None:
+    """Deploy LLMaven infrastructure to Azure.
+
+    Deploys all resources defined in the configuration file.
+    Automatically validates configuration before deployment.
+
+    Examples:
+        Preview deployment:
+            llmaven deploy --preview
+
+        Deploy with auto-approval:
+            llmaven deploy --yes
+
+        Deploy specific config:
+            llmaven deploy --config llmaven-config.staging.yaml
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy import DeploymentError, deploy_infrastructure
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+
+    try:
+        deploy_infrastructure(
+            config_path=config_path,
+            preview=preview,
+            auto_approve=auto_approve,
+        )
+    except DeploymentError as e:
+        typer.echo(f"✗ Deployment failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Deployment failed: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command()
+def destroy(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Automatically approve destruction",
+    ),
+) -> None:
+    """Destroy LLMaven infrastructure in Azure.
+
+    WARNING: This will delete all resources defined in the configuration.
+    Data will be lost unless backups exist.
+
+    Examples:
+        Destroy with confirmation:
+            llmaven destroy
+
+        Destroy with auto-approval:
+            llmaven destroy --yes
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy import DeploymentError, destroy_infrastructure
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+
+    if not auto_approve:
+        confirm = typer.confirm(
+            "⚠️  This will destroy all infrastructure. Are you sure?",
+            abort=True,
+        )
+
+    try:
+        destroy_infrastructure(config_path=config_path)
+    except DeploymentError as e:
+        typer.echo(f"✗ Destruction failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Destruction failed: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command()
+def status(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Show deployment status and outputs.
+
+    Displays:
+    - Stack information
+    - Resource URLs
+    - Connection strings
+    - Deployment status
+
+    Examples:
+        Show status:
+            llmaven status
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy import DeploymentError, show_deployment_status
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+
+    try:
+        show_deployment_status(config_path=config_path)
+    except DeploymentError as e:
+        typer.echo(f"✗ Status check failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Status check failed: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command()
+def refresh(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Automatically approve refresh",
+    ),
+) -> None:
+    """Refresh Pulumi stack state from actual cloud resources.
+
+    Compares the actual state of cloud resources with Pulumi's state
+    without making any changes. Useful for detecting drift and updating
+    the state file.
+
+    Examples:
+        Refresh stack state:
+            llmaven refresh
+
+        Refresh with auto-approval:
+            llmaven refresh --yes
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy import DeploymentError, refresh_infrastructure
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+
+    try:
+        refresh_infrastructure(
+            config_path=config_path,
+            auto_approve=auto_approve,
+        )
+    except DeploymentError as e:
+        typer.echo(f"✗ Refresh failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Refresh failed: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command()
+def cancel(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Cancel an in-progress Pulumi stack operation.
+
+    Cancels any currently running update, refresh, or destroy operation
+    on the stack. This is useful when an operation is stuck or taking
+    too long.
+
+    Examples:
+        Cancel in-progress operation:
+            llmaven cancel
+
+        Cancel operation for specific config:
+            llmaven cancel --config llmaven-config.staging.yaml
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy import DeploymentError, cancel_stack_operation
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+
+    try:
+        cancel_stack_operation(config_path=config_path)
+    except DeploymentError as e:
+        typer.echo(f"✗ Cancel failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Cancel failed: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command()
 def version() -> None:
     """Display the LLMaven version."""
     from llmaven import __version__

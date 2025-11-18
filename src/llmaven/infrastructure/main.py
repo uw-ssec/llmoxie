@@ -1,0 +1,302 @@
+"""Pulumi program entry point for LLMaven infrastructure.
+
+This module is the entry point for Pulumi and reads configuration from
+the llmaven-config.yaml file.
+"""
+from pathlib import Path
+
+def create_pulumi_program(config_path: Path):
+    """Create an inline Pulumi program.
+
+    Args:
+        config_path: Path to LLMaven configuration file
+
+    Returns:
+        Pulumi program function
+    """
+    def llmaven_infra():
+        """Main Pulumi program."""
+        import pulumi
+        import pulumi_azure_native as azure_native
+        from pulumi import Output
+
+        from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
+        from llmaven.infrastructure.resources import (
+            SecretsManager,
+            create_container_apps_environment,
+            create_databases,
+            create_key_vault,
+            create_litellm_app,
+            create_log_analytics_workspace,
+            create_mlflow_app,
+            create_postgres_server,
+            create_resource_group,
+            create_storage_account,
+            create_virtual_network,
+        )
+
+        # Load configuration
+        try:
+            config = load_config(config_path)
+            pulumi.log.info(f"✓ Loaded configuration from: {config_path}")
+        except ConfigLoadError as e:
+            pulumi.log.error(f"Failed to load configuration: {e}")
+            raise
+
+        # Project information
+        project_name = config.project.name
+        environment = config.project.environment
+        location = config.project.location
+        stack_name = f"{project_name}-{environment}"
+
+        pulumi.log.info(f"Deploying stack: {stack_name}")
+        pulumi.log.info(f"Environment: {environment}")
+        pulumi.log.info(f"Location: {location}")
+
+        # 1. Create Resource Group
+        pulumi.log.info("Creating resource group...")
+        resource_group = create_resource_group(
+            name=f"rg-{stack_name}",
+            location=location,
+            tags=config.tags,
+        )
+
+        # 2. Create Virtual Network
+        pulumi.log.info("Creating virtual network...")
+        vnet = create_virtual_network(
+            name=f"vnet-{stack_name}",
+            resource_group_name=resource_group.name,
+            location=location,
+            address_space=config.networking.vnet_address_space,
+            tags=config.tags,
+        )
+
+        # Create subnets
+        container_apps_subnet = azure_native.network.Subnet(
+            "container-apps-subnet",
+            resource_group_name=resource_group.name,
+            virtual_network_name=vnet.name,
+            subnet_name="container-apps-subnet",
+            address_prefix=config.networking.container_apps_subnet,
+        )
+
+        postgres_subnet = azure_native.network.Subnet(
+            "postgres-subnet",
+            resource_group_name=resource_group.name,
+            virtual_network_name=vnet.name,
+            subnet_name="postgres-subnet",
+            address_prefix=config.networking.postgres_subnet,
+            delegations=[
+                azure_native.network.DelegationArgs(
+                    name="postgres-delegation",
+                    service_name="Microsoft.DBforPostgreSQL/flexibleServers",
+                )
+            ],
+        )
+
+        # 5. Create Key Vault
+        pulumi.log.info("Creating Key Vault...")
+        key_vault = create_key_vault(
+            resource_group_name=resource_group.name,
+            location=location,
+            tenant_id=config.azure.tenant_id,
+            config=config,
+            tags=config.tags,
+        )
+
+        # 5.1. Create Secrets Manager
+        pulumi.log.info("Initializing Secrets Manager...")
+        secrets_manager = SecretsManager(
+            resource_group_name=resource_group.name,
+            vault_name=key_vault.name,
+            config=config,
+            environment=environment,
+        )
+
+        # 5.2. Create user-provided secrets from environment variables
+        secrets_manager.create_user_provided_secrets()
+
+        # 5.3. Generate PostgreSQL admin password
+        pulumi.log.info("Generating PostgreSQL admin password...")
+        admin_password = secrets_manager.create_postgres_admin_password()
+
+        # 6. Create PostgreSQL Flexible Server
+        pulumi.log.info("Creating PostgreSQL Flexible Server...")
+        postgres_server = create_postgres_server(
+            resource_group_name=resource_group.name,
+            location=location,
+            vnet_id=vnet.id,
+            postgres_subnet_id=postgres_subnet.id,
+            config=config,
+            admin_password=admin_password,
+            tags=config.tags,
+        )
+
+        # 6.1. Create databases
+        pulumi.log.info("Creating PostgreSQL databases...")
+        create_databases(
+            resource_group_name=resource_group.name,
+            server_name=postgres_server.name,
+            database_names=config.database.databases,
+            environment=environment,
+            tags=config.tags,
+        )
+        
+        # 7.1. Create database connection strings
+        pulumi.log.info("Creating database connection strings...")
+        secrets_manager.create_database_connection_strings(
+            postgres_server_fqdn=postgres_server.fully_qualified_domain_name,
+            admin_login="llmaven_admin",
+            admin_password=admin_password,
+            database_names=config.database.databases,
+        )
+
+        # 7. Create Storage Account
+        pulumi.log.info("Creating Storage Account...")
+        storage_account = create_storage_account(
+            resource_group_name=resource_group.name,
+            location=location,
+            config=config,
+            tags=config.tags,
+        )
+
+        # Store storage account primary endpoints
+        storage_account_primary_endpoints = storage_account.primary_endpoints
+
+        pulumi.log.info("Storing blob endpoint URL in Key Vault...")
+        secrets_manager.create_blob_endpoint_url_secret(
+            blob_endpoint_url=storage_account_primary_endpoints.blob,
+        )
+
+        # 7.1. Get storage account key and create connection string
+        from llmaven.infrastructure.resources.storage import get_storage_account_key
+
+        pulumi.log.info("Retrieving storage account key...")
+        storage_account_key = get_storage_account_key(
+            resource_group_name=resource_group.name,
+            storage_account_name=storage_account.name,
+        )
+
+        pulumi.log.info("Creating storage connection string secret...")
+        secrets_manager.create_storage_connection_string_secret(
+            storage_account_name=storage_account.name,
+            storage_account_key=storage_account_key,
+        )
+
+        # 7.2. Create blob containers for storage
+        from llmaven.infrastructure.resources.storage import create_blob_containers
+
+        pulumi.log.info("Creating blob containers...")
+        create_blob_containers(
+            resource_group_name=resource_group.name,
+            storage_account_name=storage_account.name,
+            container_names=config.storage.containers,
+            environment=environment,
+        )
+
+        # 7.3. Create MLflow artifact root URL
+        pulumi.log.info("Creating MLflow artifact root secret...")
+        secrets_manager.create_mlflow_artifact_root_secret(
+            storage_account_name=storage_account.name,
+            container_name="mlflow",
+        )
+
+        # 3. Create Log Analytics Workspace (for monitoring)
+        if config.monitoring.enable_log_analytics:
+            pulumi.log.info("Creating Log Analytics workspace...")
+            log_analytics = create_log_analytics_workspace(
+                name=f"log-{stack_name}",
+                resource_group_name=resource_group.name,
+                location=location,
+                retention_days=config.monitoring.retention_days,
+                tags=config.tags,
+            )
+        else:
+            log_analytics = None
+
+        # 4. Create Container Apps Environment
+        pulumi.log.info("Creating Container Apps environment...")
+        container_env = create_container_apps_environment(
+            resource_group_name=resource_group.name,
+            location=location,
+            container_apps_subnet_id=container_apps_subnet.id,
+            log_analytics_workspace=log_analytics,
+            config=config,
+            tags=config.tags,
+        )
+
+        # 8. Deploy Container Apps
+
+        # MLflow Container App
+        if config.mlflow and config.mlflow.enabled:
+            pulumi.log.info("Creating MLflow Container App...")
+
+            # Import grant_key_vault_access
+            from llmaven.infrastructure.resources import grant_key_vault_access
+
+            mlflow_app = create_mlflow_app(
+                name=f"{stack_name}-mlflow",
+                resource_group_name=resource_group.name,
+                location=location,
+                container_env_id=container_env.id,
+                image=config.mlflow.image,
+                port=config.mlflow.port,
+                cpu=config.mlflow.cpu,
+                memory=config.mlflow.memory,
+                min_replicas=config.mlflow.min_replicas,
+                max_replicas=config.mlflow.max_replicas,
+                env_vars=config.mlflow.env_vars,
+                key_vault=key_vault,
+                postgres_server=postgres_server,
+                storage_account=storage_account,
+                tags=config.tags,
+            )
+
+            # Grant Key Vault access to the MLflow container app if RBAC is enabled
+            if config.security.key_vault.enable_rbac:
+                grant_key_vault_access(
+                    key_vault=key_vault,
+                    principal_id=mlflow_app.identity.apply(lambda identity: identity.principal_id),
+                    resource_group_name=resource_group.name,
+                )
+
+            # Export MLflow URL
+            pulumi.export("mlflow_url", mlflow_app.configuration.apply(
+                lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
+            ))
+
+        # LiteLLM Container App
+        if config.litellm and config.litellm.enabled:
+            pulumi.log.info("Creating LiteLLM Container App...")
+            litellm_app = create_litellm_app(
+                name=f"{stack_name}-litellm",
+                resource_group_name=resource_group.name,
+                location=location,
+                container_env_id=container_env.id,
+                image=config.litellm.image,
+                port=config.litellm.port,
+                cpu=config.litellm.cpu,
+                memory=config.litellm.memory,
+                min_replicas=config.litellm.min_replicas,
+                max_replicas=config.litellm.max_replicas,
+                env_vars=config.litellm.env_vars,
+                key_vault=key_vault,
+                postgres_server=postgres_server,
+                tags=config.tags,
+            )
+
+            # Export LiteLLM URL
+            pulumi.export("litellm_url", litellm_app.configuration.apply(
+                lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
+            ))
+
+        # Export common outputs
+        pulumi.export("resource_group_name", resource_group.name)
+        pulumi.export("location", location)
+        pulumi.export("environment", environment)
+        # pulumi.export("postgres_server_name", postgres_server.name)
+        # pulumi.export("storage_account_name", storage_account.name)
+        pulumi.export("key_vault_name", key_vault.name)
+
+        pulumi.log.info("✓ Infrastructure deployment complete")
+    return llmaven_infra

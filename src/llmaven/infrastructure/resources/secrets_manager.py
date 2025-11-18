@@ -1,0 +1,489 @@
+"""Secrets Manager - Orchestrates complete secrets lifecycle.
+
+This module orchestrates the complete secrets management workflow:
+1. Read user-provided secrets from LLMAVEN_SECRETS_* environment variables
+2. Generate auto-managed secrets (DB passwords, connection strings)
+3. Store all secrets in Azure Key Vault
+4. Provide secret references for Container Apps
+"""
+
+from typing import Dict, List, Optional
+
+import pulumi
+import pulumi_azure_native as azure_native
+import pulumi_random as random
+from pulumi import Output
+
+from ..config.schema import LLMavenConfig
+from ..utils.secrets import (
+    build_mlflow_tracking_uri,
+    build_postgres_connection_string,
+    create_auto_generated_secrets,
+    generate_secure_password,
+)
+from .key_vault import (
+    create_secret,
+    get_llmaven_secrets_from_env,
+)
+
+
+class SecretsManager:
+    """
+    Manages the complete lifecycle of secrets for LLMaven deployment.
+
+    This class:
+    - Reads user-provided secrets from environment variables
+    - Generates auto-managed secrets (passwords, connection strings)
+    - Stores all secrets in Azure Key Vault
+    - Provides secret references for Container Apps
+    """
+
+    def __init__(
+        self,
+        resource_group_name: Output[str],
+        vault_name: Output[str],
+        config: LLMavenConfig,
+        environment: str,
+    ):
+        """
+        Initialize SecretsManager.
+
+        Args:
+            resource_group_name: Name of the resource group
+            vault_name: Key Vault name
+            config: LLMaven configuration
+            environment: Environment name
+        """
+        self.resource_group_name = resource_group_name
+        self.vault_name = vault_name
+        self.config = config
+        self.environment = environment
+
+        # Storage for created secrets
+        self.user_secrets: Dict[str, azure_native.keyvault.Secret] = {}
+        self.auto_secrets: Dict[str, azure_native.keyvault.Secret] = {}
+        self.all_secrets: Dict[str, azure_native.keyvault.Secret] = {}
+
+    def create_user_provided_secrets(self) -> Dict[str, azure_native.keyvault.Secret]:
+        """
+        Create Key Vault secrets from LLMAVEN_SECRETS_* environment variables.
+
+        Returns:
+            Dictionary mapping secret names to Secret resources
+        """
+        env_secrets = get_llmaven_secrets_from_env()
+
+        if not env_secrets:
+            pulumi.log.warn(
+                "⚠ No LLMAVEN_SECRETS_* environment variables found. "
+                "User-provided secrets (API keys, etc.) will not be available."
+            )
+
+        for secret_name, secret_value in env_secrets.items():
+            secret_resource = create_secret(
+                resource_group_name=self.resource_group_name,
+                vault_name=self.vault_name,
+                secret_name=secret_name,
+                secret_value=Output.secret(secret_value),
+                environment=self.environment,
+                tags={
+                    "ManagedBy": "Pulumi",
+                    "Source": "EnvironmentVariable",
+                    "Environment": self.environment,
+                },
+            )
+            self.user_secrets[secret_name] = secret_resource
+            self.all_secrets[secret_name] = secret_resource
+
+        pulumi.log.info(
+            f"✓ Created {len(self.user_secrets)} user-provided secrets from environment variables"
+        )
+
+        return self.user_secrets
+
+    def create_postgres_admin_password(self) -> Output[str]:
+        """
+        Generate and store PostgreSQL admin password.
+
+        Returns:
+            PostgreSQL admin password (as Pulumi Output)
+        """
+        # Check if user provided a password via environment variable
+        env_secrets = get_llmaven_secrets_from_env()
+        if "db-admin-password" in env_secrets or "postgresql-admin-password" in env_secrets:
+            # User provided password - use it
+            password_value = env_secrets.get("db-admin-password") or env_secrets.get(
+                "postgresql-admin-password"
+            )
+            pulumi.log.info(
+                "✓ Using user-provided PostgreSQL admin password from environment"
+            )
+            return Output.secret(password_value)
+
+        # Generate secure random password
+        db_password = random.RandomPassword(
+            f"postgres-admin-password-{self.environment}",
+            length=32,
+            special=True,
+            override_special="!#$%&*()-_=+[]{}<>:?",
+            min_lower=1,
+            min_upper=1,
+            min_numeric=1,
+            min_special=1,
+        )
+
+        # Store in Key Vault
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="db-admin-password",
+            secret_value=db_password.result,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AutoGenerated",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["db-admin-password"] = secret_resource
+        self.all_secrets["db-admin-password"] = secret_resource
+
+        # Also store with alternative name
+        secret_resource_alt = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="postgresql-admin-password",
+            secret_value=db_password.result,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AutoGenerated",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["postgresql-admin-password"] = secret_resource_alt
+        self.all_secrets["postgresql-admin-password"] = secret_resource_alt
+
+        pulumi.log.info("✓ Auto-generated PostgreSQL admin password")
+
+        return db_password.result
+
+    def create_database_connection_strings(
+        self,
+        postgres_server_fqdn: Output[str],
+        admin_login: str,
+        admin_password: Output[str],
+        database_names: Optional[List[str]] = None,
+    ) -> Dict[str, azure_native.keyvault.Secret]:
+        """
+        Create database connection strings for all databases.
+
+        Args:
+            postgres_server_fqdn: PostgreSQL server FQDN
+            admin_login: Admin username
+            admin_password: Admin password
+            database_names: List of database names
+
+        Returns:
+            Dictionary mapping secret names to Secret resources
+        """
+        if database_names is None:
+            database_names = self.config.database.databases
+
+        connection_string_secrets = {}
+
+        for db_name in database_names:
+            # Build connection string
+            connection_string = Output.all(
+                postgres_server_fqdn, admin_password
+            ).apply(
+                lambda args: build_postgres_connection_string(
+                    server_fqdn=args[0],
+                    database_name=db_name,
+                    admin_login=admin_login,
+                    admin_password=args[1],
+                )
+            )
+
+            # Store in Key Vault with database-specific name
+            secret_name = f"db-connection-string-{db_name}".replace("_", "-")
+            secret_resource = create_secret(
+                resource_group_name=self.resource_group_name,
+                vault_name=self.vault_name,
+                secret_name=secret_name,
+                secret_value=connection_string,
+                environment=self.environment,
+                tags={
+                    "ManagedBy": "Pulumi",
+                    "Source": "AutoGenerated",
+                    "Environment": self.environment,
+                    "Database": db_name,
+                },
+            )
+            connection_string_secrets[secret_name] = secret_resource
+            self.auto_secrets[secret_name] = secret_resource
+            self.all_secrets[secret_name] = secret_resource
+
+        pulumi.log.info(
+            f"✓ Created {len(connection_string_secrets)} database connection strings"
+        )
+
+        return connection_string_secrets
+
+    def create_storage_account_key_secret(
+        self,
+        storage_account_key: Output[str],
+    ) -> azure_native.keyvault.Secret:
+        """
+        Store storage account key in Key Vault.
+
+        Args:
+            storage_account_key: Storage account primary key
+
+        Returns:
+            Secret resource
+        """
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="storage-account-key",
+            secret_value=storage_account_key,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AzureResource",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["storage-account-key"] = secret_resource
+        self.all_secrets["storage-account-key"] = secret_resource
+
+        pulumi.log.info("✓ Stored storage account key in Key Vault")
+
+        return secret_resource
+
+    def create_blob_endpoint_url_secret(
+        self,
+        blob_endpoint_url: Output[str],
+    ) -> azure_native.keyvault.Secret:
+        """
+        Store blob endpoint URL in Key Vault.
+
+        Args:
+            blob_endpoint_url: Storage account blob endpoint URL
+
+        Returns:
+            Secret resource
+        """
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="blob-endpoint-url",
+            secret_value=blob_endpoint_url,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AzureResource",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["blob-endpoint-url"] = secret_resource
+        self.all_secrets["blob-endpoint-url"] = secret_resource
+
+        pulumi.log.info("✓ Stored blob endpoint URL in Key Vault")
+
+        return secret_resource
+
+    def create_storage_connection_string_secret(
+        self,
+        storage_account_name: Output[str],
+        storage_account_key: Output[str],
+    ) -> azure_native.keyvault.Secret:
+        """
+        Create and store Azure Storage connection string in Key Vault.
+
+        Args:
+            storage_account_name: Storage account name
+            storage_account_key: Storage account primary key
+
+        Returns:
+            Secret resource
+        """
+        # Build Azure Storage connection string
+        connection_string = Output.all(storage_account_name, storage_account_key).apply(
+            lambda args: (
+                f"DefaultEndpointsProtocol=https;"
+                f"AccountName={args[0]};"
+                f"AccountKey={args[1]};"
+                f"EndpointSuffix=core.windows.net"
+            )
+        )
+
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="storage-connection-string",
+            secret_value=connection_string,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AzureResource",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["storage-connection-string"] = secret_resource
+        self.all_secrets["storage-connection-string"] = secret_resource
+
+        pulumi.log.info("✓ Created storage connection string secret in Key Vault")
+
+        return secret_resource
+
+    def create_mlflow_artifact_root_secret(
+        self,
+        storage_account_name: Output[str],
+        container_name: str = "mlflow",
+    ) -> azure_native.keyvault.Secret:
+        """
+        Create MLflow artifact root URL for Azure Blob Storage.
+
+        Args:
+            storage_account_name: Storage account name
+            container_name: Container name for MLflow artifacts (default: mlflow)
+
+        Returns:
+            Secret resource
+        """
+        # Build MLflow artifact root URL for Azure Blob
+        # Format: wasbs://container@storageaccount.blob.core.windows.net/
+        artifact_root = storage_account_name.apply(
+            lambda name: f"wasbs://{container_name}@{name}.blob.core.windows.net/"
+        )
+
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="mlflow-artifact-root",
+            secret_value=artifact_root,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AutoGenerated",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["mlflow-artifact-root"] = secret_resource
+        self.all_secrets["mlflow-artifact-root"] = secret_resource
+
+        pulumi.log.info("✓ Created MLflow artifact root secret in Key Vault")
+
+        return secret_resource
+
+    def create_mlflow_tracking_uri_secret(
+        self,
+        mlflow_fqdn: Output[str],
+    ) -> azure_native.keyvault.Secret:
+        """
+        Create MLflow tracking URI secret.
+
+        Args:
+            mlflow_fqdn: MLflow Container App FQDN
+
+        Returns:
+            Secret resource
+        """
+        mlflow_uri = mlflow_fqdn.apply(
+            lambda fqdn: build_mlflow_tracking_uri(fqdn) if fqdn else None
+        )
+
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name="mlflow-tracking-uri",
+            secret_value=mlflow_uri,
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "AutoGenerated",
+                "Environment": self.environment,
+            },
+        )
+        self.auto_secrets["mlflow-tracking-uri"] = secret_resource
+        self.all_secrets["mlflow-tracking-uri"] = secret_resource
+
+        pulumi.log.info("✓ Created MLflow tracking URI secret")
+
+        return secret_resource
+
+    def get_secret(self, secret_name: str) -> Optional[azure_native.keyvault.Secret]:
+        """
+        Get a secret by name.
+
+        Args:
+            secret_name: Name of the secret
+
+        Returns:
+            Secret resource, or None if not found
+        """
+        return self.all_secrets.get(secret_name)
+
+    def get_secret_value(self, secret_name: str) -> Optional[Output[str]]:
+        """
+        Get a secret value by name.
+
+        Args:
+            secret_name: Name of the secret
+
+        Returns:
+            Secret value as Pulumi Output, or None if not found
+        """
+        secret = self.all_secrets.get(secret_name)
+        if secret:
+            return secret.properties.value
+        return None
+
+    def get_secret_names(self) -> List[str]:
+        """
+        Get list of all secret names.
+
+        Returns:
+            List of secret names
+        """
+        return list(self.all_secrets.keys())
+
+    def get_user_secret_names(self) -> List[str]:
+        """
+        Get list of user-provided secret names.
+
+        Returns:
+            List of user-provided secret names
+        """
+        return list(self.user_secrets.keys())
+
+    def get_auto_secret_names(self) -> List[str]:
+        """
+        Get list of auto-generated secret names.
+
+        Returns:
+            List of auto-generated secret names
+        """
+        return list(self.auto_secrets.keys())
+
+    def export_secret_summary(self) -> None:
+        """
+        Export summary of secrets to Pulumi outputs.
+        """
+        pulumi.export(
+            f"secrets_summary_{self.environment}",
+            {
+                "total_secrets": len(self.all_secrets),
+                "user_provided": len(self.user_secrets),
+                "auto_generated": len(self.auto_secrets),
+                "user_secret_names": self.get_user_secret_names(),
+                "auto_secret_names": self.get_auto_secret_names(),
+            },
+        )
+
+        pulumi.log.info(
+            f"✓ Secrets Summary: {len(self.all_secrets)} total "
+            f"({len(self.user_secrets)} user-provided, {len(self.auto_secrets)} auto-generated)"
+        )
