@@ -136,12 +136,39 @@ def check_required_providers(subscription_id: str) -> Tuple[bool, str]:
         return False, f"Failed to check providers: {e}"
 
 
-def get_llmaven_secrets() -> Dict[str, str]:
+def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
     """Get all LLMAVEN_SECRETS_* environment variables.
+
+    Args:
+        env_file_path: Optional path to .env file to load secrets from
 
     Returns:
         Dictionary mapping secret names (kebab-case) to values
     """
+    # Load from .env file if provided
+    if env_file_path is not None:
+        if not env_file_path.exists():
+            raise FileNotFoundError(f"Environment file not found: {env_file_path}")
+
+        try:
+            from dotenv import dotenv_values
+        except ImportError:
+            raise ImportError(
+                "python-dotenv is required to load .env files. "
+                "Install it with: pip install python-dotenv"
+            )
+
+        # Load the .env file
+        env_vars = dotenv_values(env_file_path)
+
+        # Only set LLMAVEN_SECRETS_* variables, and don't override existing ones
+        prefix = "LLMAVEN_SECRETS_"
+        for key, value in env_vars.items():
+            if key.startswith(prefix) and value is not None:
+                # Only set if not already in environment (env vars take precedence)
+                if key not in os.environ:
+                    os.environ[key] = value
+
     secrets = {}
     prefix = "LLMAVEN_SECRETS_"
 
@@ -154,12 +181,17 @@ def get_llmaven_secrets() -> Dict[str, str]:
     return secrets
 
 
-def check_secrets(config: LLMavenConfig, skip_secrets: bool = False) -> Tuple[bool, List[str]]:
+def check_secrets(
+    config: LLMavenConfig,
+    skip_secrets: bool = False,
+    env_file_path: Optional[Path] = None,
+) -> Tuple[bool, List[str]]:
     """Check if required secrets are available as environment variables.
 
     Args:
         config: Configuration object
         skip_secrets: Skip secrets validation
+        env_file_path: Optional path to .env file to load secrets from
 
     Returns:
         Tuple of (success, list of messages)
@@ -171,7 +203,7 @@ def check_secrets(config: LLMavenConfig, skip_secrets: bool = False) -> Tuple[bo
     all_secrets_found = True
 
     # Get available secrets from environment
-    available_secrets = get_llmaven_secrets()
+    available_secrets = get_llmaven_secrets(env_file_path)
 
     if available_secrets:
         messages.append(f"Found {len(available_secrets)} LLMAVEN_SECRETS_* environment variables:")
@@ -185,7 +217,7 @@ def check_secrets(config: LLMavenConfig, skip_secrets: bool = False) -> Tuple[bo
         mlflow_secrets = config.mlflow.secrets or []
         for secret_name in mlflow_secrets:
             # Skip auto-generated secrets
-            if secret_name in ["db-connection-string", "storage-account-key", "mlflow-tracking-uri"]:
+            if secret_name in ["db-connection-string-mlflow-db", "storage-account-key"]:
                 continue
 
             if secret_name not in available_secrets:
@@ -198,7 +230,7 @@ def check_secrets(config: LLMavenConfig, skip_secrets: bool = False) -> Tuple[bo
         litellm_secrets = config.litellm.secrets or []
         for secret_name in litellm_secrets:
             # Skip auto-generated secrets
-            if secret_name in ["db-connection-string", "mlflow-tracking-uri"]:
+            if secret_name in ["db-connection-string-litellm-db", "mlflow-tracking-uri"]:
                 continue
 
             if secret_name not in available_secrets:
@@ -333,6 +365,7 @@ def validate_config(
     config_path: Path,
     strict: bool = False,
     skip_secrets: bool = False,
+    env_file_path: Optional[Path] = None,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
@@ -340,6 +373,7 @@ def validate_config(
         config_path: Path to configuration file
         strict: Fail on warnings
         skip_secrets: Skip secrets validation
+        env_file_path: Optional path to .env file to load secrets from
 
     Raises:
         ValidationError: If validation fails
@@ -408,7 +442,9 @@ def validate_config(
 
     # 4. Secrets Validation
     print("4. Secrets Validation")
-    success, messages = check_secrets(config, skip_secrets)
+    if env_file_path:
+        print(f"   Loading secrets from: {env_file_path}")
+    success, messages = check_secrets(config, skip_secrets, env_file_path)
     for msg in messages:
         print(msg)
     if not success:

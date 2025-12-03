@@ -94,6 +94,8 @@ llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
+azure-core = ">=1.36.0,<2"
+python-dotenv = ">=1.1.1,<2"
 
 [feature.llmaven.tasks]
 api-server = { cmd = "llmaven serve" }

@@ -133,7 +133,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
                 enable_private_endpoints=False,
                 key_vault=KeyVaultConfig(
                     soft_delete_retention_days=7,  # Minimum for dev
-                    enable_rbac=True,
+                    enable_rbac=False,  # Use access policies instead of RBAC
                 ),
                 network_security=NetworkSecurityConfig(
                     allow_azure_services=True,
@@ -164,7 +164,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
                 enable_private_endpoints=False,
                 key_vault=KeyVaultConfig(
                     soft_delete_retention_days=30,
-                    enable_rbac=True,
+                    enable_rbac=False,  # Use access policies instead of RBAC
                 ),
                 network_security=NetworkSecurityConfig(
                     allow_azure_services=True,
@@ -201,7 +201,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
                 enable_private_endpoints=True,  # Required for production
                 key_vault=KeyVaultConfig(
                     soft_delete_retention_days=90,  # Maximum for production
-                    enable_rbac=True,
+                    enable_rbac=False,  # Use access policies instead of RBAC
                 ),
                 network_security=NetworkSecurityConfig(
                     allow_azure_services=True,
@@ -352,7 +352,7 @@ security:
   enable_private_endpoints: {str(config.security.enable_private_endpoints).lower()}  # Enable for production
   key_vault:
     soft_delete_retention_days: {config.security.key_vault.soft_delete_retention_days}
-    enable_rbac: {str(config.security.key_vault.enable_rbac).lower()}
+    enable_rbac: {str(config.security.key_vault.enable_rbac).lower()}  # Use access policies (false) instead of RBAC (true)
   network_security:
     allow_azure_services: {str(config.security.network_security.allow_azure_services).lower()}
     allowed_ip_ranges: []  # Add IPs for access control

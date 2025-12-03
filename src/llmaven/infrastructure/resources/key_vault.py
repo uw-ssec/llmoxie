@@ -1,21 +1,38 @@
 """Azure Key Vault resource module.
 
 This module creates and configures Azure Key Vault for secure secrets management
-with RBAC authorization, access policies, audit logging, and managed identity integration.
+with access policies, audit logging, and managed identity integration.
+
+Prerequisites:
+--------------
+The deploying user needs the following permissions:
+
+- "Key Vault Contributor" role (for Key Vault management)
+
+These permissions are required to:
+1. Create Key Vault resources
+2. Configure access policies for managed identities
+3. Create and manage secrets
+
+To check your current roles:
+    az role assignment list --assignee $(az ad signed-in-user show --query id -o tsv) \
+        --scope /subscriptions/{SUBSCRIPTION_ID}
+
+To request access from your Azure administrator:
+    "I need Key Vault Contributor role to deploy LLMaven infrastructure"
 
 Access Control:
 ---------------
-Two authentication modes are supported:
+Access Policies:
+   - Key Vault is configured with access policies for secrets management
+   - Use `grant_key_vault_access()` to add access policies for managed identities
+   - Access policies define specific permissions (get, list, set secrets, etc.)
 
-1. RBAC Authorization (Recommended):
-   - Set `enable_rbac=True` in configuration
-   - Use `grant_key_vault_access()` to assign RBAC roles
-   - More flexible and easier to manage at scale
-
-Environment Variables:
-----------------------
-- AZURE_OBJECT_ID: Object ID of the current user/service principal (required for access policies)
-                   Get with: `az ad signed-in-user show --query id -o tsv`
+Usage:
+------
+1. Create Key Vault with `create_key_vault()`
+2. Grant access to managed identities with `grant_key_vault_access()`
+3. Create secrets with `create_secret()` or `create_secrets_from_environment()`
 """
 
 import os
@@ -34,9 +51,19 @@ def create_key_vault(
     tenant_id: str,
     config: LLMavenConfig,
     tags: Dict[str, str],
+    deployer_object_id: Optional[str] = None,
 ) -> azure_native.keyvault.Vault:
     """
-    Create Azure Key Vault with RBAC authorization.
+    Create Azure Key Vault with access policies.
+
+    Prerequisites:
+        The deploying user must have "Key Vault Contributor" role
+
+        This role is required to:
+        1. Create the Key Vault resource
+        2. Configure access policies for managed identities
+
+        If you don't have this role, ask your Azure administrator to grant it.
 
     Args:
         resource_group_name: Name of the resource group
@@ -44,6 +71,7 @@ def create_key_vault(
         tenant_id: Azure AD tenant ID
         config: LLMaven configuration
         tags: Resource tags
+        deployer_object_id: Object ID of the deploying user (for access policy)
 
     Returns:
         Key Vault resource
@@ -58,32 +86,16 @@ def create_key_vault(
     region_suffix = location[:4].replace("-", "").lower()  # e.g., "westus2" -> "west"
     vault_name = f"kv-{project_name}-{environment}-{region_suffix}"[:24]
 
-    # Get current user/service principal object ID for access policies
-    # This allows the deployer to manage the Key Vault
-    current_object_id = os.getenv("AZURE_OBJECT_ID")
-    
     # Build access policies list
     access_policies = []
-    if current_object_id and not kv_config.enable_rbac:
-        # Only add access policies if RBAC is disabled
-        # Access policies for the current user/service principal
+
+    # Add deployer access policy if object ID is provided
+    if deployer_object_id:
         access_policies.append(
             azure_native.keyvault.AccessPolicyEntryArgs(
                 tenant_id=tenant_id,
-                object_id=current_object_id,
-                # Permissions for keys
+                object_id=deployer_object_id,
                 permissions=azure_native.keyvault.PermissionsArgs(
-                    keys=[
-                        azure_native.keyvault.KeyPermissions.GET,
-                        azure_native.keyvault.KeyPermissions.LIST,
-                        azure_native.keyvault.KeyPermissions.UPDATE,
-                        azure_native.keyvault.KeyPermissions.CREATE,
-                        azure_native.keyvault.KeyPermissions.DELETE,
-                        azure_native.keyvault.KeyPermissions.RECOVER,
-                        azure_native.keyvault.KeyPermissions.BACKUP,
-                        azure_native.keyvault.KeyPermissions.RESTORE,
-                    ],
-                    # Permissions for secrets
                     secrets=[
                         azure_native.keyvault.SecretPermissions.GET,
                         azure_native.keyvault.SecretPermissions.LIST,
@@ -93,22 +105,23 @@ def create_key_vault(
                         azure_native.keyvault.SecretPermissions.BACKUP,
                         azure_native.keyvault.SecretPermissions.RESTORE,
                     ],
-                    # Permissions for certificates (optional)
-                    certificates=[
-                        azure_native.keyvault.CertificatePermissions.GET,
-                        azure_native.keyvault.CertificatePermissions.LIST,
-                        azure_native.keyvault.CertificatePermissions.UPDATE,
-                        azure_native.keyvault.CertificatePermissions.CREATE,
-                        azure_native.keyvault.CertificatePermissions.DELETE,
-                        azure_native.keyvault.CertificatePermissions.RECOVER,
-                    ],
+                    keys=[
+                        azure_native.keyvault.KeyPermissions.GET,
+                        azure_native.keyvault.KeyPermissions.LIST,
+                        azure_native.keyvault.KeyPermissions.CREATE,
+                        azure_native.keyvault.KeyPermissions.DELETE,
+                        azure_native.keyvault.KeyPermissions.RECOVER,
+                        azure_native.keyvault.KeyPermissions.WRAP_KEY,
+                        azure_native.keyvault.KeyPermissions.UNWRAP_KEY,
+                        azure_native.keyvault.KeyPermissions.SIGN,
+                        azure_native.keyvault.KeyPermissions.VERIFY,
+                        azure_native.keyvault.KeyPermissions.BACKUP,
+                        azure_native.keyvault.KeyPermissions.RESTORE,
+                    ]
                 ),
             )
         )
-        pulumi.log.info(
-            f"✓ Added access policy for deployer (Object ID: {current_object_id})"
-        )
-    
+
     # Create Key Vault
     key_vault = azure_native.keyvault.Vault(
         f"key-vault-{environment}",
@@ -122,9 +135,8 @@ def create_key_vault(
                 family="A",
                 name=azure_native.keyvault.SkuName.STANDARD,
             ),
-            # RBAC authorization (recommended over access policies)
-            enable_rbac_authorization=kv_config.enable_rbac,
-            # Access policies (only used if RBAC is disabled)
+            # Access policies (not RBAC)
+            enable_rbac_authorization=False,
             access_policies=access_policies if access_policies else None,
             # Soft delete configuration
             enable_soft_delete=False,
@@ -157,6 +169,15 @@ def create_key_vault(
 
     pulumi.export(f"key_vault_name_{environment}", key_vault.name)
     pulumi.export(f"key_vault_uri_{environment}", key_vault.properties.vault_uri)
+
+    # Log information about access policies
+    pulumi.log.info(
+        "✓ Key Vault created with access policies.\n"
+        "  To manage secrets and grant access to container apps, the deploying user\n"
+        "  must have 'Key Vault Contributor' role.\n"
+        "  \n"
+        "  Access policies can be added using `grant_key_vault_access()` function."
+    )
 
     return key_vault
 
@@ -331,67 +352,99 @@ def grant_key_vault_access(
     key_vault: azure_native.keyvault.Vault,
     principal_id: Output[str],
     resource_group_name: Output[str],
-    role_definition_name: str = "Key Vault Secrets User",
-) -> azure_native.authorization.RoleAssignment:
+    tenant_id: str,
+    permissions_level: str = "read",
+    principal_name: Optional[str] = None,
+) -> azure_native.keyvault.AccessPolicy:
     """
-    Grant a managed identity access to Key Vault secrets using RBAC.
+    Grant a principal (user or managed identity) access to Key Vault using access policies.
 
     Args:
         key_vault: Key Vault resource
-        principal_id: Principal ID of the managed identity
+        principal_id: Principal ID (object ID) of the user or managed identity
         resource_group_name: Name of the resource group
-        role_definition_name: Role to assign (default: "Key Vault Secrets User")
+        tenant_id: Azure AD tenant ID
+        permissions_level: Permission level - "read" (get, list) or "write" (get, list, set, delete)
+        principal_name: Optional name for the access policy resource (used for Pulumi resource naming)
 
     Returns:
-        RoleAssignment resource
+        AccessPolicy resource
 
-    Common roles:
-    - "Key Vault Secrets User": Read secret contents
-    - "Key Vault Secrets Officer": Read, write, and delete secrets
-    - "Key Vault Administrator": Full Key Vault permissions
+    Permission levels:
+    - "read": Get and list secrets (for container apps reading secrets)
+    - "write": Get, list, set, and delete secrets (for admin operations)
     """
     import pulumi_random as random
 
-    # Generate a unique name for the role assignment
-    role_assignment_name = random.RandomUuid(
-        f"kv-role-assignment-{role_definition_name.lower().replace(' ', '-')}",
+    # Generate a unique suffix for the access policy name
+    suffix = random.RandomString(
+        f"kv-access-policy-suffix-{principal_name}-{permissions_level}",
+        length=8,
+        special=False,
+        upper=False,
     )
 
-    # Get the role definition ID for "Key Vault Secrets User"
-    # This is a built-in Azure role
-    # Full list: https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide
-    role_definition_ids = {
-        "Key Vault Secrets User": "4633458b-17de-408a-b874-0445c86b69e6",
-        "Key Vault Secrets Officer": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
-        "Key Vault Administrator": "00482a5a-887f-4fb3-b353-3b7898f7c9a1",
-    }
-
-    role_definition_id = role_definition_ids.get(role_definition_name)
-    if not role_definition_id:
+    # Define permissions based on level
+    if permissions_level == "read":
+        secret_permissions = [
+            azure_native.keyvault.SecretPermissions.GET,
+            azure_native.keyvault.SecretPermissions.LIST,
+        ]
+        description = "read access"
+    elif permissions_level == "write":
+        secret_permissions = [
+            azure_native.keyvault.SecretPermissions.GET,
+            azure_native.keyvault.SecretPermissions.LIST,
+            azure_native.keyvault.SecretPermissions.SET,
+            azure_native.keyvault.SecretPermissions.DELETE,
+        ]
+        description = "write access"
+    else:
         pulumi.log.warn(
-            f"Unknown role: {role_definition_name}. "
-            f"Using 'Key Vault Secrets User' instead."
+            f"Unknown permissions level: {permissions_level}. Using 'read' instead."
         )
-        role_definition_id = role_definition_ids["Key Vault Secrets User"]
+        secret_permissions = [
+            azure_native.keyvault.SecretPermissions.GET,
+            azure_native.keyvault.SecretPermissions.LIST,
+        ]
+        description = "read access"
 
-    # Create role assignment
-    role_assignment = azure_native.authorization.RoleAssignment(
-        f"kv-role-{role_definition_name.lower().replace(' ', '-')}",
-        scope=key_vault.id,
-        principal_id=principal_id,
-        principal_type=azure_native.authorization.PrincipalType.SERVICE_PRINCIPAL,
-        role_definition_id=Output.concat(
-            "/subscriptions/",
-            key_vault.id.apply(lambda id: id.split("/")[2]),
-            "/providers/Microsoft.Authorization/roleDefinitions/",
-            role_definition_id,
-        ),
-        role_assignment_name=role_assignment_name.result,
+    # Create a descriptive resource name
+    if principal_name:
+        resource_name = f"kv-access-policy-{principal_name}-{permissions_level}"
+    else:
+        resource_name = f"kv-access-policy-{permissions_level}"
+
+    # Add access policy to Key Vault
+    # Note: This creates an AccessPolicy resource which adds to the existing policies
+    def create_access_policy_args(args):
+        vault_name_val, resource_group_val, principal_id_val, suffix_val = args
+        return {
+            "resource_group_name": resource_group_val,
+            "vault_name": vault_name_val,
+            "policy": azure_native.keyvault.AccessPolicyEntryArgs(
+                tenant_id=tenant_id,
+                object_id=principal_id_val,
+                permissions=azure_native.keyvault.PermissionsArgs(
+                    secrets=secret_permissions,
+                ),
+            ),
+        }
+
+    access_policy_args = Output.all(
+        key_vault.name, resource_group_name, principal_id, suffix.result
+    ).apply(create_access_policy_args)
+
+    access_policy = azure_native.keyvault.AccessPolicy(
+        resource_name,
+        resource_group_name=access_policy_args["resource_group_name"],
+        vault_name=access_policy_args["vault_name"],
+        policy=access_policy_args["policy"],
     )
 
-    pulumi.log.info(f"✓ Granted '{role_definition_name}' access to Key Vault")
+    pulumi.log.info(f"✓ Granted {description} to Key Vault for principal")
 
-    return role_assignment
+    return access_policy
 
 
 def get_secret_reference(

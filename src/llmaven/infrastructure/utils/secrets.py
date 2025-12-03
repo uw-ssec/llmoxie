@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 import string
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import pulumi
@@ -186,9 +187,67 @@ def validate_environment_secrets(
     return all_present, found, missing
 
 
-def get_llmaven_secrets() -> Dict[str, str]:
+def load_env_file(env_file_path: Optional[Path] = None) -> None:
+    """
+    Load environment variables from a .env file.
+
+    This function reads a .env file and loads any LLMAVEN_SECRETS_* variables
+    into the environment. It does not override existing environment variables.
+
+    Args:
+        env_file_path: Path to .env file. If None, no file is loaded.
+
+    Example:
+        >>> load_env_file(Path(".env"))
+        # Loads all LLMAVEN_SECRETS_* variables from .env file
+    """
+    if env_file_path is None:
+        return
+
+    env_file_path = Path(env_file_path)
+
+    if not env_file_path.exists():
+        raise FileNotFoundError(f"Environment file not found: {env_file_path}")
+
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        raise ImportError(
+            "python-dotenv is required to load .env files. "
+            "Install it with: pip install python-dotenv"
+        )
+
+    # Load the .env file
+    env_vars = dotenv_values(env_file_path)
+
+    # Only set LLMAVEN_SECRETS_* variables, and don't override existing ones
+    prefix = "LLMAVEN_SECRETS_"
+    loaded_count = 0
+
+    for key, value in env_vars.items():
+        if key.startswith(prefix) and value is not None:
+            # Only set if not already in environment (env vars take precedence)
+            if key not in os.environ:
+                os.environ[key] = value
+                loaded_count += 1
+                pulumi.log.info(f"✓ Loaded secret from file: {key}")
+            else:
+                pulumi.log.info(
+                    f"⚠ Skipping {key} from file (already set in environment)"
+                )
+
+    pulumi.log.info(f"✓ Loaded {loaded_count} secrets from {env_file_path}")
+
+
+def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
     """
     Get all LLMAVEN_SECRETS_* environment variables.
+
+    Optionally loads secrets from a .env file first, then reads from environment.
+    Environment variables take precedence over .env file values.
+
+    Args:
+        env_file_path: Optional path to .env file to load secrets from
 
     Returns:
         Dictionary mapping secret names (kebab-case) to values
@@ -197,7 +256,14 @@ def get_llmaven_secrets() -> Dict[str, str]:
         >>> os.environ["LLMAVEN_SECRETS_API_KEY"] = "test123"
         >>> get_llmaven_secrets()
         {'api-key': 'test123'}
+
+        >>> get_llmaven_secrets(Path(".env"))
+        # Loads secrets from .env file first, then from environment
     """
+    # Load from .env file if provided
+    if env_file_path is not None:
+        load_env_file(env_file_path)
+
     secrets = {}
     prefix = "LLMAVEN_SECRETS_"
 
@@ -309,7 +375,8 @@ def get_required_secrets_for_config(config_dict: Dict) -> Set[str]:
         "db-admin-password",
         "postgresql-admin-password",
         "storage-account-key",
-        "db-connection-string",
+        "db-connection-string-litellm-db",
+        "db-connection-string-mlflow-db",
         "mlflow-tracking-uri",
     }
 

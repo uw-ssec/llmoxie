@@ -96,12 +96,18 @@ def create_pulumi_program(config_path: Path):
 
         # 5. Create Key Vault
         pulumi.log.info("Creating Key Vault...")
+
+        # Get current Azure client configuration to retrieve deployer's object ID
+        client_config = azure_native.authorization.get_client_config()
+        deployer_object_id = client_config.object_id
+
         key_vault = create_key_vault(
             resource_group_name=resource_group.name,
             location=location,
             tenant_id=config.azure.tenant_id,
             config=config,
             tags=config.tags,
+            deployer_object_id=deployer_object_id,
         )
 
         # 5.1. Create Secrets Manager
@@ -146,7 +152,7 @@ def create_pulumi_program(config_path: Path):
         pulumi.log.info("Creating database connection strings...")
         secrets_manager.create_database_connection_strings(
             postgres_server_fqdn=postgres_server.fully_qualified_domain_name,
-            admin_login="llmaven_admin",
+            admin_login=config.database.admin_login,
             admin_password=admin_password,
             database_names=config.database.databases,
         )
@@ -225,14 +231,58 @@ def create_pulumi_program(config_path: Path):
             tags=config.tags,
         )
 
+        # 4.1. Create User-Assigned Managed Identities for Key Vault access
+        pulumi.log.info("Creating user-assigned managed identities...")
+        from llmaven.infrastructure.resources import (
+            create_user_assigned_managed_identity,
+            grant_key_vault_access,
+        )
+
+        # Create managed identity for MLflow
+        mlflow_managed_identity = None
+        if config.mlflow and config.mlflow.enabled:
+            mlflow_managed_identity = create_user_assigned_managed_identity(
+                name=f"{stack_name}-mlflow-identity",
+                resource_group_name=resource_group.name,
+                location=location,
+                tags=config.tags,
+            )
+
+            # Grant Key Vault access to the managed identity
+            grant_key_vault_access(
+                key_vault=key_vault,
+                principal_id=mlflow_managed_identity.principal_id,
+                resource_group_name=resource_group.name,
+                tenant_id=config.azure.tenant_id,
+                permissions_level="read",
+                principal_name="mlflow-identity",
+            )
+
+        # Create managed identity for LiteLLM
+        litellm_managed_identity = None
+        if config.litellm and config.litellm.enabled:
+            litellm_managed_identity = create_user_assigned_managed_identity(
+                name=f"{stack_name}-litellm-identity",
+                resource_group_name=resource_group.name,
+                location=location,
+                tags=config.tags,
+            )
+
+            # Grant Key Vault access to the managed identity
+            grant_key_vault_access(
+                key_vault=key_vault,
+                principal_id=litellm_managed_identity.principal_id,
+                resource_group_name=resource_group.name,
+                tenant_id=config.azure.tenant_id,
+                permissions_level="read",
+                principal_name="litellm-identity",
+            )
+
         # 8. Deploy Container Apps
 
         # MLflow Container App
         if config.mlflow and config.mlflow.enabled:
             pulumi.log.info("Creating MLflow Container App...")
-
-            # Import grant_key_vault_access
-            from llmaven.infrastructure.resources import grant_key_vault_access
 
             mlflow_app = create_mlflow_app(
                 name=f"{stack_name}-mlflow",
@@ -247,18 +297,24 @@ def create_pulumi_program(config_path: Path):
                 max_replicas=config.mlflow.max_replicas,
                 env_vars=config.mlflow.env_vars,
                 key_vault=key_vault,
-                postgres_server=postgres_server,
-                storage_account=storage_account,
+                managed_identity_id=mlflow_managed_identity.id if mlflow_managed_identity else None,
                 tags=config.tags,
             )
 
-            # Grant Key Vault access to the MLflow container app if RBAC is enabled
-            if config.security.key_vault.enable_rbac:
-                grant_key_vault_access(
-                    key_vault=key_vault,
-                    principal_id=mlflow_app.identity.apply(lambda identity: identity.principal_id),
-                    resource_group_name=resource_group.name,
-                )
+            # Grant Key Vault access to the MLflow container app using access policies
+            # grant_key_vault_access(
+            #     key_vault=key_vault,
+            #     principal_id=mlflow_app.identity.apply(lambda identity: identity.principal_id),
+            #     resource_group_name=resource_group.name,
+            #     tenant_id=config.azure.tenant_id,
+            #     permissions_level="read",
+            #     principal_name="mlflow",
+            # )
+
+            mlflow_fqdn = mlflow_app.configuration.apply(lambda c: c.ingress.fqdn if c and c.ingress else None)
+            
+            # Create MLflow tracking URI secret
+            secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
 
             # Export MLflow URL
             pulumi.export("mlflow_url", mlflow_app.configuration.apply(
@@ -268,11 +324,13 @@ def create_pulumi_program(config_path: Path):
         # LiteLLM Container App
         if config.litellm and config.litellm.enabled:
             pulumi.log.info("Creating LiteLLM Container App...")
+
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
                 resource_group_name=resource_group.name,
                 location=location,
                 container_env_id=container_env.id,
+                container_env_name=container_env.name,
                 image=config.litellm.image,
                 port=config.litellm.port,
                 cpu=config.litellm.cpu,
@@ -282,8 +340,21 @@ def create_pulumi_program(config_path: Path):
                 env_vars=config.litellm.env_vars,
                 key_vault=key_vault,
                 postgres_server=postgres_server,
+                storage_account=storage_account,
+                config_file=config.litellm.config_file if hasattr(config.litellm, 'config_file') else None,
+                managed_identity_id=litellm_managed_identity.id if litellm_managed_identity else None,
                 tags=config.tags,
             )
+
+            # Grant Key Vault access to the LiteLLM container app using access policies
+            # grant_key_vault_access(
+            #     key_vault=key_vault,
+            #     principal_id=litellm_app.identity.apply(lambda identity: identity.principal_id),
+            #     resource_group_name=resource_group.name,
+            #     tenant_id=config.azure.tenant_id,
+            #     permissions_level="read",
+            #     principal_name="litellm",
+            # )
 
             # Export LiteLLM URL
             pulumi.export("litellm_url", litellm_app.configuration.apply(

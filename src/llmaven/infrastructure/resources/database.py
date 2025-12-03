@@ -45,7 +45,7 @@ def create_postgres_server(
     server_name = f"{project_name}-postgres-{environment}"
 
     # Create Private DNS Zone for PostgreSQL
-    private_dns_zone = azure_native.network.PrivateZone(
+    private_dns_zone = azure_native.privatedns.PrivateZone(
         f"postgres-private-dns-zone-{environment}",
         resource_group_name=resource_group_name,
         private_zone_name=f"{server_name}.private.postgres.database.azure.com",
@@ -54,14 +54,14 @@ def create_postgres_server(
     )
 
     # Link Private DNS Zone to VNet
-    vnet_link = azure_native.network.VirtualNetworkLink(
+    vnet_link = azure_native.privatedns.VirtualNetworkLink(
         f"postgres-dns-vnet-link-{environment}",
         resource_group_name=resource_group_name,
         private_zone_name=private_dns_zone.name,
         virtual_network_link_name=f"{server_name}-vnet-link",
         location="global",
         registration_enabled=False,
-        virtual_network=azure_native.network.SubResourceArgs(
+        virtual_network=azure_native.privatedns.SubResourceArgs(
             id=vnet_id,
         ),
         tags=tags,
@@ -73,7 +73,6 @@ def create_postgres_server(
         resource_group_name=resource_group_name,
         server_name=server_name,
         location=location,
-        tags=tags,
         # SKU configuration
         sku=azure_native.dbforpostgresql.SkuArgs(
             name=db_config.sku_name,
@@ -100,19 +99,10 @@ def create_postgres_server(
         # PostgreSQL version
         version=db_config.postgresql_version,
         # Administrator credentials
-        administrator_login="llmaven_admin",
+        administrator_login=db_config.admin_login,
         administrator_login_password=admin_password,
-        # Authentication configuration
-        auth_config=azure_native.dbforpostgresql.AuthConfigArgs(
-            password_auth=azure_native.dbforpostgresql.PasswordAuthEnum.ENABLED,
-            # Enable Azure AD authentication for enhanced security
-            active_directory_auth=(
-                azure_native.dbforpostgresql.ActiveDirectoryAuthEnum.ENABLED
-                if environment == "prod"
-                else azure_native.dbforpostgresql.ActiveDirectoryAuthEnum.DISABLED
-            ),
-        ),
         opts=pulumi.ResourceOptions(depends_on=[vnet_link]),
+        tags=tags,
     )
 
     pulumi.export(f"postgres_server_name_{environment}", postgres_server.name)

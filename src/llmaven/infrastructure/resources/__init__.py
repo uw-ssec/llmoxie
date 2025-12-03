@@ -18,6 +18,7 @@ from .helpers import (
     create_mlflow_app,
     create_postgres_flexible_server,
     create_resource_group,
+    create_user_assigned_managed_identity,
     create_virtual_network,
 )
 from .key_vault import (
@@ -74,4 +75,5 @@ __all__ = [
     "create_postgres_flexible_server",
     "create_mlflow_app",
     "create_litellm_app",
+    "create_user_assigned_managed_identity",
 ]

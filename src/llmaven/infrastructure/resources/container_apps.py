@@ -278,6 +278,11 @@ def create_container_app_with_key_vault_secrets(
     max_replicas: int,
     env_vars: Optional[Dict[str, str]] = None,
     key_vault_secret_refs: Optional[Dict[str, str]] = None,
+    inline_secrets: Optional[Dict[str, str]] = None,
+    command_args: Optional[list] = None,
+    volumes: Optional[list] = None,
+    volume_mounts: Optional[list] = None,
+    managed_identity_id: Optional[Output[str]] = None,
     environment: str = "dev",
     tags: Optional[Dict[str, str]] = None,
     enable_ingress: bool = True,
@@ -303,6 +308,11 @@ def create_container_app_with_key_vault_secrets(
         max_replicas: Maximum replicas
         env_vars: Non-sensitive environment variables
         key_vault_secret_refs: Map of env var name to Key Vault secret name
+        inline_secrets: Map of secret name to secret value (for non-Key Vault secrets like config files)
+        command_args: Command arguments to pass to the container (e.g., ["--config", "/app/config.yaml"])
+        volumes: List of Volume objects for the container app
+        volume_mounts: List of VolumeMount objects for the container
+        managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access (optional)
         environment: Environment name
         tags: Resource tags
         enable_ingress: Enable HTTP ingress
@@ -335,29 +345,39 @@ def create_container_app_with_key_vault_secrets(
             )
 
     # Build secrets list with Key Vault references
-    secrets_list = None
+    secrets_list = []
     if key_vault_secret_refs:
-        # We need to collect all secret URIs first, then create the secrets list
-        # This ensures that Output values are properly resolved
-        def create_secrets_list(vault_uri: str):
-            """Create secrets list with resolved Key Vault URI."""
-            result = []
-            for secret_name in key_vault_secret_refs.values():
-                # Build Key Vault secret URL - ensure no trailing slash in vault_uri
-                vault_base = vault_uri.rstrip('/')
-                secret_uri = f"{vault_base}/secrets/{secret_name}"
-
-                result.append(
+        for secret_name in key_vault_secret_refs.values():
+            # Fallback: construct URI from key_vault_uri (legacy behavior)
+            secret_uri = key_vault_uri.apply(
+                lambda vault_uri, sn=secret_name: f"{vault_uri.rstrip('/')}/secrets/{sn}"
+            )
+            
+            # Use managed identity resource ID if provided, otherwise use system-assigned identity
+            identity_ref = managed_identity_id if managed_identity_id else "system"
+            
+            secrets_list.append(
+                azure_native.app.SecretArgs(
+                    name=secret_name,
+                    key_vault_url=secret_uri,
+                    identity=identity_ref
+                )
+            )
+    
+    # Add inline secrets (non-Key Vault secrets like config files)
+    if inline_secrets:
+        for secret_name, secret_value in inline_secrets.items():
+            # Check if secret already exists in list
+            existing_names = [s.name if hasattr(s, 'name') else None for s in secrets_list]
+            if secret_name not in existing_names:
+                secrets_list.append(
                     azure_native.app.SecretArgs(
                         name=secret_name,
-                        key_vault_url=secret_uri,
-                        identity="system",  # Use system-assigned managed identity
+                        value=secret_value,
                     )
                 )
-            return result
 
-        # Apply the function to the key_vault_uri Output
-        secrets_list = key_vault_uri.apply(create_secrets_list)
+
 
     # Ingress configuration
     ingress_config = None
@@ -386,7 +406,7 @@ def create_container_app_with_key_vault_secrets(
         # Configuration
         configuration=azure_native.app.ConfigurationArgs(
             ingress=ingress_config,
-            # secrets=secrets_list,
+            secrets=secrets_list if secrets_list else None,
             active_revisions_mode="Single",
         ),
         # Template
@@ -395,11 +415,13 @@ def create_container_app_with_key_vault_secrets(
                 azure_native.app.ContainerArgs(
                     name=app_name,
                     image=container_image,
+                    args=command_args if command_args else None,
+                    volume_mounts=volume_mounts if volume_mounts else None,
                     resources=azure_native.app.ContainerResourcesArgs(
                         cpu=cpu,
                         memory=memory,
                     ),
-                    # env=env_list if env_list else None,
+                    env=env_list if env_list else None,
                 )
             ],
             scale=azure_native.app.ScaleArgs(
@@ -416,10 +438,20 @@ def create_container_app_with_key_vault_secrets(
                     ),
                 ],
             ),
+            volumes=volumes if volumes else None,
         ),
-        # System-assigned managed identity
+        # Managed identity configuration
+        # Use system-assigned if no user-assigned identity provided
+        # Otherwise, use both system and user-assigned (for backward compatibility)
         identity=azure_native.app.ManagedServiceIdentityArgs(
-            type=azure_native.app.ManagedServiceIdentityType.SYSTEM_ASSIGNED,
+            type=(
+                azure_native.app.ManagedServiceIdentityType.SYSTEM_ASSIGNED_USER_ASSIGNED
+                if managed_identity_id
+                else azure_native.app.ManagedServiceIdentityType.SYSTEM_ASSIGNED
+            ),
+            user_assigned_identities=(
+                [managed_identity_id] if managed_identity_id else None
+            ),
         ),
     )
 

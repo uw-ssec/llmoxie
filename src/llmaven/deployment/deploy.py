@@ -61,6 +61,7 @@ def deploy_infrastructure(
     config_path: Path,
     preview: bool = False,
     auto_approve: bool = False,
+    env_file_path: Path | None = None,
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -68,6 +69,7 @@ def deploy_infrastructure(
         config_path: Path to configuration file
         preview: Preview changes without deploying
         auto_approve: Automatically approve deployment
+        env_file_path: Optional path to .env file to load secrets from
 
     Raises:
         DeploymentError: If deployment fails
@@ -80,7 +82,7 @@ def deploy_infrastructure(
     print()
     try:
         # Note: skip secrets during validation for now
-        validate_config(config_path, strict=False, skip_secrets=True)
+        validate_config(config_path, strict=False, skip_secrets=False, env_file_path=env_file_path)
     except ValidationError as e:
         print()
         print("❌ Configuration validation failed. Fix errors and try again.")

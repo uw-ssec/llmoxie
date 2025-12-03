@@ -303,6 +303,12 @@ def validate(
         "--skip-secrets",
         help="Skip secrets validation (use with caution)",
     ),
+    env_file: Optional[str] = typer.Option(
+        None,
+        "--env-file",
+        "-e",
+        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+    ),
 ) -> None:
     """Validate LLMaven deployment configuration.
 
@@ -322,18 +328,23 @@ def validate(
 
         Skip secrets check (infrastructure-only validation):
             llmaven validate --skip-secrets
+
+        Load secrets from .env file:
+            llmaven validate --env-file .env.secrets
     """
     from pathlib import Path
 
     from llmaven.deployment.validate import ValidationError, validate_config
 
     config_path = Path(config) if config else Path("llmaven-config.yaml")
+    env_file_path = Path(env_file) if env_file else None
 
     try:
         validate_config(
             config_path=config_path,
             strict=strict,
             skip_secrets=skip_secrets,
+            env_file_path=env_file_path,
         )
     except ValidationError as e:
         sys.exit(1)
@@ -362,6 +373,12 @@ def deploy(
         "-y",
         help="Automatically approve deployment",
     ),
+    env_file: Optional[str] = typer.Option(
+        None,
+        "--env-file",
+        "-e",
+        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+    ),
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -377,18 +394,23 @@ def deploy(
 
         Deploy specific config:
             llmaven deploy --config llmaven-config.staging.yaml
+
+        Deploy with secrets from .env file:
+            llmaven deploy --env-file .env.secrets
     """
     from pathlib import Path
 
     from llmaven.deployment.deploy import DeploymentError, deploy_infrastructure
 
     config_path = Path(config) if config else Path("llmaven-config.yaml")
+    env_file_path = Path(env_file) if env_file else None
 
     try:
         deploy_infrastructure(
             config_path=config_path,
             preview=preview,
             auto_approve=auto_approve,
+            env_file_path=env_file_path,
         )
     except DeploymentError as e:
         typer.echo(f"✗ Deployment failed: {e}", err=True)

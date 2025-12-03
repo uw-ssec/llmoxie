@@ -57,6 +57,10 @@ class NetworkingConfig(BaseModel):
 class DatabaseConfig(BaseModel):
     """Database configuration."""
 
+    admin_login: str = Field(
+        default="llmaven_admin",
+        description="PostgreSQL administrator login name",
+    )
     sku_name: str = Field(
         default="B_Standard_B1ms",
         description="SKU name (B_Standard_B1ms, GP_Standard_D2s_v3, etc.)",
@@ -227,7 +231,10 @@ class KeyVaultConfig(BaseModel):
     soft_delete_retention_days: int = Field(
         default=90, description="Soft delete retention days", ge=7, le=90
     )
-    enable_rbac: bool = Field(default=True, description="Enable RBAC authorization")
+    enable_rbac: bool = Field(
+        default=False,
+        description="Enable RBAC authorization (deprecated - access policies are now used by default)"
+    )
 
 
 class NetworkSecurityConfig(BaseModel):
