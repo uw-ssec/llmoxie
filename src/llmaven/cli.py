@@ -13,9 +13,17 @@ import typer
 
 app = typer.Typer(
     name="llmaven",
-    help="LLMaven API - REST API for LLMaven Documents Engine",
+    help="LLMaven - CLI for Scientific Discovery",
     add_completion=False,
 )
+
+# Create subcommand for server operations
+server_app = typer.Typer(
+    name="server",
+    help="Server management commands",
+    add_completion=False,
+)
+app.add_typer(server_app)
 
 # Create subcommand for infrastructure management
 infra_app = typer.Typer(
@@ -33,7 +41,7 @@ class Environment(str, Enum):
     production = "production"
 
 
-@app.command()
+@server_app.command()
 def serve(
     host: str = typer.Option(
         "0.0.0.0",
@@ -169,7 +177,7 @@ def serve(
         StandaloneApplication("llmaven.main:app", options).run()
 
 
-@app.command()
+@server_app.command()
 def ui(
     host: str = typer.Option(
         "localhost",
