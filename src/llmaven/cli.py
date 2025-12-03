@@ -17,6 +17,14 @@ app = typer.Typer(
     add_completion=False,
 )
 
+# Create subcommand for infrastructure management
+infra_app = typer.Typer(
+    name="infra",
+    help="Infrastructure deployment and management commands",
+    add_completion=False,
+)
+app.add_typer(infra_app)
+
 
 class Environment(str, Enum):
     """Environment modes for the server."""
@@ -241,7 +249,7 @@ def ui(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@infra_app.command()
 def init(
     environment: str = typer.Option(
         "dev",
@@ -267,10 +275,10 @@ def init(
 
     Examples:
         Interactive setup for dev:
-            llmaven init
+            llmaven infra init
 
         Generate prod config non-interactively:
-            llmaven init -e prod -o llmaven-config.prod.yaml --no-interactive
+            llmaven infra init -e prod -o llmaven-config.prod.yaml --no-interactive
     """
     from pathlib import Path
 
@@ -285,7 +293,7 @@ def init(
     )
 
 
-@app.command()
+@infra_app.command()
 def validate(
     config: Optional[str] = typer.Option(
         None,
@@ -321,16 +329,16 @@ def validate(
 
     Examples:
         Validate default config:
-            llmaven validate
+            llmaven infra validate
 
         Strict validation for CI/CD:
-            llmaven validate --config llmaven-config.prod.yaml --strict
+            llmaven infra validate --config llmaven-config.prod.yaml --strict
 
         Skip secrets check (infrastructure-only validation):
-            llmaven validate --skip-secrets
+            llmaven infra validate --skip-secrets
 
         Load secrets from .env file:
-            llmaven validate --env-file .env.secrets
+            llmaven infra validate --env-file .env.secrets
     """
     from pathlib import Path
 
@@ -353,7 +361,7 @@ def validate(
         sys.exit(1)
 
 
-@app.command()
+@infra_app.command()
 def deploy(
     config: Optional[str] = typer.Option(
         None,
@@ -387,16 +395,16 @@ def deploy(
 
     Examples:
         Preview deployment:
-            llmaven deploy --preview
+            llmaven infra deploy --preview
 
         Deploy with auto-approval:
-            llmaven deploy --yes
+            llmaven infra deploy --yes
 
         Deploy specific config:
-            llmaven deploy --config llmaven-config.staging.yaml
+            llmaven infra deploy --config llmaven-config.staging.yaml
 
         Deploy with secrets from .env file:
-            llmaven deploy --env-file .env.secrets
+            llmaven infra deploy --env-file .env.secrets
     """
     from pathlib import Path
 
@@ -420,7 +428,7 @@ def deploy(
         sys.exit(1)
 
 
-@app.command()
+@infra_app.command()
 def destroy(
     config: Optional[str] = typer.Option(
         None,
@@ -442,10 +450,10 @@ def destroy(
 
     Examples:
         Destroy with confirmation:
-            llmaven destroy
+            llmaven infra destroy
 
         Destroy with auto-approval:
-            llmaven destroy --yes
+            llmaven infra destroy --yes
     """
     from pathlib import Path
 
@@ -469,7 +477,7 @@ def destroy(
         sys.exit(1)
 
 
-@app.command()
+@infra_app.command()
 def status(
     config: Optional[str] = typer.Option(
         None,
@@ -488,7 +496,7 @@ def status(
 
     Examples:
         Show status:
-            llmaven status
+            llmaven infra status
     """
     from pathlib import Path
 
@@ -506,7 +514,7 @@ def status(
         sys.exit(1)
 
 
-@app.command()
+@infra_app.command()
 def refresh(
     config: Optional[str] = typer.Option(
         None,
@@ -529,10 +537,10 @@ def refresh(
 
     Examples:
         Refresh stack state:
-            llmaven refresh
+            llmaven infra refresh
 
         Refresh with auto-approval:
-            llmaven refresh --yes
+            llmaven infra refresh --yes
     """
     from pathlib import Path
 
@@ -553,7 +561,7 @@ def refresh(
         sys.exit(1)
 
 
-@app.command()
+@infra_app.command()
 def cancel(
     config: Optional[str] = typer.Option(
         None,
@@ -570,10 +578,10 @@ def cancel(
 
     Examples:
         Cancel in-progress operation:
-            llmaven cancel
+            llmaven infra cancel
 
         Cancel operation for specific config:
-            llmaven cancel --config llmaven-config.staging.yaml
+            llmaven infra cancel --config llmaven-config.staging.yaml
     """
     from pathlib import Path
 
