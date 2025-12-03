@@ -14,7 +14,7 @@ RUN echo "Installing Apt-get packages..." \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Pixi manually 
+# Install Pixi manually
 RUN curl -fsSL https://pixi.sh/install.sh | bash
 
 # # Ensure NVIDIA runtime support is available

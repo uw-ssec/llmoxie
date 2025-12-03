@@ -147,7 +147,7 @@ def create_pulumi_program(config_path: Path):
             environment=environment,
             tags=config.tags,
         )
-        
+
         # 7.1. Create database connection strings
         pulumi.log.info("Creating database connection strings...")
         secrets_manager.create_database_connection_strings(
@@ -312,7 +312,7 @@ def create_pulumi_program(config_path: Path):
             # )
 
             mlflow_fqdn = mlflow_app.configuration.apply(lambda c: c.ingress.fqdn if c and c.ingress else None)
-            
+
             # Create MLflow tracking URI secret
             secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
 

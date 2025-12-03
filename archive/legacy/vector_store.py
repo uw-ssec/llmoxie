@@ -30,7 +30,7 @@ def initialize_qdrant(documents, model_name: str, qdrant_path: Path, collection_
     #     return Qdrant(client=client, collection_name=collection_name, embeddings=embedding)
 
     print(f"Creating new Qdrant collection '{collection_name}' with {len(documents)} documents using '{model_name}'.")
-    
+
     qdrant_path.mkdir(parents=True, exist_ok=True)
     return Qdrant.from_documents(
         documents=documents,

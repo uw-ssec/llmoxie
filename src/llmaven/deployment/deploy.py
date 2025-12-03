@@ -95,7 +95,7 @@ def deploy_infrastructure(
     # Get stack name from config
     from ..infrastructure.config.loader import load_config
     config = load_config(config_path)
-    
+
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         # Disable passphrase requirement by setting empty string
@@ -108,7 +108,7 @@ def deploy_infrastructure(
                 "environment variable is not set. Either set the environment variable or "
                 "disable passphrase protection by setting 'enable_passphrase: false' in the config."
             )
-    
+
     stack_name = f"{config.project.name}-{config.project.environment}"
     project_name = "llmaven"
 
@@ -220,7 +220,7 @@ def destroy_infrastructure(config_path: Path) -> None:
     # Get stack name
     from ..infrastructure.config.loader import load_config
     config = load_config(config_path)
-    
+
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
@@ -230,7 +230,7 @@ def destroy_infrastructure(config_path: Path) -> None:
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
             )
-    
+
     stack_name = f"{config.project.name}-{config.project.environment}"
     project_name = "llmaven"
 
@@ -292,7 +292,7 @@ def refresh_infrastructure(
     # Get stack name
     from ..infrastructure.config.loader import load_config
     config = load_config(config_path)
-    
+
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
@@ -302,7 +302,7 @@ def refresh_infrastructure(
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
             )
-    
+
     stack_name = f"{config.project.name}-{config.project.environment}"
     project_name = "llmaven"
 
@@ -398,7 +398,7 @@ def cancel_stack_operation(config_path: Path) -> None:
     # Get stack name
     from ..infrastructure.config.loader import load_config
     config = load_config(config_path)
-    
+
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
@@ -408,7 +408,7 @@ def cancel_stack_operation(config_path: Path) -> None:
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
             )
-    
+
     stack_name = f"{config.project.name}-{config.project.environment}"
     project_name = "llmaven"
 
@@ -477,7 +477,7 @@ def show_deployment_status(config_path: Path) -> None:
     # Get stack name
     from ..infrastructure.config.loader import load_config
     config = load_config(config_path)
-    
+
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
@@ -487,7 +487,7 @@ def show_deployment_status(config_path: Path) -> None:
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
             )
-    
+
     stack_name = f"{config.project.name}-{config.project.environment}"
     project_name = "llmaven"
 

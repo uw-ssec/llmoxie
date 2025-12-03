@@ -78,7 +78,7 @@ streamlit = "*"
 tenacity = "==8.5.0"
 
 [environments]
-llmaven = { features = ["docker", "llmaven", "pulumi"], no-default-feature = true }
+llmaven = { features = ["docker", "llmaven", "pulumi", "pre-commit"], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -137,3 +137,6 @@ restart = { cmd = "docker-compose restart", cwd = "docker" }
 clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 # === End Docker related dependencies and tasks ===
+
+[feature.pre-commit.dependencies]
+pre-commit = ">=3.4.0,<4"

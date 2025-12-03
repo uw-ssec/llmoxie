@@ -8,7 +8,7 @@ def get_model(generation_model):
     """
     Retrieve or create a cached instance of the language model.
     """
-    
+
     if generation_model not in MODEL_INSTANCES:
 
         MODEL_INSTANCES[generation_model] = LanguageModel(model_name=generation_model)
@@ -19,4 +19,4 @@ def get_model(generation_model):
 def generate_answer(prompt, generation_model):
     model = get_model(generation_model)
     response = model.inference(prompt)
-    return {"answer": response, "status_code": 200} 
+    return {"answer": response, "status_code": 200}

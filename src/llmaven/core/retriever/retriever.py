@@ -21,7 +21,7 @@ class Retriever:
         self.collection_name = None
         self.db = None
 
-    def create_vector_store(self, documents: list, collection_name: str = 'temp_collection'):    
+    def create_vector_store(self, documents: list, collection_name: str = 'temp_collection'):
         """
         Creates a Qdrant vector store from a list of documents.
 
@@ -37,7 +37,7 @@ class Retriever:
         # Delete temp_collection before recreating
         if collection_name == "temp_collection":
             try:
-                client = QdrantClient(path="data/vector_stores") 
+                client = QdrantClient(path="data/vector_stores")
                 client.delete_collection(collection_name)
                 shutil.rmtree(Path("data/vector_stores") / collection_name, ignore_errors=True)
                 print(f"Deleted existing collection '{collection_name}'.")
@@ -71,8 +71,8 @@ class Retriever:
             Qdrant: Loaded vector store instance.
         """
         if qdrant_path:
-            self.qdrant_path = Path(qdrant_path) 
-        if collection_name:    
+            self.qdrant_path = Path(qdrant_path)
+        if collection_name:
             self.collection_name = collection_name
 
         client = QdrantClient(path=str(self.qdrant_path))
@@ -97,4 +97,3 @@ class Retriever:
             search_kwargs={"k": 2},
         )
         return retriever.invoke(query)
-

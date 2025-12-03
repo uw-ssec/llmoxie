@@ -78,8 +78,8 @@ def download_olmo_2_model(force: bool = False) -> Path:
     return download_model("OLMO 2", OLMO_2_MODEL_FILE, url, force)
 
 def load_transformer_model(
-    model_name: str = TRANSFORMER_MODEL_NAME, 
-    force: bool = False, 
+    model_name: str = TRANSFORMER_MODEL_NAME,
+    force: bool = False,
     quantization: str = "8bit"  # Options: "8bit" or "4bit"
 ):
     """

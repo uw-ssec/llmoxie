@@ -4,12 +4,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 def get_embedding_model(model_name: str = None) -> HuggingFaceEmbeddings:
     """
     Returns an instance of an embedding model.
-    
+
     Parameters:
         model_name (str, optional): The name/identifier of the embedding model to use.
             If not provided, the function checks the environment variable 'EMBEDDING_MODEL_NAME'
             and falls back to a default value.
-            
+
     Returns:
         HuggingFaceEmbeddings: An instance of the embedding model.
     """

@@ -80,7 +80,7 @@ class DataLogger:
         """
         date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
         model_name = model.replace("/", "_") if model else "unknown"
-        
+
         if user_id:
             return f"{user_id}_{model_name}_{date_str}.jsonl"
         else:
@@ -103,7 +103,7 @@ class DataLogger:
             body = log_entry["request"]["body"]
             if isinstance(body, dict):
                 model = body.get("model")
-        
+
         # Extract user_id if present
         user_id = log_entry.get("user_id")
 
@@ -149,11 +149,11 @@ class DataLogger:
             },
             "response": {},
         }
-        
+
         # Add user_id if provided
         if user_id:
             entry["user_id"] = user_id
-        
+
         return entry
 
     def add_response_to_entry(

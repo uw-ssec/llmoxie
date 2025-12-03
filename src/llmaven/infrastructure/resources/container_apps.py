@@ -352,10 +352,10 @@ def create_container_app_with_key_vault_secrets(
             secret_uri = key_vault_uri.apply(
                 lambda vault_uri, sn=secret_name: f"{vault_uri.rstrip('/')}/secrets/{sn}"
             )
-            
+
             # Use managed identity resource ID if provided, otherwise use system-assigned identity
             identity_ref = managed_identity_id if managed_identity_id else "system"
-            
+
             secrets_list.append(
                 azure_native.app.SecretArgs(
                     name=secret_name,
@@ -363,7 +363,7 @@ def create_container_app_with_key_vault_secrets(
                     identity=identity_ref
                 )
             )
-    
+
     # Add inline secrets (non-Key Vault secrets like config files)
     if inline_secrets:
         for secret_name, secret_value in inline_secrets.items():

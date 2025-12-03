@@ -32,10 +32,10 @@ TABLE_NAME = "userkeys"
 def get_table_client():
     """Get Azure Table Storage client."""
     load_dotenv()
-    
+
     account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
     account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
-    
+
     if not account_name or not account_key:
         console.print(
             "[red]✗ Error:[/red] AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY "
@@ -44,15 +44,15 @@ def get_table_client():
         )
         console.print("\n[yellow]See infra/README.md for setup instructions[/yellow]")
         raise typer.Exit(1)
-    
+
     account_url = f"https://{account_name}.table.core.windows.net"
     credential = AzureNamedKeyCredential(account_name, account_key)
-   
+
     table_service = TableServiceClient(
         endpoint=account_url,
         credential=credential
     )
-   
+
     return table_service.get_table_client(TABLE_NAME)
 
 
@@ -63,18 +63,18 @@ def add(
 ):
     """
     Add a new user to the authentication system.
-    
+
     Generates a unique user ID and API key, then inserts into Azure Table Storage.
     """
     try:
         table_client = get_table_client()
-        
+
         # Generate credentials
         if not user_id:
             user_id = str(uuid.uuid4())
         api_key = secrets.token_hex(32)
         created_at = datetime.utcnow().isoformat() + "Z"
-        
+
         # Create entity
         entity = {
             "PartitionKey": "user",
@@ -83,10 +83,10 @@ def add(
             "user_name": user_name,
             "created_at": created_at,
         }
-        
+
         # Insert into table
         console.print(f"\n[yellow]Adding user '{user_name}'...[/yellow]")
-        
+
         try:
             table_client.create_entity(entity=entity)
         except ResourceExistsError:
@@ -103,7 +103,7 @@ def add(
             else:
                 console.print(f"[red]✗ Azure Table Storage error:[/red] {e}", style="red")
             raise typer.Exit(1)
-        
+
         # Display results
         console.print("\n[green]" + "=" * 70 + "[/green]")
         console.print("[green bold]USER CREATED SUCCESSFULLY[/green bold]")
@@ -116,15 +116,15 @@ def add(
         console.print("[yellow]" + "-" * 70 + "[/yellow]")
         console.print(f"[green bold]{api_key}[/green bold]")
         console.print("[yellow]" + "-" * 70 + "[/yellow]")
-        
+
         console.print("\n[cyan]The user can now authenticate using:[/cyan]")
         console.print(f"  Authorization: Bearer {api_key}")
-        
+
         console.print("\n[cyan]Example curl command:[/cyan]")
         console.print(f"""  curl http://localhost:8000/v1/models \\
     -H "Authorization: Bearer {api_key}\"""")
         console.print()
-        
+
     except typer.Exit:
         raise
     except Exception as e:
@@ -141,7 +141,7 @@ def list_users(
     """
     try:
         table_client = get_table_client()
-        
+
         # Query all users
         try:
             entities = table_client.query_entities("PartitionKey eq 'user'")
@@ -153,11 +153,11 @@ def list_users(
             else:
                 console.print(f"[red]✗ Azure Table Storage error:[/red] {e}", style="red")
             raise typer.Exit(1)
-        
+
         if not users:
             console.print("\n[yellow]No users found[/yellow]\n")
             return
-        
+
         # Create table
         table = Table(title=f"\nUsers in {TABLE_NAME}", show_lines=True)
         table.add_column("User Name", style="cyan")
@@ -165,7 +165,7 @@ def list_users(
         table.add_column("Created", style="yellow")
         if verbose:
             table.add_column("API Key", style="magenta")
-        
+
         # Add rows
         for user in users:
             row = [
@@ -176,10 +176,10 @@ def list_users(
             if verbose:
                 row.append(user.get("api_key", "N/A"))
             table.add_row(*row)
-        
+
         console.print(table)
         console.print(f"\n[cyan]Total users:[/cyan] {len(users)}\n")
-        
+
     except typer.Exit:
         raise
     except Exception as e:
@@ -197,7 +197,7 @@ def delete(
     """
     try:
         table_client = get_table_client()
-        
+
         # Get user first to show info
         try:
             user = table_client.get_entity("user", user_id)
@@ -208,18 +208,18 @@ def delete(
         except HttpResponseError as e:
             console.print(f"[red]✗ Azure Table Storage error:[/red] {e}", style="red")
             raise typer.Exit(1)
-        
+
         # Confirm deletion
         if not force:
             console.print(f"\n[yellow]About to delete:[/yellow]")
             console.print(f"  User Name: {user_name}")
             console.print(f"  User ID: {user_id}")
-            
+
             confirm = typer.confirm("\nAre you sure you want to delete this user?")
             if not confirm:
                 console.print("\n[yellow]Cancelled[/yellow]\n")
                 raise typer.Exit(0)
-        
+
         # Delete user
         try:
             table_client.delete_entity("user", user_id)
@@ -227,7 +227,7 @@ def delete(
         except HttpResponseError as e:
             console.print(f"[red]✗ Error deleting user:[/red] {e}", style="red")
             raise typer.Exit(1)
-        
+
     except typer.Exit:
         raise
     except Exception as e:

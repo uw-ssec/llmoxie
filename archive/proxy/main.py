@@ -58,49 +58,49 @@ async def startup_event():
     else:
         logger.info("Authentication disabled")
 
-        
+
 async def verify_api_key(authorization: Optional[str] = Header(None)) -> Optional[dict]:
     """
     Verify API key from Authorization header.
-    
+
     Args:
         authorization: Authorization header value (Bearer token)
-    
+
     Returns:
         User info dict if valid, raises HTTPException if invalid
     """
     if not AUTH_ENABLED:
         return None
-    
+
     if not authorization:
         raise HTTPException(
             status_code=401,
             detail="Missing Authorization header"
         )
-    
+
     # Extract Bearer token
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
             detail="Invalid Authorization header format. Expected: Bearer <token>"
         )
-    
+
     api_key = authorization[7:]  # Remove "Bearer " prefix
-    
+
     # Validate API key
     if key_store is None:
         raise HTTPException(
             status_code=500,
             detail="Authentication is not configured"
         )
-    
+
     user_info = key_store.validate_api_key(api_key)
     if not user_info:
         raise HTTPException(
             status_code=401,
             detail="Invalid API key"
         )
-    
+
     return user_info
 
 
@@ -258,7 +258,7 @@ async def proxy_openai_v1(
     """
     # Verify API key if authentication is enabled
     user_info = await verify_api_key(authorization)
-    
+
     return await proxy_request(request, f"/v1/{path}", method=request.method, user_info=user_info)
 
 

@@ -1,6 +1,7 @@
 # Infrastructure Setup
 
-This directory contains Pulumi infrastructure-as-code for setting up Azure resources needed by the LLMaven proxy service.
+This directory contains Pulumi infrastructure-as-code for setting up Azure
+resources needed by the LLMaven proxy service.
 
 ## Prerequisites
 
@@ -46,4 +47,5 @@ cd infra
 pulumi destroy
 ```
 
-**Warning**: This will delete the storage account and all data including user keys!
+**Warning**: This will delete the storage account and all data including user
+keys!

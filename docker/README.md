@@ -1,6 +1,8 @@
 # LLMaven Docker Infrastructure
 
-LLMaven provides a complete containerized infrastructure for AI-powered scientific discovery, featuring LLM proxy services, experiment tracking, observability, and storage solutions.
+LLMaven provides a complete containerized infrastructure for AI-powered
+scientific discovery, featuring LLM proxy services, experiment tracking,
+observability, and storage solutions.
 
 ## Table of Contents
 
@@ -19,14 +21,19 @@ LLMaven provides a complete containerized infrastructure for AI-powered scientif
 
 ## Overview
 
-This Docker setup provides a production-ready infrastructure for LLMaven that includes:
+This Docker setup provides a production-ready infrastructure for LLMaven that
+includes:
 
-- **LiteLLM Proxy**: Unified interface for 100+ LLMs with load balancing, fallbacks, and cost tracking
-- **MLflow**: Experiment tracking and model registry for machine learning workflows
-- **PostgreSQL**: Relational database for storing configurations, metrics, and experiment data
+- **LiteLLM Proxy**: Unified interface for 100+ LLMs with load balancing,
+  fallbacks, and cost tracking
+- **MLflow**: Experiment tracking and model registry for machine learning
+  workflows
+- **PostgreSQL**: Relational database for storing configurations, metrics, and
+  experiment data
 - **MinIO**: S3-compatible object storage for artifacts, logs, and model storage
 
-All services are orchestrated using Docker Compose and can be managed either directly with `docker-compose` commands or through convenient Pixi tasks.
+All services are orchestrated using Docker Compose and can be managed either
+directly with `docker-compose` commands or through convenient Pixi tasks.
 
 ### Directory Structure
 
@@ -42,7 +49,8 @@ docker/
 └── README.md                   # This file
 ```
 
-**Important**: Copy `.env.example` to `.env` and configure your credentials before starting services.
+**Important**: Copy `.env.example` to `.env` and configure your credentials
+before starting services.
 
 ## Architecture
 
@@ -82,11 +90,16 @@ graph TB
 
 ### Data Flow
 
-1. **LLM Requests**: Applications send chat completion requests to LiteLLM Proxy (port 4000) using OpenAI-compatible API
-2. **Request Routing**: LiteLLM routes requests to configured LLM providers (Azure OpenAI, OpenAI, Anthropic, etc.)
-3. **Automatic Logging**: All requests and responses are automatically logged to MLflow for experiment tracking and analysis
-4. **Artifact Storage**: MLflow stores model artifacts, plots, and experiment data in MinIO S3-compatible storage
-5. **Metadata Storage**: Configuration, metrics, and run metadata are stored in PostgreSQL databases (mlflow_db, litellm_db)
+1. **LLM Requests**: Applications send chat completion requests to LiteLLM Proxy
+   (port 4000) using OpenAI-compatible API
+2. **Request Routing**: LiteLLM routes requests to configured LLM providers
+   (Azure OpenAI, OpenAI, Anthropic, etc.)
+3. **Automatic Logging**: All requests and responses are automatically logged to
+   MLflow for experiment tracking and analysis
+4. **Artifact Storage**: MLflow stores model artifacts, plots, and experiment
+   data in MinIO S3-compatible storage
+5. **Metadata Storage**: Configuration, metrics, and run metadata are stored in
+   PostgreSQL databases (mlflow_db, litellm_db)
 
 ## Prerequisites
 
@@ -155,7 +168,9 @@ pixi run -e llmaven up
 docker-compose up -d
 ```
 
-**Note**: The first time you run this command, Docker will build custom images for LiteLLM and MLflow. This may take a few minutes. Subsequent starts will be much faster.
+**Note**: The first time you run this command, Docker will build custom images
+for LiteLLM and MLflow. This may take a few minutes. Subsequent starts will be
+much faster.
 
 ### 3. Verify Services
 
@@ -189,13 +204,16 @@ Once all services are healthy:
 **Purpose**: Unified API gateway for multiple LLM providers
 
 **Image**: Custom build from `dockerfiles/litellm.dockerfile`
+
 - Base image: `ghcr.io/berriai/litellm:v1.79.1-stable`
 - Pre-installed packages: `mlflow==3.6.0`
 
 **Ports**:
+
 - `4000:4000`: LiteLLM Proxy API - hardcoded mapping
 
 **Features**:
+
 - OpenAI-compatible API interface
 - Support for 100+ LLM providers
 - Request/response logging to MLflow
@@ -204,6 +222,7 @@ Once all services are healthy:
 - API key management with master key authentication
 
 **Configuration**: `config.yaml` in the docker directory
+
 - Copied into the image at build time at `/app/config.yaml`
 
 **Container Name**: `llmaven_litellm`
@@ -213,18 +232,22 @@ Once all services are healthy:
 **Dependencies**: Waits for PostgreSQL (healthy) and MLflow (healthy)
 
 **Startup Command**:
-  - `litellm --config /app/config.yaml`
 
-**Restart Policy**: Not explicitly set (defaults to `no` - doesn't restart automatically)
+- `litellm --config /app/config.yaml`
+
+**Restart Policy**: Not explicitly set (defaults to `no` - doesn't restart
+automatically)
 
 **Health Check**:
-  - Interval: 30s
-  - Timeout: 10s
-  - Retries: 3
-  - Start period: 40s (grace period before first check)
-  - Command: `wget --no-verbose --tries=1 http://localhost:4000/health/liveliness`
+
+- Interval: 30s
+- Timeout: 10s
+- Retries: 3
+- Start period: 40s (grace period before first check)
+- Command: `wget --no-verbose --tries=1 http://localhost:4000/health/liveliness`
 
 **Key Environment Variables**:
+
 - `LITELLM_MASTER_KEY`: Master authentication key
 - `DATABASE_URL`: PostgreSQL connection string for LiteLLM data
 - `MLFLOW_TRACKING_URI`: MLflow server endpoint for logging
@@ -234,13 +257,17 @@ Once all services are healthy:
 **Purpose**: Experiment tracking, model registry, and ML lifecycle management
 
 **Image**: Custom build from `dockerfiles/mlflow.dockerfile`
+
 - Base image: `ghcr.io/mlflow/mlflow:v3.6.0`
 - Pre-installed packages: `psycopg2-binary==2.9.11`, `boto3==1.40.73`
 
 **Ports**:
-- `${MLFLOW_PORT}:${MLFLOW_PORT}`: MLflow UI/API (default: 8080:8080) - uses environment variable
+
+- `${MLFLOW_PORT}:${MLFLOW_PORT}`: MLflow UI/API (default: 8080:8080) - uses
+  environment variable
 
 **Features**:
+
 - Experiment tracking and comparison
 - Model versioning and registry
 - Artifact storage in MinIO
@@ -257,21 +284,25 @@ Once all services are healthy:
 
 **Network**: `llmaven-network`
 
-**Dependencies**: Waits for PostgreSQL (healthy), MinIO (healthy), and createbuckets (completed successfully)
+**Dependencies**: Waits for PostgreSQL (healthy), MinIO (healthy), and
+createbuckets (completed successfully)
 
 **Startup Command**: MLflow server with:
-  - `--allowed-hosts '*'`: Accepts connections from any hostname
-  - `--cors-allowed-origins '*'`: Enables CORS for all origins
+
+- `--allowed-hosts '*'`: Accepts connections from any hostname
+- `--cors-allowed-origins '*'`: Enables CORS for all origins
 
 **Restart Policy**: `always` - automatically restarts if the container stops
 
 **Health Check**:
-  - Interval: 10s
-  - Timeout: 5s
-  - Retries: 30
-  - Uses Python urllib to check `/health` endpoint
+
+- Interval: 10s
+- Timeout: 5s
+- Retries: 30
+- Uses Python urllib to check `/health` endpoint
 
 **Key Environment Variables**:
+
 - `MLFLOW_BACKEND_STORE_URI`: PostgreSQL connection for metadata
 - `MLFLOW_DEFAULT_ARTIFACT_ROOT`: S3 path for artifacts (s3://mlflow/)
 - `MLFLOW_S3_ENDPOINT_URL`: MinIO endpoint for S3-compatible storage
@@ -285,18 +316,25 @@ Once all services are healthy:
 **Image**: `postgres:16`
 
 **Ports**:
-- `${POSTGRES_PORT}:5432`: PostgreSQL database (default: 5432:5432) - uses environment variable
+
+- `${POSTGRES_PORT}:5432`: PostgreSQL database (default: 5432:5432) - uses
+  environment variable
 
 **Volume Mounts**:
+
 - `postgres_data:/var/lib/postgresql/data`: PostgreSQL data directory
-- `./create_service_dbs.sql:/docker-entrypoint-initdb.d/create_service_dbs.sql`: Database initialization script
+- `./create_service_dbs.sql:/docker-entrypoint-initdb.d/create_service_dbs.sql`:
+  Database initialization script
 
 **Databases Created**:
+
 - `llmaven`: Main database (default)
 - `mlflow_db`: MLflow backend storage
 - `litellm_db`: LiteLLM proxy storage
 
-**Initialization**: Automatically runs `/Users/lsetiawan/Repos/SSEC/llmaven/docker/create_service_dbs.sql` on first startup
+**Initialization**: Automatically runs
+`/Users/lsetiawan/Repos/SSEC/llmaven/docker/create_service_dbs.sql` on first
+startup
 
 **Data Persistence**: Uses named volume `llmaven_postgres_data`
 
@@ -307,12 +345,14 @@ Once all services are healthy:
 **Restart Policy**: `always` - automatically restarts if the container stops
 
 **Health Check**:
-  - Interval: 10s
-  - Timeout: 5s
-  - Retries: 5
-  - Command: `pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}`
+
+- Interval: 10s
+- Timeout: 5s
+- Retries: 5
+- Command: `pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}`
 
 **Key Environment Variables**:
+
 - `POSTGRES_USER`: Database admin user (default: llmaven-admin)
 - `POSTGRES_PASSWORD`: Database password
 - `POSTGRES_DB`: Default database name
@@ -325,28 +365,33 @@ Once all services are healthy:
 **Image**: `minio/minio:latest`
 
 **Buckets Created**:
+
 - `mlflow`: MLflow artifacts (models, plots, data)
 - `llmaven`: General LLMaven storage
 
 **Ports**:
+
 - `9000:9000`: MinIO API (S3-compatible) - hardcoded mapping
 - `9001:9001`: Web Console UI - hardcoded mapping
 
 **Volume Mounts**:
+
 - `minio_data:/data`: MinIO data directory
 
 **Server Command**: `server /data --console-address ":9001"`
-  - Serves data from `/data` directory
-  - Exposes console on port 9001
+
+- Serves data from `/data` directory
+- Exposes console on port 9001
 
 **Data Persistence**: Uses volume `minio_data` (local driver)
 
 **Bucket Creation**: Automated via `createbuckets` service on startup
-  - Uses MinIO Client (`mc`) image: `quay.io/minio/mc:latest`
-  - Creates buckets: `mlflow` and `llmaven`
-  - Restart policy: `on-failure` - retries only if it fails
-  - Uses alias `dockerminio` for MinIO connection
-  - Exits successfully (code 0) after creating buckets
+
+- Uses MinIO Client (`mc`) image: `quay.io/minio/mc:latest`
+- Creates buckets: `mlflow` and `llmaven`
+- Restart policy: `on-failure` - retries only if it fails
+- Uses alias `dockerminio` for MinIO connection
+- Exits successfully (code 0) after creating buckets
 
 **Container Name**: `llmaven_minio`
 
@@ -355,23 +400,31 @@ Once all services are healthy:
 **Restart Policy**: `always` - automatically restarts if the container stops
 
 **Health Check**:
-  - Interval: 30s
-  - Timeout: 20s
-  - Retries: 3
-  - Command: `curl -f http://localhost:9000/minio/health/live`
+
+- Interval: 30s
+- Timeout: 20s
+- Retries: 3
+- Command: `curl -f http://localhost:9000/minio/health/live`
 
 **Key Environment Variables**:
-- `MINIO_ROOT_USER`: Admin username (default: minioadmin, or uses AWS_ACCESS_KEY_ID)
-- `MINIO_ROOT_PASSWORD`: Admin password (default: minioadmin, or uses AWS_SECRET_ACCESS_KEY)
-- `S3_ENDPOINT_URL`: MinIO API endpoint (constructed from MINIO_HOST and MINIO_PORT)
+
+- `MINIO_ROOT_USER`: Admin username (default: minioadmin, or uses
+  AWS_ACCESS_KEY_ID)
+- `MINIO_ROOT_PASSWORD`: Admin password (default: minioadmin, or uses
+  AWS_SECRET_ACCESS_KEY)
+- `S3_ENDPOINT_URL`: MinIO API endpoint (constructed from MINIO_HOST and
+  MINIO_PORT)
 
 ## Configuration
 
 ### Environment Variables
 
-The `.env` file contains all configuration for the Docker stack. See `.env.example` for a complete reference.
+The `.env` file contains all configuration for the Docker stack. See
+`.env.example` for a complete reference.
 
-**Important**: All services load environment variables from the `.env` file using `env_file: - .env` in their Docker Compose configuration. Make sure the `.env` file exists before starting services.
+**Important**: All services load environment variables from the `.env` file
+using `env_file: - .env` in their Docker Compose configuration. Make sure the
+`.env` file exists before starting services.
 
 #### Core Database Configuration
 
@@ -399,7 +452,9 @@ AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}                         # Uses MinIO root u
 AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}                 # Uses MinIO root password
 ```
 
-**Note**: The MinIO and AWS credentials use variable references to keep them in sync. By default, both use `minioadmin`, but you can override them by setting `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+**Note**: The MinIO and AWS credentials use variable references to keep them in
+sync. By default, both use `minioadmin`, but you can override them by setting
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
 #### MLflow Configuration
 
@@ -413,7 +468,8 @@ MLFLOW_S3_ENDPOINT_URL=${S3_ENDPOINT_URL}                                       
 MLFLOW_S3_IGNORE_TLS="true"                                                                     # Required for local MinIO
 ```
 
-**Note**: The MLflow Docker image is built with `psycopg2-binary` and `boto3` pre-installed (see `dockerfiles/mlflow.dockerfile`).
+**Note**: The MLflow Docker image is built with `psycopg2-binary` and `boto3`
+pre-installed (see `dockerfiles/mlflow.dockerfile`).
 
 #### LiteLLM Configuration
 
@@ -427,7 +483,8 @@ MLFLOW_EXPERIMENT_NAME="Default"
 LITELLM_MASTER_KEY=sk-1234                                            # Change in production!
 ```
 
-**Note**: The LiteLLM Docker image is built with `mlflow` pre-installed (see `dockerfiles/litellm.dockerfile`).
+**Note**: The LiteLLM Docker image is built with `mlflow` pre-installed (see
+`dockerfiles/litellm.dockerfile`).
 
 #### LLM Provider API Keys
 
@@ -494,7 +551,8 @@ Then add the corresponding API keys to your `.env` file.
 
 #### Alternative: S3 Logging
 
-To enable S3 logging instead of MLflow logging, edit `config.yaml` and replace the current `litellm_settings` section with:
+To enable S3 logging instead of MLflow logging, edit `config.yaml` and replace
+the current `litellm_settings` section with:
 
 ```yaml
 litellm_settings:
@@ -510,7 +568,8 @@ litellm_settings:
     s3_path: os.environ/S3_PATH_PREFIX
 ```
 
-Then add the corresponding environment variables to your `.env` file and rebuild the LiteLLM image:
+Then add the corresponding environment variables to your `.env` file and rebuild
+the LiteLLM image:
 
 ```bash
 # Add to .env
@@ -525,7 +584,8 @@ docker-compose up -d litellm
 
 ### Custom Docker Images
 
-LLMaven uses custom Docker images for LiteLLM and MLflow to pre-install required dependencies, improving startup time and reliability.
+LLMaven uses custom Docker images for LiteLLM and MLflow to pre-install required
+dependencies, improving startup time and reliability.
 
 #### MLflow Dockerfile
 
@@ -555,9 +615,11 @@ RUN mkdir -p /app
 COPY config.yaml /app/config.yaml
 ```
 
-Pre-installs MLflow for logging integration and copies the LiteLLM configuration file into the image.
+Pre-installs MLflow for logging integration and copies the LiteLLM configuration
+file into the image.
 
-**Building the Images**: The images are automatically built when you run `docker-compose up` or `pixi run -e llmaven up`. To rebuild after changes:
+**Building the Images**: The images are automatically built when you run
+`docker-compose up` or `pixi run -e llmaven up`. To rebuild after changes:
 
 ```bash
 # Rebuild all custom images
@@ -573,7 +635,8 @@ docker-compose build --no-cache
 
 ### Database Initialization
 
-The file `create_service_dbs.sql` automatically creates required databases on first startup:
+The file `create_service_dbs.sql` automatically creates required databases on
+first startup:
 
 - Creates `mlflow_db` for MLflow backend storage
 - Creates `litellm_db` for LiteLLM proxy data
@@ -640,14 +703,16 @@ print(response.content)
 
 ### Tracking Experiments with MLflow
 
-All LLM requests are automatically logged to MLflow. Access the UI at http://localhost:8080 to:
+All LLM requests are automatically logged to MLflow. Access the UI at
+http://localhost:8080 to:
 
 - View request/response history
 - Compare model performance
 - Track costs and token usage
 - Analyze response patterns
 
-**Note**: By default, LiteLLM logs to the "Default" experiment. You can customize this by setting `MLFLOW_EXPERIMENT_NAME` in your `.env` file.
+**Note**: By default, LiteLLM logs to the "Default" experiment. You can
+customize this by setting `MLFLOW_EXPERIMENT_NAME` in your `.env` file.
 
 #### Programmatic MLflow Access
 
@@ -690,7 +755,8 @@ docker exec -it llmaven_minio mc ls dockerminio/mlflow/
 docker exec -it llmaven_minio mc cp myfile.txt dockerminio/llmaven/
 ```
 
-**Note**: The `createbuckets` service uses the alias `dockerminio` internally. You can use any alias name for your own `mc` commands.
+**Note**: The `createbuckets` service uses the alias `dockerminio` internally.
+You can use any alias name for your own `mc` commands.
 
 #### Using Python boto3
 
@@ -729,12 +795,13 @@ The Docker Compose setup uses two persistent volumes:
 ```yaml
 volumes:
   postgres_data:
-    name: llmaven_postgres_data  # Named volume for Postgres data persistence
+    name: llmaven_postgres_data # Named volume for Postgres data persistence
   minio_data:
-    driver: local                # Local driver for MinIO data
+    driver: local # Local driver for MinIO data
 ```
 
 - **llmaven_postgres_data**: Named volume for PostgreSQL database files
+
   - Persists database data across container restarts and recreations
   - Explicitly named as `llmaven_postgres_data`
   - Contains all PostgreSQL databases (`llmaven`, `mlflow_db`, `litellm_db`)
@@ -751,13 +818,14 @@ All services communicate through a single bridge network:
 ```yaml
 networks:
   llmaven-network:
-    driver: bridge  # Bridge network for service communication
+    driver: bridge # Bridge network for service communication
 ```
 
 - **llmaven-network**: Bridge network connecting all services
   - Driver: `bridge` (default Docker network driver)
   - Enables container-to-container communication
-  - Services can reference each other by service name (e.g., `db`, `minio`, `mlflow`, `litellm`)
+  - Services can reference each other by service name (e.g., `db`, `minio`,
+    `mlflow`, `litellm`)
   - Internal DNS resolution provided by Docker
   - Isolated from host network for security
 
@@ -768,14 +836,18 @@ The services have the following startup order enforced by `depends_on`:
 1. **PostgreSQL (`db`)**: Starts first (no dependencies)
 2. **MinIO (`minio`)**: Starts first (no dependencies)
 3. **Create Buckets (`createbuckets`)**: Waits for MinIO to be healthy
-4. **MLflow (`mlflow`)**: Waits for PostgreSQL (healthy), MinIO (healthy), and createbuckets (completed)
+4. **MLflow (`mlflow`)**: Waits for PostgreSQL (healthy), MinIO (healthy), and
+   createbuckets (completed)
 5. **LiteLLM (`litellm`)**: Waits for PostgreSQL (healthy) and MLflow (healthy)
 
-This dependency chain ensures all required infrastructure is ready before dependent services start.
+This dependency chain ensures all required infrastructure is ready before
+dependent services start.
 
 ## Pixi Integration
 
-LLMaven integrates with [Pixi](https://pixi.sh), a modern package manager for reproducible development environments. The docker infrastructure is managed through the `llmaven` Pixi environment.
+LLMaven integrates with [Pixi](https://pixi.sh), a modern package manager for
+reproducible development environments. The docker infrastructure is managed
+through the `llmaven` Pixi environment.
 
 ### Available Pixi Tasks
 
@@ -923,7 +995,8 @@ docker-compose logs --tail=100 litellm
 All LiteLLM requests are automatically logged to MLflow:
 
 1. Open MLflow UI: http://localhost:8080
-2. Navigate to the experiment (default: "Default", or custom name set via `MLFLOW_EXPERIMENT_NAME`)
+2. Navigate to the experiment (default: "Default", or custom name set via
+   `MLFLOW_EXPERIMENT_NAME`)
 3. View runs showing:
    - Model used
    - Prompt and completion
@@ -950,6 +1023,7 @@ docker-compose logs <service-name>
 **Common Causes**:
 
 1. **Port conflicts**: Another service using required ports
+
    ```bash
    # Check port usage
    lsof -i :4000
@@ -966,6 +1040,7 @@ docker-compose logs <service-name>
    **Solution**: Ensure all required variables from `.env.example` are set
 
 3. **Database initialization failure**: PostgreSQL startup issues
+
    ```bash
    # Check PostgreSQL logs
    docker-compose logs db
@@ -1023,17 +1098,20 @@ docker exec -it llmaven_minio mc ls local/
 1. **MinIO not ready**: Buckets not created
 
    **Solution**: Verify `createbuckets` service completed successfully:
+
    ```bash
    docker-compose logs createbuckets
    ```
 
 2. **Incorrect S3 credentials**: MinIO credentials mismatch
 
-   **Solution**: Ensure `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` match MinIO configuration
+   **Solution**: Ensure `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` match
+   MinIO configuration
 
 3. **Missing bucket**: MLflow bucket doesn't exist
 
    **Solution**: Manually create bucket:
+
    ```bash
    # First set up the alias if not already done
    docker exec -it llmaven_minio mc alias set dockerminio http://localhost:9000 minioadmin minioadmin
@@ -1060,6 +1138,7 @@ docker-compose exec db psql -U llmaven-admin -d llmaven -c "SELECT 1;"
 1. **PostgreSQL not started**: Database container not running
 
    **Solution**: Start database:
+
    ```bash
    docker-compose up -d db
    ```
@@ -1071,6 +1150,7 @@ docker-compose exec db psql -U llmaven-admin -d llmaven -c "SELECT 1;"
 3. **Database not initialized**: Service databases not created
 
    **Solution**: Check initialization logs:
+
    ```bash
    docker-compose logs db | grep -A 10 "create_service_dbs"
    ```
@@ -1094,6 +1174,7 @@ pixi run -e llmaven up
 ```
 
 **WARNING**: This deletes all data including:
+
 - PostgreSQL databases
 - MLflow experiments
 - MinIO stored objects
@@ -1105,6 +1186,7 @@ pixi run -e llmaven up
 #### Security Hardening
 
 1. **Change Default Passwords**:
+
    ```bash
    # In .env
    POSTGRES_PASSWORD=<strong-random-password>
@@ -1113,10 +1195,13 @@ pixi run -e llmaven up
    ```
 
 2. **Use Secret Management**:
-   - Store credentials in HashiCorp Vault, AWS Secrets Manager, or Azure Key Vault
+
+   - Store credentials in HashiCorp Vault, AWS Secrets Manager, or Azure Key
+     Vault
    - Mount secrets as files instead of environment variables
 
 3. **Enable TLS/HTTPS**:
+
    - Configure reverse proxy (nginx, Traefik) with SSL certificates
    - Enable HTTPS for all services
 
@@ -1128,16 +1213,19 @@ pixi run -e llmaven up
 #### Scaling Considerations
 
 1. **PostgreSQL**:
+
    - Use managed database service (AWS RDS, Azure Database, Google Cloud SQL)
    - Configure connection pooling
    - Set up replication for high availability
 
 2. **MinIO**:
+
    - Use managed S3 service (AWS S3, Azure Blob, Google Cloud Storage)
    - Enable distributed mode for multi-node setup
    - Configure erasure coding for data protection
 
 3. **LiteLLM**:
+
    - Run multiple instances behind load balancer
    - Use Redis for shared caching
    - Configure rate limiting and quotas
@@ -1150,6 +1238,7 @@ pixi run -e llmaven up
 #### Backup Strategies
 
 1. **PostgreSQL Backup**:
+
    ```bash
    # Backup all databases
    docker-compose exec db pg_dumpall -U llmaven-admin > backup_$(date +%Y%m%d).sql
@@ -1159,6 +1248,7 @@ pixi run -e llmaven up
    ```
 
 2. **MinIO Backup**:
+
    ```bash
    # Mirror bucket to another MinIO instance
    docker exec -it llmaven_minio mc mirror dockerminio/mlflow remote/mlflow-backup
@@ -1175,6 +1265,7 @@ pixi run -e llmaven up
 
 1. Download model weights
 2. Update `config.yaml`:
+
    ```yaml
    model_list:
      - model_name: llama-2-7b
@@ -1199,6 +1290,7 @@ pixi run -e llmaven up
 #### Adding HuggingFace Model
 
 Update `config.yaml`:
+
 ```yaml
 model_list:
   - model_name: falcon-7b
@@ -1248,6 +1340,7 @@ log_duration = on
 ```
 
 Mount in `docker-compose.yml`:
+
 ```yaml
 db:
   volumes:
@@ -1269,6 +1362,7 @@ litellm_settings:
 ```
 
 Add Redis service to `docker-compose.yml`:
+
 ```yaml
 redis:
   image: redis:7-alpine
@@ -1336,16 +1430,19 @@ with mlflow.start_run():
 ### Official Documentation
 
 - **LiteLLM**: https://docs.litellm.ai/
+
   - [Proxy Server](https://docs.litellm.ai/docs/proxy/quick_start)
   - [Supported Models](https://docs.litellm.ai/docs/providers)
   - [Logging & Observability](https://docs.litellm.ai/docs/proxy/logging)
 
 - **MLflow**: https://mlflow.org/docs/latest/index.html
+
   - [Tracking](https://mlflow.org/docs/latest/tracking.html)
   - [Models](https://mlflow.org/docs/latest/models.html)
   - [Model Registry](https://mlflow.org/docs/latest/model-registry.html)
 
 - **MinIO**: https://min.io/docs/minio/linux/index.html
+
   - [Docker Deployment](https://min.io/docs/minio/container/index.html)
   - [S3 Compatibility](https://min.io/docs/minio/linux/integrations/aws-cli-with-minio.html)
 
@@ -1367,4 +1464,6 @@ with mlflow.start_run():
 
 ---
 
-**Note**: This documentation is for the LLMaven Docker infrastructure. For information about the main LLMaven application and features, see the [root README](../README.md).
+**Note**: This documentation is for the LLMaven Docker infrastructure. For
+information about the main LLMaven application and features, see the
+[root README](../README.md).

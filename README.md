@@ -1,20 +1,31 @@
 # LLMaven
 
-An AI-powered tool library for scientific research using Retrieval Augmented Generation (RAG) with Large Language Models (LLMs). LLMaven provides open, transparent, and useful AI-based software for scientific discovery by leveraging publicly available diverse datasets and disparate academic knowledge bases.
+An AI-powered tool library for scientific research using Retrieval Augmented
+Generation (RAG) with Large Language Models (LLMs). LLMaven provides open,
+transparent, and useful AI-based software for scientific discovery by leveraging
+publicly available diverse datasets and disparate academic knowledge bases.
 
 ## Overview
 
-LLMaven's scientific goal is to create accessible AI tools for researchers who need to work with private/IP-sensitive data in a cost-effective manner. The project uses RAG-based LLMs to extend language models with domain-specific knowledge without requiring expensive model training or specialized hardware for individual researchers.
+LLMaven's scientific goal is to create accessible AI tools for researchers who
+need to work with private/IP-sensitive data in a cost-effective manner. The
+project uses RAG-based LLMs to extend language models with domain-specific
+knowledge without requiring expensive model training or specialized hardware for
+individual researchers.
 
 ### Key Features
 
 - **FastAPI Backend**: RESTful API with retrieval and generation endpoints
 - **Streamlit Frontend**: Interactive chat interface for document Q&A
-- **RAG Architecture**: Combines retrieval from vector databases with language model generation
-- **Vector Database**: Qdrant-based document storage with semantic search (MMR - Maximal Marginal Relevance)
+- **RAG Architecture**: Combines retrieval from vector databases with language
+  model generation
+- **Vector Database**: Qdrant-based document storage with semantic search (MMR -
+  Maximal Marginal Relevance)
 - **Flexible Models**:
-  - Embedding models via HuggingFace (default: sentence-transformers/all-MiniLM-L12-v2)
-  - Generation models via HuggingFace Transformers (default: allenai/OLMo-2-1124-7B-Instruct)
+  - Embedding models via HuggingFace (default:
+    sentence-transformers/all-MiniLM-L12-v2)
+  - Generation models via HuggingFace Transformers (default:
+    allenai/OLMo-2-1124-7B-Instruct)
   - Quantization support (4-bit/8-bit) for efficient inference
 
 ## Architecture
@@ -53,18 +64,21 @@ graph TB
 ### Core Components
 
 1. **FastAPI Backend** (`/src/llmaven/main.py`)
+
    - RESTful API with automatic OpenAPI documentation
    - CORS middleware for frontend integration
    - Error handling and validation
    - Health check endpoints
 
 2. **Streamlit Frontend** (`/src/llmaven/frontend/app.py`)
+
    - Interactive chat interface
    - Document upload (PDF support)
    - Real-time retrieval and generation
    - Chat history display
 
 3. **Retrieval Service** (`/src/llmaven/services/retrieval_service.py`)
+
    - Document embedding and vector storage
    - Semantic search using Qdrant
    - MMR (Maximal Marginal Relevance) retrieval
@@ -87,11 +101,13 @@ graph TB
 ### Quick Start
 
 1. **Install Pixi**:
+
    ```bash
    curl -fsSL https://pixi.sh/install.sh | bash
    ```
 
 2. **Clone the repository**:
+
    ```bash
    git clone https://github.com/uw-ssec/llmaven.git
    cd llmaven
@@ -115,7 +131,8 @@ LLMaven uses multiple Pixi environments for different components:
 
 ### Option 1: Using the LLMaven API and UI
 
-The primary way to use LLMaven is through its FastAPI backend and Streamlit frontend.
+The primary way to use LLMaven is through its FastAPI backend and Streamlit
+frontend.
 
 #### 1. Start the API Server
 
@@ -131,6 +148,7 @@ llmaven serve --env production --workers 4
 ```
 
 The API will be available at:
+
 - API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
 - Alternative Docs: http://localhost:8000/redoc
@@ -158,7 +176,8 @@ The UI will open automatically in your browser at http://localhost:8501
 
 ### Option 2: Using the Legacy Panel App (Archived)
 
-**Note**: The Panel app is archived and located in `archive/legacy/`. It may still be functional but is no longer actively maintained.
+**Note**: The Panel app is archived and located in `archive/legacy/`. It may
+still be functional but is no longer actively maintained.
 
 For backward compatibility, you can use the original Panel-based application:
 
@@ -188,17 +207,19 @@ curl -X POST http://localhost:8000/v1/retrieve \
 ```
 
 **Request Schema:**
+
 ```json
 {
-  "documents": [],  // Optional: List of documents to index temporarily
-  "query": "string",  // Required: Search query
-  "existing_collection": "string",  // Optional: Name of existing Qdrant collection
-  "existing_qdrant_path": "string",  // Optional: Path to existing vector store
-  "embedding_model": "string"  // Required: Embedding model to use
+  "documents": [], // Optional: List of documents to index temporarily
+  "query": "string", // Required: Search query
+  "existing_collection": "string", // Optional: Name of existing Qdrant collection
+  "existing_qdrant_path": "string", // Optional: Path to existing vector store
+  "embedding_model": "string" // Required: Embedding model to use
 }
 ```
 
 **Response:**
+
 ```json
 {
   "docs": [
@@ -227,14 +248,16 @@ curl -X POST http://localhost:8000/v1/generate \
 ```
 
 **Request Schema:**
+
 ```json
 {
-  "prompt": "string",  // Required: Full prompt with context
-  "generation_model": "string"  // Required: Model name
+  "prompt": "string", // Required: Full prompt with context
+  "generation_model": "string" // Required: Model name
 }
 ```
 
 **Response:**
+
 ```json
 {
   "answer": "Generated text...",
@@ -284,6 +307,7 @@ Supports HuggingFace Transformers models:
 - Any causal LM from HuggingFace
 
 **Quantization Options:**
+
 - 8-bit: Good balance of quality and memory
 - 4-bit: Lower memory, slightly reduced quality
 
@@ -365,6 +389,7 @@ pre-commit run --all-files
 ```
 
 Configured linters:
+
 - flake8 (Python linting)
 - black (code formatting - if enabled)
 
@@ -380,13 +405,16 @@ Changes to Python files will automatically restart the server.
 
 ## Archived Components
 
-The following components have been moved to the `archive/` directory and are no longer actively maintained:
+The following components have been moved to the `archive/` directory and are no
+longer actively maintained:
 
 ### OpenAI Proxy Service (Archived)
 
-An optional OpenAI API proxy for logging and usage tracking. Located in `archive/proxy/`.
+An optional OpenAI API proxy for logging and usage tracking. Located in
+`archive/proxy/`.
 
 **Features**:
+
 - Full OpenAI API v1 compatibility
 - Streaming support for chat completions
 - Request/response logging
@@ -400,6 +428,7 @@ See `archive/proxy/README.md` for documentation.
 Pulumi-based Azure infrastructure deployment. Located in `archive/infra/`.
 
 **Resources**:
+
 - Azure Resource Group
 - Storage Account
 - Table Storage
@@ -415,14 +444,18 @@ See the "Option 2" in the Usage section above for running the legacy app.
 
 ## Vector Database Setup
 
-To use LLMaven with your own documents, you need to create a Qdrant vector database:
+To use LLMaven with your own documents, you need to create a Qdrant vector
+database:
 
 1. **Prepare your documents**: PDF format supported out of the box
 2. **Create vector database**: Use the provided notebook or create via API
-3. **Configure paths**: Set `FRONTEND_EXISTING_COLLECTION` and `FRONTEND_EXISTING_QDRANT_PATH`
+3. **Configure paths**: Set `FRONTEND_EXISTING_COLLECTION` and
+   `FRONTEND_EXISTING_QDRANT_PATH`
 
 Example vector database creation workflow:
-- See the [Quadrant Database Creation Notebook](https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb)
+
+- See the
+  [Quadrant Database Creation Notebook](https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb)
 
 ## CLI Reference
 
@@ -456,17 +489,20 @@ llmaven version
 ### Common Issues
 
 1. **Port already in use**
+
    ```bash
    # Change the port
    llmaven serve --port 8001
    ```
 
 2. **Model download fails**
+
    - Check internet connection
    - Verify HuggingFace model name
    - Check disk space (models can be several GB)
 
 3. **Out of memory during generation**
+
    - Use 8-bit or 4-bit quantization
    - Reduce batch size
    - Use a smaller model
@@ -500,12 +536,13 @@ Contributions are welcome! Please follow these guidelines:
 4. Run tests and linters
 5. Submit a pull request
 
-See [CODE_OF_CONDUCT.md](/Users/lsetiawan/Repos/SSEC/llmaven/CODE_OF_CONDUCT.md) for community guidelines.
+See [CODE_OF_CONDUCT.md](/Users/lsetiawan/Repos/SSEC/llmaven/CODE_OF_CONDUCT.md)
+for community guidelines.
 
 ## License
 
-This project is licensed under the BSD License - see the [LICENSE](/Users/lsetiawan/Repos/SSEC/llmaven/LICENSE) file for details.
-
+This project is licensed under the BSD License - see the
+[LICENSE](/Users/lsetiawan/Repos/SSEC/llmaven/LICENSE) file for details.
 
 ## Acknowledgments
 
@@ -523,9 +560,11 @@ This project is licensed under the BSD License - see the [LICENSE](/Users/lsetia
 ## Contact
 
 For questions and support:
+
 - Open an issue on GitHub
 - Contact: UW SSEC Team
 
 ---
 
-**Note**: This project is under active development. Features and APIs may change.
+**Note**: This project is under active development. Features and APIs may
+change.

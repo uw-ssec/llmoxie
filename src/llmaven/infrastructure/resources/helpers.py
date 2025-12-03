@@ -381,7 +381,7 @@ def create_litellm_app(
             inline_secrets = {
                 "config-yaml": config_content
             }
-            
+
             # Configure volume and volume mount that references the secret
             volumes = [
                 azure_native.app.VolumeArgs(
