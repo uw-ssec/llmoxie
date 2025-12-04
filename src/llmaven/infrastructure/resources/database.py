@@ -4,13 +4,13 @@ This module creates and configures Azure Database for PostgreSQL - Flexible Serv
 with support for high availability, backups, and VNet integration.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import DatabaseConfig, LLMavenConfig
+from ..config.schema import LLMavenConfig
 
 
 def create_postgres_server(

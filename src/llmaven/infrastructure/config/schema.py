@@ -231,10 +231,6 @@ class KeyVaultConfig(BaseModel):
     soft_delete_retention_days: int = Field(
         default=90, description="Soft delete retention days", ge=7, le=90
     )
-    enable_rbac: bool = Field(
-        default=False,
-        description="Enable RBAC authorization (deprecated - access policies are now used by default)"
-    )
 
 
 class NetworkSecurityConfig(BaseModel):

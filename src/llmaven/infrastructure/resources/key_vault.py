@@ -36,7 +36,7 @@ Usage:
 """
 
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import pulumi
 import pulumi_azure_native as azure_native
@@ -135,7 +135,7 @@ def create_key_vault(
                 family="A",
                 name=azure_native.keyvault.SkuName.STANDARD,
             ),
-            # Access policies (not RBAC)
+            # Access policies
             enable_rbac_authorization=False,
             access_policies=access_policies if access_policies else None,
             # Soft delete configuration

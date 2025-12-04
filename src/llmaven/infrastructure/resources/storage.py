@@ -4,13 +4,13 @@ This module creates and configures Azure Blob Storage (ADLS Gen2) with
 lifecycle management policies, encryption, and container creation.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import LLMavenConfig, StorageConfig
+from ..config.schema import LLMavenConfig
 
 
 def create_storage_account(

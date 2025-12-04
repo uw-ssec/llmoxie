@@ -352,7 +352,6 @@ security:
   enable_private_endpoints: {str(config.security.enable_private_endpoints).lower()}  # Enable for production
   key_vault:
     soft_delete_retention_days: {config.security.key_vault.soft_delete_retention_days}
-    enable_rbac: {str(config.security.key_vault.enable_rbac).lower()}  # Use access policies (false) instead of RBAC (true)
   network_security:
     allow_azure_services: {str(config.security.network_security.allow_azure_services).lower()}
     allowed_ip_ranges: []  # Add IPs for access control

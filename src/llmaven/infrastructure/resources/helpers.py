@@ -6,9 +6,6 @@ import pulumi_azure_native as azure_native
 from pulumi import Output
 
 from .container_apps import create_container_app_with_key_vault_secrets
-from .database import get_connection_string
-from .key_vault import create_secret
-from .storage import get_storage_account_key
 
 
 def create_user_assigned_managed_identity(
@@ -191,8 +188,6 @@ def create_mlflow_app(
     max_replicas: int,
     env_vars: Dict[str, str],
     key_vault: azure_native.keyvault.Vault,
-    postgres_server: azure_native.dbforpostgresql.Server | None = None,
-    storage_account: azure_native.storage.StorageAccount | None = None,
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
 ) -> azure_native.app.ContainerApp:
@@ -211,8 +206,6 @@ def create_mlflow_app(
         max_replicas: Maximum replicas
         env_vars: Environment variables
         key_vault: Key Vault for secrets
-        postgres_server: PostgreSQL server (not used, kept for API compatibility)
-        storage_account: Storage account (not used, kept for API compatibility)
         managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access
         tags: Resource tags
 
@@ -287,8 +280,6 @@ def create_litellm_app(
     max_replicas: int,
     env_vars: Dict[str, str],
     key_vault: azure_native.keyvault.Vault,
-    postgres_server: azure_native.dbforpostgresql.Server,
-    storage_account: Optional[azure_native.storage.StorageAccount] = None,
     config_file: Optional[str] = None,
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -309,9 +300,7 @@ def create_litellm_app(
         max_replicas: Maximum replicas
         env_vars: Environment variables
         key_vault: Key Vault for secrets
-        postgres_server: PostgreSQL server (not used, kept for API compatibility)
-        storage_account: Storage account for Azure Files (required if config_file is provided)
-        config_file: Path to LiteLLM config file (will be uploaded to Azure Files and mounted)
+        config_file: Path to LiteLLM config file (will be read and mounted as a secret volume)
         managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access
         tags: Resource tags
 
@@ -320,18 +309,19 @@ def create_litellm_app(
 
     Note:
         This function expects the following secrets to already exist in Key Vault:
-        - "db-connection-string": Database connection string
+        - "db-connection-string-litellm-db": Database connection string for LiteLLM database
         - "litellm-master-key": LiteLLM master key
-        - "azure-openai-api-key": Azure OpenAI API key
-        - "anthropic-api-key": Anthropic API key
+        - "azure-api-base": Azure OpenAI API base URL
+        - "azure-api-key": Azure OpenAI API key
+        - "azure-api-version": Azure OpenAI API version
+        - "mlflow-experiment-name": MLflow experiment name
+        - "mlflow-tracking-uri": MLflow tracking URI
         These secrets should be created before calling this function.
 
         If config_file is provided:
-        - A file share will be created in the storage account
-        - The config file will be uploaded to the share
-        - The storage will be registered with the managed environment
-        - The share will be mounted at /app/config in the container
-        - The container will be configured with --config /app/config/config.yaml argument
+        - The config file content is read and stored as an inline secret
+        - A secret volume is created mounting the config as /app/config/config.yaml
+        - The container is configured with --config /app/config/config.yaml argument
     """
     # Extract environment from name if present (format: "project-litellm" or "project-env-litellm")
     # Default to "dev" if not found
