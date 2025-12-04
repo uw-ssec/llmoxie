@@ -1,32 +1,26 @@
 # LLMaven
 
-An AI-powered tool library for scientific research using Retrieval Augmented
-Generation (RAG) with Large Language Models (LLMs). LLMaven provides open,
-transparent, and useful AI-based software for scientific discovery by leveraging
-publicly available diverse datasets and disparate academic knowledge bases.
+An AI-powered tool library for scientific research using Retrieval Augmented Generation (RAG) with Large Language Models (LLMs). LLMaven provides open, transparent, and useful AI-based software for scientific discovery by leveraging publicly available diverse datasets and disparate academic knowledge bases.
 
 ## Overview
 
-LLMaven's scientific goal is to create accessible AI tools for researchers who
-need to work with private/IP-sensitive data in a cost-effective manner. The
-project uses RAG-based LLMs to extend language models with domain-specific
-knowledge without requiring expensive model training or specialized hardware for
-individual researchers.
+LLMaven's scientific goal is to create accessible AI tools for researchers who need to work with private/IP-sensitive data in a cost-effective manner. The project uses RAG-based LLMs to extend language models with domain-specific knowledge without requiring expensive model training or specialized hardware for individual researchers.
 
 ### Key Features
 
 - **FastAPI Backend**: RESTful API with retrieval and generation endpoints
 - **Streamlit Frontend**: Interactive chat interface for document Q&A
-- **RAG Architecture**: Combines retrieval from vector databases with language
-  model generation
-- **Vector Database**: Qdrant-based document storage with semantic search (MMR -
-  Maximal Marginal Relevance)
+- **RAG Architecture**: Combines retrieval from vector databases with language model generation
+- **Vector Database**: Qdrant-based document storage with semantic search (MMR - Maximal Marginal Relevance)
 - **Flexible Models**:
-  - Embedding models via HuggingFace (default:
-    sentence-transformers/all-MiniLM-L12-v2)
-  - Generation models via HuggingFace Transformers (default:
-    allenai/OLMo-2-1124-7B-Instruct)
+  - Embedding models via HuggingFace (default: sentence-transformers/all-MiniLM-L12-v2)
+  - Generation models via HuggingFace Transformers (default: allenai/OLMo-2-1124-7B-Instruct)
   - Quantization support (4-bit/8-bit) for efficient inference
+- **Infrastructure Deployment**: Production-ready Azure infrastructure deployment with Pulumi
+  - PostgreSQL Flexible Server for persistent storage
+  - Azure Key Vault for secret management
+  - Container Apps for MLflow and LiteLLM
+  - Comprehensive validation and cost estimation
 
 ## Architecture
 
@@ -51,6 +45,13 @@ graph TB
         GenService --> HF["HuggingFace Transformers<br/>LLM"]
     end
 
+    subgraph Infrastructure[Azure Infrastructure]
+        KeyVault["Key Vault<br/>Secrets Management"]
+        PostgreSQL["PostgreSQL<br/>Database"]
+        Storage["Storage Account<br/>Blob Storage"]
+        ContainerApps["Container Apps<br/>MLflow & LiteLLM"]
+    end
+
     style Main fill:#f9f9f9,stroke:#333,stroke-width:2px
     style UI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style Backend fill:#fff3e0,stroke:#f57c00,stroke-width:2px
@@ -59,6 +60,7 @@ graph TB
     style GenService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
     style Qdrant fill:#fff9c4,stroke:#f9a825,stroke-width:2px
     style HF fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style Infrastructure fill:#e1f5ff,stroke:#01579b,stroke-width:2px
 ```
 
 ### Core Components
@@ -85,10 +87,17 @@ graph TB
    - Support for temporary and persistent collections
 
 4. **Generation Service** (`/src/llmaven/services/generation_service.py`)
+
    - Language model inference with caching
    - Quantized model loading (4-bit/8-bit)
    - HuggingFace Pipeline integration
    - Configurable generation parameters
+
+5. **Infrastructure Management** (`/src/llmaven/infrastructure/`)
+   - YAML-based configuration schema
+   - Pulumi-based Azure resource provisioning
+   - Secret management via Azure Key Vault
+   - Comprehensive validation and deployment workflow
 
 ## Installation
 
@@ -97,6 +106,7 @@ graph TB
 - Python 3.12+ (for LLMaven API)
 - Python 3.11+ (for other components)
 - [Pixi](https://pixi.sh) package manager
+- Azure CLI (for infrastructure deployment)
 
 ### Quick Start
 
@@ -124,27 +134,26 @@ LLMaven uses multiple Pixi environments for different components:
 
 - `llmaven`: Main API environment (Python 3.12)
 - `frontend`: Streamlit UI environment
-- `proxy`: OpenAI proxy service environment
+- `proxy`: OpenAI proxy service environment (archived)
 - `infra`: Infrastructure management environment
 
 ## Usage
 
-### Option 1: Using the LLMaven API and UI
+### Option 1: Local Development (API and UI)
 
-The primary way to use LLMaven is through its FastAPI backend and Streamlit
-frontend.
+The primary way to use LLMaven is through its FastAPI backend and Streamlit frontend.
 
 #### 1. Start the API Server
 
 ```bash
-# Using the pixi task (recommended)
-pixi run -e llmaven api-server
+# Using the pixi environment (recommended)
+pixi shell -e llmaven
 
-# Or using the CLI directly
-llmaven serve --env development --reload
+# Start in development mode with auto-reload
+llmaven server serve --env development --reload
 
-# Production mode with multiple workers
-llmaven serve --env production --workers 4
+# Or start in production mode with multiple workers
+llmaven server serve --env production --workers 4
 ```
 
 The API will be available at:
@@ -158,11 +167,14 @@ The API will be available at:
 In a separate terminal:
 
 ```bash
-# Using the pixi task (recommended)
-pixi run -e llmaven ui
+# Using the pixi environment (recommended)
+pixi shell -e llmaven
 
-# Or using the CLI directly
-llmaven ui --port 8501
+# Launch the UI
+llmaven server ui
+
+# Or customize host and port
+llmaven server ui --host 0.0.0.0 --port 8080 --no-browser
 ```
 
 The UI will open automatically in your browser at http://localhost:8501
@@ -174,22 +186,157 @@ The UI will open automatically in your browser at http://localhost:8501
 3. **View Results**: See retrieved document chunks and AI-generated answers
 4. **Chat History**: All interactions are stored in the session
 
-### Option 2: Using the Legacy Panel App (Archived)
+### Option 2: Azure Infrastructure Deployment
 
-**Note**: The Panel app is archived and located in `archive/legacy/`. It may
-still be functional but is no longer actively maintained.
+LLMaven provides a comprehensive infrastructure deployment system for production workloads.
 
-For backward compatibility, you can use the original Panel-based application:
+#### 1. Initialize Configuration
 
 ```bash
-pixi run serve-panel
+# Enter the llmaven environment
+pixi shell -e llmaven
+
+# Initialize deployment configuration
+llmaven infra init --environment dev
+
+# This creates llmaven-config.yaml with sensible defaults
 ```
 
-Open your browser at http://localhost:5006
+#### 2. Configure Infrastructure
 
-### API Endpoints
+Edit the generated `llmaven-config.yaml` file:
 
-#### Retrieval Endpoint
+```yaml
+project:
+  name: llmaven
+  environment: dev
+  location: eastus
+
+azure:
+  subscription_id: "your-subscription-id"
+  # tenant_id is auto-detected
+
+database:
+  admin_login: llmaven_admin
+  sku_name: "B_Standard_B1ms"
+  databases: [llmaven, mlflow_db, litellm_db]
+
+mlflow:
+  enabled: true
+  image: "ghcr.io/mlflow/mlflow:latest"
+
+litellm:
+  enabled: true
+  image: "ghcr.io/berriai/litellm:latest"
+```
+
+#### 3. Set Secrets
+
+Secrets are provided via environment variables:
+
+```bash
+# Generate a secure master key
+export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="$(openssl rand -base64 32)"
+
+# Add your API keys
+export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-azure-openai-key"
+export LLMAVEN_SECRETS_ANTHROPIC_API_KEY="your-anthropic-key"
+
+# Or create a .env file
+cat > .env.secrets <<EOF
+LLMAVEN_SECRETS_LITELLM_MASTER_KEY=your-master-key
+LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY=your-azure-openai-key
+LLMAVEN_SECRETS_ANTHROPIC_API_KEY=your-anthropic-key
+EOF
+```
+
+#### 4. Validate Configuration
+
+```bash
+# Validate with strict mode (recommended for production)
+llmaven infra validate --config llmaven-config.yaml --strict
+
+# Or validate with secrets from .env file
+llmaven infra validate --env-file .env.secrets --strict
+```
+
+This validates:
+
+- Configuration syntax and schema
+- Azure subscription and permissions
+- Resource quotas and limits
+- Secret presence
+- Cost estimation
+
+#### 5. Deploy Infrastructure
+
+```bash
+# Preview what will be deployed
+llmaven infra deploy --preview
+
+# Deploy infrastructure
+llmaven infra deploy --yes
+
+# Or deploy with .env file
+llmaven infra deploy --env-file .env.secrets --yes
+```
+
+#### 6. Check Deployment Status
+
+```bash
+# View deployment status and resource URLs
+llmaven infra status
+
+# Outputs include:
+# - MLflow URL: https://llmaven-dev-mlflow.{region}.azurecontainerapps.io
+# - LiteLLM URL: https://llmaven-dev-litellm.{region}.azurecontainerapps.io
+# - Resource names (Key Vault, Storage Account, PostgreSQL, etc.)
+```
+
+#### 7. Destroy Infrastructure (when done)
+
+```bash
+# Destroy all resources
+llmaven infra destroy --yes
+```
+
+### Deployed Azure Resources
+
+When you deploy infrastructure, LLMaven creates:
+
+1. **Resource Group**: Container for all resources
+2. **Virtual Network**: With subnets for Container Apps and PostgreSQL
+3. **Key Vault**: Centralized secret management with RBAC
+4. **PostgreSQL Flexible Server**: Managed database with:
+   - Databases: llmaven, mlflow_db, litellm_db
+   - Auto-generated admin password stored in Key Vault
+5. **Storage Account**: With ADLS Gen2 support
+   - Containers: mlflow, llmaven
+6. **Container Apps Environment**: For container orchestration
+7. **Managed Identities**: For secure Key Vault access
+8. **Container Apps** (optional):
+   - **MLflow**: Experiment tracking and model registry
+   - **LiteLLM**: OpenAI-compatible API gateway
+9. **Log Analytics Workspace**: (optional) For monitoring
+
+### Cost Estimation
+
+**Development Environment** (~$20-30/month):
+
+- PostgreSQL: B_Standard_B1ms
+- Storage: Standard LRS
+- Container Apps: Consumption plan
+
+**Production Environment** (~$400-600/month):
+
+- PostgreSQL: GP_Standard_D2s_v3
+- Storage: Standard GRS
+- Container Apps: Dedicated plan
+- High Availability enabled
+
+## API Endpoints
+
+### Retrieval Endpoint
 
 **POST** `/v1/retrieve`
 
@@ -210,11 +357,11 @@ curl -X POST http://localhost:8000/v1/retrieve \
 
 ```json
 {
-  "documents": [], // Optional: List of documents to index temporarily
-  "query": "string", // Required: Search query
-  "existing_collection": "string", // Optional: Name of existing Qdrant collection
-  "existing_qdrant_path": "string", // Optional: Path to existing vector store
-  "embedding_model": "string" // Required: Embedding model to use
+  "documents": [],
+  "query": "string",
+  "existing_collection": "string",
+  "existing_qdrant_path": "string",
+  "embedding_model": "string"
 }
 ```
 
@@ -225,14 +372,14 @@ curl -X POST http://localhost:8000/v1/retrieve \
   "docs": [
     {
       "page_content": "Document text...",
-      "metadata": {...}
+      "metadata": {}
     }
   ],
   "status_code": 200
 }
 ```
 
-#### Generation Endpoint
+### Generation Endpoint
 
 **POST** `/v1/generate`
 
@@ -251,8 +398,8 @@ curl -X POST http://localhost:8000/v1/generate \
 
 ```json
 {
-  "prompt": "string", // Required: Full prompt with context
-  "generation_model": "string" // Required: Model name
+  "prompt": "string",
+  "generation_model": "string"
 }
 ```
 
@@ -335,24 +482,24 @@ llmaven/
 │   ├── services/             # Business logic
 │   │   ├── retrieval_service.py
 │   │   └── generation_service.py
-│   └── v1/                   # API v1 endpoints
-│       ├── router.py         # Main router
-│       └── endpoints/        # Endpoint implementations
-│           ├── retrieve.py
-│           └── generate.py
+│   ├── v1/                   # API v1 endpoints
+│   │   ├── router.py         # Main router
+│   │   └── endpoints/        # Endpoint implementations
+│   │       ├── retrieve.py
+│   │       └── generate.py
+│   ├── deployment/           # Deployment utilities
+│   │   ├── init.py           # Configuration initialization
+│   │   ├── validate.py       # Configuration validation
+│   │   └── deploy.py         # Deployment orchestration
+│   └── infrastructure/       # Infrastructure as Code
+│       ├── main.py           # Pulumi program entry point
+│       ├── config/           # Configuration schema and loaders
+│       ├── resources/        # Azure resource modules
+│       └── utils/            # Infrastructure utilities
 ├── archive/                  # Archived code (unused)
 │   ├── proxy/                # OpenAI API proxy service (archived)
-│   │   ├── main.py           # Proxy server
-│   │   ├── auth.py           # API key authentication
-│   │   ├── data_log.py       # Request/response logging
-│   │   └── README.md         # Proxy documentation
 │   ├── infra/                # Infrastructure as code (archived)
-│   │   ├── __main__.py       # Pulumi program
-│   │   ├── users.py          # User management
-│   │   └── README.md         # Infrastructure docs
 │   └── legacy/               # Legacy Panel application (archived)
-│       ├── rubin-panel-app.py # Original Panel app
-│       └── vector_store.py   # Legacy vector store utilities
 ├── tests/                    # Test suite
 │   ├── test_retriever.py
 │   └── test_generator.py
@@ -367,13 +514,17 @@ llmaven/
 
 ```bash
 # Run all tests
-pixi run -e llmaven pytest
+pixi shell -e llmaven
+pytest
 
 # Run specific test file
-pixi run -e llmaven pytest tests/test_retriever.py
+pytest tests/test_retriever.py
 
 # Run with verbose output
-pixi run -e llmaven pytest -v
+pytest -v
+
+# Run with coverage
+pytest --cov=llmaven
 ```
 
 ### Code Quality
@@ -382,6 +533,7 @@ The project uses pre-commit hooks for code quality:
 
 ```bash
 # Install pre-commit hooks
+pixi shell -e llmaven
 pre-commit install
 
 # Run manually
@@ -391,79 +543,28 @@ pre-commit run --all-files
 Configured linters:
 
 - flake8 (Python linting)
-- black (code formatting - if enabled)
+- prettier (YAML/Markdown formatting)
+- codespell (spell checking)
 
 ### Development Mode
 
 Run the API server with auto-reload for development:
 
 ```bash
-llmaven serve --env development --reload
+llmaven server serve --env development --reload
 ```
 
 Changes to Python files will automatically restart the server.
 
-## Archived Components
-
-The following components have been moved to the `archive/` directory and are no
-longer actively maintained:
-
-### OpenAI Proxy Service (Archived)
-
-An optional OpenAI API proxy for logging and usage tracking. Located in
-`archive/proxy/`.
-
-**Features**:
-
-- Full OpenAI API v1 compatibility
-- Streaming support for chat completions
-- Request/response logging
-- Azure Blob Storage integration
-- API key authentication
-
-See `archive/proxy/README.md` for documentation.
-
-### Infrastructure as Code (Archived)
-
-Pulumi-based Azure infrastructure deployment. Located in `archive/infra/`.
-
-**Resources**:
-
-- Azure Resource Group
-- Storage Account
-- Table Storage
-- Blob Storage containers
-
-See `archive/infra/README.md` for documentation.
-
-### Legacy Panel App (Archived)
-
-Original Panel-based chat UI. Located in `archive/legacy/`.
-
-See the "Option 2" in the Usage section above for running the legacy app.
-
-## Vector Database Setup
-
-To use LLMaven with your own documents, you need to create a Qdrant vector
-database:
-
-1. **Prepare your documents**: PDF format supported out of the box
-2. **Create vector database**: Use the provided notebook or create via API
-3. **Configure paths**: Set `FRONTEND_EXISTING_COLLECTION` and
-   `FRONTEND_EXISTING_QDRANT_PATH`
-
-Example vector database creation workflow:
-
-- See the
-  [Quadrant Database Creation Notebook](https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb)
-
 ## CLI Reference
 
-LLMaven provides a command-line interface:
+LLMaven provides a comprehensive command-line interface:
+
+### Server Commands
 
 ```bash
 # Start API server
-llmaven serve [OPTIONS]
+llmaven server serve [OPTIONS]
 
 Options:
   --host TEXT         Host to bind (default: 0.0.0.0)
@@ -473,12 +574,54 @@ Options:
   --reload            Enable auto-reload (development only)
 
 # Start Streamlit UI
-llmaven ui [OPTIONS]
+llmaven server ui [OPTIONS]
 
 Options:
   --host TEXT         Host to bind (default: localhost)
   --port INTEGER      Port to bind (default: 8501)
   --browser/--no-browser  Open browser automatically
+```
+
+### Infrastructure Commands
+
+```bash
+# Initialize configuration
+llmaven infra init [OPTIONS]
+
+Options:
+  --environment TEXT  Environment (dev, staging, prod)
+  --output TEXT       Output path for configuration file
+  --interactive       Interactive mode with prompts
+
+# Validate configuration
+llmaven infra validate [OPTIONS]
+
+Options:
+  --config TEXT       Path to configuration file
+  --strict            Fail on warnings
+  --skip-secrets      Skip secrets validation
+  --env-file TEXT     Path to .env file with secrets
+
+# Deploy infrastructure
+llmaven infra deploy [OPTIONS]
+
+Options:
+  --config TEXT       Path to configuration file
+  --preview           Preview changes without deploying
+  --yes               Automatically approve deployment
+  --env-file TEXT     Path to .env file with secrets
+
+# Show deployment status
+llmaven infra status [OPTIONS]
+
+# Destroy infrastructure
+llmaven infra destroy [OPTIONS]
+
+# Refresh Pulumi state
+llmaven infra refresh [OPTIONS]
+
+# Cancel in-progress operation
+llmaven infra cancel [OPTIONS]
 
 # Show version
 llmaven version
@@ -492,7 +635,7 @@ llmaven version
 
    ```bash
    # Change the port
-   llmaven serve --port 8001
+   llmaven server serve --port 8001
    ```
 
 2. **Model download fails**
@@ -508,9 +651,16 @@ llmaven version
    - Use a smaller model
 
 4. **Vector store not found**
+
    - Verify the path in configuration
    - Create vector store first using the notebook
    - Check file permissions
+
+5. **Infrastructure deployment fails**
+   - Ensure Azure CLI is installed and logged in: `az login`
+   - Verify subscription ID is correct
+   - Check that all required secrets are set
+   - Review quota limits in your Azure subscription
 
 ### Debugging
 
@@ -521,7 +671,7 @@ Enable debug logging:
 export LOG_LEVEL=DEBUG
 
 # Run with verbose output
-llmaven serve --env development
+llmaven server serve --env development
 ```
 
 View API logs at the console or check application logs.
@@ -536,26 +686,24 @@ Contributions are welcome! Please follow these guidelines:
 4. Run tests and linters
 5. Submit a pull request
 
-See [CODE_OF_CONDUCT.md](/Users/lsetiawan/Repos/SSEC/llmaven/CODE_OF_CONDUCT.md)
-for community guidelines.
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community guidelines.
 
 ## License
 
-This project is licensed under the BSD License - see the
-[LICENSE](/Users/lsetiawan/Repos/SSEC/llmaven/LICENSE) file for details.
+This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
 - University of Washington Scientific Software Engineering Center (SSEC)
-- Built with: FastAPI, Streamlit, LangChain, Qdrant, HuggingFace Transformers
+- Built with: FastAPI, Streamlit, LangChain, Qdrant, HuggingFace Transformers, Pulumi
 - Inspired by the need for accessible AI tools in scientific research
 
 ## Additional Resources
 
-- **Documentation**: See `/docs` folder (if available)
+- **AGENTS Guide**: [AGENTS.md](AGENTS.md) - Comprehensive technical reference for developers and AI assistants
 - **Tutorials**: [SSEC Tutorials](https://github.com/uw-ssec/tutorials)
 - **Issues**: [GitHub Issues](https://github.com/uw-ssec/llmaven/issues)
-- **AGENTS Guide**: [AGENTS.md](/Users/lsetiawan/Repos/SSEC/llmaven/AGENTS.md)
+- **Deployment Guide**: See AGENTS.md for detailed infrastructure deployment instructions
 
 ## Contact
 
@@ -566,5 +714,4 @@ For questions and support:
 
 ---
 
-**Note**: This project is under active development. Features and APIs may
-change.
+**Note**: This project is under active development. Features and APIs may change.
