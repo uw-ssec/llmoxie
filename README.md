@@ -1,22 +1,34 @@
 # LLMaven
 
-An AI-powered tool library for scientific research using Retrieval Augmented Generation (RAG) with Large Language Models (LLMs). LLMaven provides open, transparent, and useful AI-based software for scientific discovery by leveraging publicly available diverse datasets and disparate academic knowledge bases.
+An AI-powered tool library for scientific research using Retrieval Augmented
+Generation (RAG) with Large Language Models (LLMs). LLMaven provides open,
+transparent, and useful AI-based software for scientific discovery by leveraging
+publicly available diverse datasets and disparate academic knowledge bases.
 
 ## Overview
 
-LLMaven's scientific goal is to create accessible AI tools for researchers who need to work with private/IP-sensitive data in a cost-effective manner. The project uses RAG-based LLMs to extend language models with domain-specific knowledge without requiring expensive model training or specialized hardware for individual researchers.
+LLMaven's scientific goal is to create accessible AI tools for researchers who
+need to work with private/IP-sensitive data in a cost-effective manner. The
+project uses RAG-based LLMs to extend language models with domain-specific
+knowledge without requiring expensive model training or specialized hardware for
+individual researchers.
 
 ### Key Features
 
 - **FastAPI Backend**: RESTful API with retrieval and generation endpoints
 - **Streamlit Frontend**: Interactive chat interface for document Q&A
-- **RAG Architecture**: Combines retrieval from vector databases with language model generation
-- **Vector Database**: Qdrant-based document storage with semantic search (MMR - Maximal Marginal Relevance)
+- **RAG Architecture**: Combines retrieval from vector databases with language
+  model generation
+- **Vector Database**: Qdrant-based document storage with semantic search (MMR -
+  Maximal Marginal Relevance)
 - **Flexible Models**:
-  - Embedding models via HuggingFace (default: sentence-transformers/all-MiniLM-L12-v2)
-  - Generation models via HuggingFace Transformers (default: allenai/OLMo-2-1124-7B-Instruct)
+  - Embedding models via HuggingFace (default:
+    sentence-transformers/all-MiniLM-L12-v2)
+  - Generation models via HuggingFace Transformers (default:
+    allenai/OLMo-2-1124-7B-Instruct)
   - Quantization support (4-bit/8-bit) for efficient inference
-- **Infrastructure Deployment**: Production-ready Azure infrastructure deployment with Pulumi
+- **Infrastructure Deployment**: Production-ready Azure infrastructure
+  deployment with Pulumi
   - PostgreSQL Flexible Server for persistent storage
   - Azure Key Vault for secret management
   - Container Apps for MLflow and LiteLLM
@@ -141,7 +153,8 @@ LLMaven uses multiple Pixi environments for different components:
 
 ### Option 1: Local Development (API and UI)
 
-The primary way to use LLMaven is through its FastAPI backend and Streamlit frontend.
+The primary way to use LLMaven is through its FastAPI backend and Streamlit
+frontend.
 
 #### 1. Start the API Server
 
@@ -188,7 +201,8 @@ The UI will open automatically in your browser at http://localhost:8501
 
 ### Option 2: Azure Infrastructure Deployment
 
-LLMaven provides a comprehensive infrastructure deployment system for production workloads.
+LLMaven provides a comprehensive infrastructure deployment system for production
+workloads.
 
 #### 1. Initialize Configuration
 
@@ -690,20 +704,24 @@ See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community guidelines.
 
 ## License
 
-This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD License - see the [LICENSE](LICENSE) file
+for details.
 
 ## Acknowledgments
 
 - University of Washington Scientific Software Engineering Center (SSEC)
-- Built with: FastAPI, Streamlit, LangChain, Qdrant, HuggingFace Transformers, Pulumi
+- Built with: FastAPI, Streamlit, LangChain, Qdrant, HuggingFace Transformers,
+  Pulumi
 - Inspired by the need for accessible AI tools in scientific research
 
 ## Additional Resources
 
-- **AGENTS Guide**: [AGENTS.md](AGENTS.md) - Comprehensive technical reference for developers and AI assistants
+- **AGENTS Guide**: [AGENTS.md](AGENTS.md) - Comprehensive technical reference
+  for developers and AI assistants
 - **Tutorials**: [SSEC Tutorials](https://github.com/uw-ssec/tutorials)
 - **Issues**: [GitHub Issues](https://github.com/uw-ssec/llmaven/issues)
-- **Deployment Guide**: See AGENTS.md for detailed infrastructure deployment instructions
+- **Deployment Guide**: See AGENTS.md for detailed infrastructure deployment
+  instructions
 
 ## Contact
 
@@ -714,4 +732,5 @@ For questions and support:
 
 ---
 
-**Note**: This project is under active development. Features and APIs may change.
+**Note**: This project is under active development. Features and APIs may
+change.

@@ -1,6 +1,8 @@
 # AGENTS.md - LLMaven AI Assistant Guide
 
-> **Purpose**: This document serves as the definitive technical reference for AI assistants working on the LLMaven codebase. It provides comprehensive architectural understanding, development patterns, and operational guidance.
+> **Purpose**: This document serves as the definitive technical reference for AI
+> assistants working on the LLMaven codebase. It provides comprehensive
+> architectural understanding, development patterns, and operational guidance.
 
 ---
 
@@ -28,22 +30,35 @@
 
 ### Mission Statement
 
-LLMaven is a scientific research tool that democratizes AI-based research by providing open, transparent, and useful AI software for scientists. The project leverages Retrieval Augmented Generation (RAG) to extend Large Language Models (LLMs) with domain-specific knowledge without requiring expensive model training or fine-tuning.
+LLMaven is a scientific research tool that democratizes AI-based research by
+providing open, transparent, and useful AI software for scientists. The project
+leverages Retrieval Augmented Generation (RAG) to extend Large Language Models
+(LLMs) with domain-specific knowledge without requiring expensive model training
+or fine-tuning.
 
 ### Core Goals
 
-1. **Accessibility**: Enable individual researchers without extensive AI/ML resources to leverage advanced LLMs
-2. **Privacy-Aware**: Use RAG to handle data with privacy/IP concerns cost-effectively
-3. **Domain Specialization**: Focus on scientific research (initially astrophysics and Rubin Observatory/LSST data)
-4. **Open Science**: Leverage publicly available datasets and academic knowledge bases
-5. **Production-Ready Deployment**: Provide enterprise-grade Azure infrastructure deployment capabilities
+1. **Accessibility**: Enable individual researchers without extensive AI/ML
+   resources to leverage advanced LLMs
+2. **Privacy-Aware**: Use RAG to handle data with privacy/IP concerns
+   cost-effectively
+3. **Domain Specialization**: Focus on scientific research (initially
+   astrophysics and Rubin Observatory/LSST data)
+4. **Open Science**: Leverage publicly available datasets and academic knowledge
+   bases
+5. **Production-Ready Deployment**: Provide enterprise-grade Azure
+   infrastructure deployment capabilities
 
 ### Project Status
 
-- **Primary Use Case**: Interactive RAG chat application for scientific research queries
-- **Current Focus**: Astrophysics research (Rubin Observatory documentation, arXiv papers)
-- **Deployment Options**: Local development, Docker Compose, Azure Cloud infrastructure
-- **Architecture**: Modern Python package with FastAPI backend, Streamlit frontend, and comprehensive infrastructure management
+- **Primary Use Case**: Interactive RAG chat application for scientific research
+  queries
+- **Current Focus**: Astrophysics research (Rubin Observatory documentation,
+  arXiv papers)
+- **Deployment Options**: Local development, Docker Compose, Azure Cloud
+  infrastructure
+- **Architecture**: Modern Python package with FastAPI backend, Streamlit
+  frontend, and comprehensive infrastructure management
 
 ---
 
@@ -93,6 +108,7 @@ graph TB
 ### Current Architecture Components
 
 1. **LLMaven API Package** (`src/llmaven/`): Modern installable package with:
+
    - FastAPI REST API with versioned endpoints
    - Streamlit interactive frontend
    - CLI for server and infrastructure management
@@ -100,6 +116,7 @@ graph TB
    - Azure infrastructure deployment system
 
 2. **Infrastructure Management**: Production-ready deployment system:
+
    - YAML-based configuration schema
    - Pulumi-based Azure resource provisioning
    - Comprehensive validation and secret management
@@ -119,7 +136,8 @@ graph TB
 - **Stage 1: Retrieval** - Query vector database for relevant documents
 - **Stage 2: Generation** - Use retrieved context to generate informed responses
 
-**Why**: Extends LLM knowledge without expensive fine-tuning; handles domain-specific and recent information
+**Why**: Extends LLM knowledge without expensive fine-tuning; handles
+domain-specific and recent information
 
 **Implementation**:
 
@@ -152,7 +170,8 @@ response = language_model.inference(prompt_with_context)
 - Pulumi for Azure resource provisioning
 - Secret management via environment variables and Azure Key Vault
 
-**Why**: Reproducible deployments, version-controlled infrastructure, validation before deployment
+**Why**: Reproducible deployments, version-controlled infrastructure, validation
+before deployment
 
 ---
 
@@ -247,23 +266,23 @@ llmaven/
 
 ### Directory Purposes
 
-| Directory                        | Purpose                             | When to Modify                             |
-| -------------------------------- | ----------------------------------- | ------------------------------------------ |
-| `src/llmaven/`                   | Main installable package            | Core API development, adding features      |
-| `src/llmaven/v1/`                | API version 1 endpoints             | Adding/modifying REST endpoints            |
-| `src/llmaven/core/`              | ML/AI components                    | Changing retrieval/generation algorithms   |
-| `src/llmaven/services/`          | Business logic                      | Orchestration and service-level logic      |
-| `src/llmaven/schemas/`           | API contracts                       | Request/response data models               |
-| `src/llmaven/frontend/`          | Streamlit UI                        | User interface changes                     |
-| `src/llmaven/deployment/`        | Deployment utilities                | Deployment workflow modifications          |
-| `src/llmaven/infrastructure/`    | Infrastructure as Code              | Azure resource definitions                 |
-| `src/llmaven/infrastructure/config/` | Infrastructure configuration    | Configuration schema and validation        |
-| `src/llmaven/infrastructure/resources/` | Azure resources              | Resource provisioning logic                |
-| `archive/proxy/`                 | OpenAI API proxy (archived)         | **Do not modify** - archived code          |
-| `archive/infra/`                 | Cloud infrastructure (archived)     | **Do not modify** - archived code          |
-| `archive/legacy/`                | Original implementations (archived) | **Do not modify** - reference only         |
-| `tests/`                         | Test suite                          | Adding tests for new features              |
-| `docker/`                        | Container orchestration             | Multi-service deployment setup             |
+| Directory                               | Purpose                             | When to Modify                           |
+| --------------------------------------- | ----------------------------------- | ---------------------------------------- |
+| `src/llmaven/`                          | Main installable package            | Core API development, adding features    |
+| `src/llmaven/v1/`                       | API version 1 endpoints             | Adding/modifying REST endpoints          |
+| `src/llmaven/core/`                     | ML/AI components                    | Changing retrieval/generation algorithms |
+| `src/llmaven/services/`                 | Business logic                      | Orchestration and service-level logic    |
+| `src/llmaven/schemas/`                  | API contracts                       | Request/response data models             |
+| `src/llmaven/frontend/`                 | Streamlit UI                        | User interface changes                   |
+| `src/llmaven/deployment/`               | Deployment utilities                | Deployment workflow modifications        |
+| `src/llmaven/infrastructure/`           | Infrastructure as Code              | Azure resource definitions               |
+| `src/llmaven/infrastructure/config/`    | Infrastructure configuration        | Configuration schema and validation      |
+| `src/llmaven/infrastructure/resources/` | Azure resources                     | Resource provisioning logic              |
+| `archive/proxy/`                        | OpenAI API proxy (archived)         | **Do not modify** - archived code        |
+| `archive/infra/`                        | Cloud infrastructure (archived)     | **Do not modify** - archived code        |
+| `archive/legacy/`                       | Original implementations (archived) | **Do not modify** - reference only       |
+| `tests/`                                | Test suite                          | Adding tests for new features            |
+| `docker/`                               | Container orchestration             | Multi-service deployment setup           |
 
 ---
 
@@ -408,7 +427,7 @@ litellm:
 
 - Schema validation via Pydantic
 - Environment variable substitution
-- Secret validation (LLMAVEN_SECRETS_* environment variables)
+- Secret validation (LLMAVEN*SECRETS*\* environment variables)
 - Azure subscription and quota checks
 - Cost estimation
 
@@ -423,7 +442,8 @@ litellm:
 1. **Resource Group**: Container for all resources
 2. **Virtual Network**: VNet with subnets for Container Apps and PostgreSQL
 3. **Key Vault**: Centralized secret management with RBAC
-4. **PostgreSQL Flexible Server**: Managed database with auto-generated admin password
+4. **PostgreSQL Flexible Server**: Managed database with auto-generated admin
+   password
 5. **Storage Account**: Blob storage with ADLS Gen2 support
 6. **Container Apps Environment**: Managed container orchestration
 7. **Managed Identities**: User-assigned identities for Key Vault access
@@ -456,7 +476,7 @@ litellm:
 
 **Secret Management**:
 
-- User-provided secrets from environment variables (LLMAVEN_SECRETS_*)
+- User-provided secrets from environment variables (LLMAVEN*SECRETS*\*)
 - Generated secrets (PostgreSQL passwords)
 - All secrets stored in Azure Key Vault
 - Container apps access secrets via managed identities
@@ -566,26 +586,26 @@ class FrontendConfig(BaseSettings):
 
 ### Core Dependencies
 
-| Category                | Technology               | Version     | Purpose                         |
-| ----------------------- | ------------------------ | ----------- | ------------------------------- |
-| **Language**            | Python                   | 3.12        | Primary language (API)          |
-| **Language**            | Python                   | 3.11        | Other components                |
-| **Package Manager**     | Pixi                     | >=0.55.0    | Conda/PyPI unified manager      |
-| **Web Framework**       | FastAPI                  | >=0.115.0   | REST API                        |
-| **Web Framework**       | Streamlit                | >=1.40.0    | Interactive UI                  |
-| **ASGI Server**         | Uvicorn                  | >=0.30.0    | Development server              |
-| **Production Server**   | Gunicorn                 | >=21.0.0    | Production WSGI server          |
-| **LLM Framework**       | LangChain                | ~=0.3.26    | RAG orchestration               |
-| **Vector DB**           | Qdrant                   | >=1.11.2    | Semantic search                 |
-| **Embeddings**          | HuggingFace              | Latest      | Sentence transformers           |
-| **LLM Inference**       | Transformers             | ~=4.53.0    | Model loading                   |
-| **Quantization**        | BitsAndBytes             | >=0.42.0    | 4-bit/8-bit quantization        |
-| **IaC**                 | Pulumi                   | >=3.100.0   | Infrastructure deployment       |
-| **Cloud SDK**           | pulumi-azure-native      | >=3.0.0     | Azure resource provider         |
-| **HTTP Client**         | httpx                    | >=0.27.0    | Async HTTP                      |
-| **CLI Framework**       | Typer                    | >=0.9.0     | Command-line interface          |
-| **Data Validation**     | Pydantic                 | >=2.12.4    | Schema validation               |
-| **Settings Management** | pydantic-settings        | >=2.0.0     | Configuration management        |
+| Category                | Technology          | Version   | Purpose                    |
+| ----------------------- | ------------------- | --------- | -------------------------- |
+| **Language**            | Python              | 3.12      | Primary language (API)     |
+| **Language**            | Python              | 3.11      | Other components           |
+| **Package Manager**     | Pixi                | >=0.55.0  | Conda/PyPI unified manager |
+| **Web Framework**       | FastAPI             | >=0.115.0 | REST API                   |
+| **Web Framework**       | Streamlit           | >=1.40.0  | Interactive UI             |
+| **ASGI Server**         | Uvicorn             | >=0.30.0  | Development server         |
+| **Production Server**   | Gunicorn            | >=21.0.0  | Production WSGI server     |
+| **LLM Framework**       | LangChain           | ~=0.3.26  | RAG orchestration          |
+| **Vector DB**           | Qdrant              | >=1.11.2  | Semantic search            |
+| **Embeddings**          | HuggingFace         | Latest    | Sentence transformers      |
+| **LLM Inference**       | Transformers        | ~=4.53.0  | Model loading              |
+| **Quantization**        | BitsAndBytes        | >=0.42.0  | 4-bit/8-bit quantization   |
+| **IaC**                 | Pulumi              | >=3.100.0 | Infrastructure deployment  |
+| **Cloud SDK**           | pulumi-azure-native | >=3.0.0   | Azure resource provider    |
+| **HTTP Client**         | httpx               | >=0.27.0  | Async HTTP                 |
+| **CLI Framework**       | Typer               | >=0.9.0   | Command-line interface     |
+| **Data Validation**     | Pydantic            | >=2.12.4  | Schema validation          |
+| **Settings Management** | pydantic-settings   | >=2.0.0   | Configuration management   |
 
 ### Development Tools
 
@@ -623,7 +643,8 @@ class FrontendConfig(BaseSettings):
    ```
 
 3. **Qdrant Vector Database** (optional, for RAG features):
-   - Create via [Qdrant Database Creation Notebook](https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb)
+   - Create via
+     [Qdrant Database Creation Notebook](https://github.com/uw-ssec/tutorials/blob/main/Archive/SciPy2024/appendix/qdrant-vector-database-creation.ipynb)
 
 ### Installation
 
@@ -936,7 +957,8 @@ Content-Type: application/json
 
 **Secret Management**:
 
-Secrets are provided via environment variables with the `LLMAVEN_SECRETS_` prefix:
+Secrets are provided via environment variables with the `LLMAVEN_SECRETS_`
+prefix:
 
 ```bash
 export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="your-master-key"
@@ -1028,27 +1050,27 @@ llmaven infra destroy --yes
 
 ### Configuration Files
 
-| File                                 | Purpose                 | Critical Fields                                                     |
-| ------------------------------------ | ----------------------- | ------------------------------------------------------------------- |
-| `pyproject.toml`                     | Python package metadata | `dependencies`, `scripts` (llmaven CLI), `version`                  |
-| `pixi.toml`                          | Package manager config  | `dependencies`, `pypi-dependencies`, `environments`, `tasks`        |
-| `src/llmaven/config.py`              | API configuration       | `api_title`, `api_version`, `cors_origins`                          |
-| `src/llmaven/frontend/config.py`     | Frontend configuration  | `api_base_url`, `embedding_model`, `generation_model`               |
-| `llmaven-config.yaml`                | Infrastructure config   | All Azure resource definitions                                      |
-| `.flake8`                            | Linting rules           | `max-line-length = 120`                                             |
-| `.pre-commit-config.yaml`            | Git hooks               | Code quality checks                                                 |
+| File                             | Purpose                 | Critical Fields                                              |
+| -------------------------------- | ----------------------- | ------------------------------------------------------------ |
+| `pyproject.toml`                 | Python package metadata | `dependencies`, `scripts` (llmaven CLI), `version`           |
+| `pixi.toml`                      | Package manager config  | `dependencies`, `pypi-dependencies`, `environments`, `tasks` |
+| `src/llmaven/config.py`          | API configuration       | `api_title`, `api_version`, `cors_origins`                   |
+| `src/llmaven/frontend/config.py` | Frontend configuration  | `api_base_url`, `embedding_model`, `generation_model`        |
+| `llmaven-config.yaml`            | Infrastructure config   | All Azure resource definitions                               |
+| `.flake8`                        | Linting rules           | `max-line-length = 120`                                      |
+| `.pre-commit-config.yaml`        | Git hooks               | Code quality checks                                          |
 
 ### Entry Points
 
-| File                                     | Command                                | Purpose                              |
-| ---------------------------------------- | -------------------------------------- | ------------------------------------ |
-| `src/llmaven/cli.py`                     | `llmaven server serve`                 | FastAPI API server (CLI)             |
-| `src/llmaven/cli.py`                     | `llmaven server ui`                    | Streamlit frontend (CLI)             |
-| `src/llmaven/cli.py`                     | `llmaven infra init`                   | Initialize deployment config         |
-| `src/llmaven/cli.py`                     | `llmaven infra deploy`                 | Deploy infrastructure                |
-| `src/llmaven/main.py`                    | `uvicorn llmaven.main:app`             | FastAPI app (direct)                 |
-| `src/llmaven/frontend/app.py`            | `streamlit run app.py`                 | Streamlit UI (direct)                |
-| `archive/legacy/rubin-panel-app.py`      | `pixi run serve-panel`                 | Legacy Panel chat UI (archived)      |
+| File                                | Command                    | Purpose                         |
+| ----------------------------------- | -------------------------- | ------------------------------- |
+| `src/llmaven/cli.py`                | `llmaven server serve`     | FastAPI API server (CLI)        |
+| `src/llmaven/cli.py`                | `llmaven server ui`        | Streamlit frontend (CLI)        |
+| `src/llmaven/cli.py`                | `llmaven infra init`       | Initialize deployment config    |
+| `src/llmaven/cli.py`                | `llmaven infra deploy`     | Deploy infrastructure           |
+| `src/llmaven/main.py`               | `uvicorn llmaven.main:app` | FastAPI app (direct)            |
+| `src/llmaven/frontend/app.py`       | `streamlit run app.py`     | Streamlit UI (direct)           |
+| `archive/legacy/rubin-panel-app.py` | `pixi run serve-panel`     | Legacy Panel chat UI (archived) |
 
 ---
 
@@ -1160,7 +1182,6 @@ project:
 azure:
   subscription_id: "your-subscription-id"
   # tenant_id will be auto-detected
-
 # Customize other settings as needed
 ```
 
@@ -1401,6 +1422,5 @@ git commit -m "feat: add feature"     # Commit with conventional format
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: 2025-12-04
-**Maintained By**: LLMaven Development Team (UW SSEC)
+**Document Version**: 2.0 **Last Updated**: 2025-12-04 **Maintained By**:
+LLMaven Development Team (UW SSEC)
