@@ -121,6 +121,9 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.*.example
 .venv
 env/
 venv/
@@ -177,9 +180,11 @@ models-preprocessing/
 # Raw data (large files)
 data/raw/
 data/vector_stores/
-resources/
 
 # Model
 models/
 # Proxy logs
 logs/*.jsonl
+
+# LLMaven Configs
+llmaven-config*.yaml

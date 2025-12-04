@@ -35,7 +35,7 @@ def test_retrieve_endpoint(query, expected_status):
     }
 
     response = client.post("/api/retrieve/", json=payload)
-    
+
     assert response.status_code == expected_status
     assert "docs" in response.json()
     assert isinstance(response.json()["docs"], list)

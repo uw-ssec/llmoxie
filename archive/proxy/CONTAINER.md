@@ -2,7 +2,8 @@
 
 ## Overview
 
-The LLMaven Proxy is containerized using Docker and automatically built/published to GitHub Container Registry (GHCR).
+The LLMaven Proxy is containerized using Docker and automatically
+built/published to GitHub Container Registry (GHCR).
 
 ## Container Details
 
@@ -96,7 +97,8 @@ See main README.md for full Kubernetes manifests.
 
 - `AUTH_ENABLED` - Default: `true` (set to `false` to disable)
 
-**Note:** Azure Storage credentials are shared between logging (Blob Storage) and authentication (Table Storage).
+**Note:** Azure Storage credentials are shared between logging (Blob Storage)
+and authentication (Table Storage).
 
 ### Optional Environment Variables:
 

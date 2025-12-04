@@ -19,11 +19,11 @@ litellm_settings:
 # litellm_settings:
 #   # Enable detailed logging
 #   set_verbose: true
-  
+
 #   # S3 Logging Configuration
 #   success_callback: ["s3"]
 #   failure_callback: ["s3"]
-  
+
 #   # S3 Bucket Configuration
 #   s3_callback_params:
 #     s3_bucket_name: os.environ/S3_BUCKET_NAME

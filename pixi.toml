@@ -78,7 +78,7 @@ streamlit = "*"
 tenacity = "==8.5.0"
 
 [environments]
-llmaven = { features = ["docker", "llmaven"], no-default-feature = true }
+llmaven = { features = ["docker", "llmaven", "pulumi", "pre-commit"], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -90,14 +90,23 @@ proxy = { features = [
 # === LLMaven API dependencies and tasks ===
 
 [feature.llmaven.pypi-dependencies]
-llmaven = { path = ".", editable = true, extras = ["test"]}
+llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
+azure-core = ">=1.36.0,<2"
+python-dotenv = ">=1.1.1,<2"
 
 [feature.llmaven.tasks]
 api-server = { cmd = "llmaven serve" }
 ui = { cmd = "llmaven ui" }
+
+[feature.pulumi.tasks.install-pulumi]
+cmd = "curl -fsSL https://get.pulumi.com | bash -s -- --install-root $CONDA_PREFIX"
+outputs = ["**/bin/pulumi"]
+
+[feature.pulumi.dependencies]
+pip = ">=25.3,<26"
 
 # === LLMaven API dependencies and tasks
 
@@ -128,3 +137,6 @@ restart = { cmd = "docker-compose restart", cwd = "docker" }
 clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 # === End Docker related dependencies and tasks ===
+
+[feature.pre-commit.dependencies]
+pre-commit = ">=3.4.0,<4"

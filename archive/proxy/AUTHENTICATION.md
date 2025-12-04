@@ -4,7 +4,9 @@ This guide walks through setting up user authentication for the LLMaven Proxy.
 
 ## Overview
 
-The proxy uses Azure Table Storage to manage user API keys. When authentication is enabled (default), clients must provide a valid API key in the `Authorization` header using Bearer token format.
+The proxy uses Azure Table Storage to manage user API keys. When authentication
+is enabled (default), clients must provide a valid API key in the
+`Authorization` header using Bearer token format.
 
 ## Prerequisites
 

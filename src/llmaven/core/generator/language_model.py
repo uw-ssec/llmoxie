@@ -9,13 +9,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 
 class LanguageModel():
-    def __init__(self, 
-                 model_name, 
+    def __init__(self,
+                 model_name,
                  generation_config = {}):
-        
+
         self.model_name = model_name
         self.generation_config = generation_config or {}
-        
+
         self.cache_path = os.path.join(os.path.dirname(__file__), "../../models")
         os.makedirs(self.cache_path, exist_ok=True)
         self.model_path = os.path.join(self.cache_path, self.model_name.replace("/", "_"))
@@ -23,7 +23,7 @@ class LanguageModel():
         self.llm = None
         self.tokenizer = None
         self.hg_pipeline = None
-    
+
     def load_language_model(self,
                             quantization: Literal["8bit", "4bit"]
                             ):
@@ -34,7 +34,7 @@ class LanguageModel():
             quantization_config = BitsAndBytesConfig(load_in_4bit=True)
         else :
             quantization_config = None
-       
+
         # Load tokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.model_name, cache_dir=self.model_path)
 
@@ -47,7 +47,7 @@ class LanguageModel():
         )
         self.llm = model
         self.tokenizer = tokenizer
-    
+
     def load_hg_pipeline(self):
         if self.llm and self.tokenizer:
             pipe = pipeline(
@@ -63,7 +63,7 @@ class LanguageModel():
         else:
             logging.error("Model and tokenizer not loaded. Cannot create pipeline.")
             return None
-    
+
     def inference(self, prompt):
         if self.hg_pipeline:
             response = self.hg_pipeline.invoke(prompt)
@@ -71,8 +71,3 @@ class LanguageModel():
         else:
             logging.info("Model and tokenizer not loaded. Cannot create pipeline.")
             return None
-            
-         
-    
-
-

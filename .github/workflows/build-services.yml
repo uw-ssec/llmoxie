@@ -5,11 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'docker/**'
-      - '.github/workflows/build-services.yml'
+      - "docker/**"
+      - ".github/workflows/build-services.yml"
   release:
     types: [published]
-  workflow_dispatch:  # Allow manual triggers
+  workflow_dispatch: # Allow manual triggers
 
 env:
   REGISTRY: ghcr.io
@@ -21,7 +21,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
+
     strategy:
       matrix:
         service:
@@ -48,7 +48,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service.name }}
+          images:
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service.name
+            }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -73,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-images]
     if: always()
-    
+
     steps:
       - name: Build Summary
         run: |

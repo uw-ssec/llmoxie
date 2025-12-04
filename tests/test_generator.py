@@ -20,7 +20,7 @@ def test_generate_endpoint(prompt, generation_model, expected_status):
     }
 
     response = client.post("/api/generate/", json=payload)
-    
+
     assert response.status_code == expected_status
     assert "answer" in response.json()
     assert isinstance(response.json()["answer"], str)

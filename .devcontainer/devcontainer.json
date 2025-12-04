@@ -8,9 +8,9 @@
   "customizations": {
     "vscode": {
       "extensions": [
-          "ms-toolsai.jupyter",
-          "ms-python.python",
-          "ms-azuretools.vscode-docker"
+        "ms-toolsai.jupyter",
+        "ms-python.python",
+        "ms-azuretools.vscode-docker"
       ]
     },
     "codespaces": {
@@ -32,12 +32,12 @@
     "create-shell-hook": "pixi shell-hook --shell bash > /etc/profile.d/pixi.sh"
   },
   "runArgs": [
-    "--privileged",                      // Allow privileged mode for Docker
+    "--privileged", // Allow privileged mode for Docker
     "--volume=/var/run/docker.sock:/var/run/docker.sock", // Bind Docker socket for host communication
     "--gpus=all"
   ],
   "securityOpt": [
-    "seccomp=unconfined"                 // Relax security for Docker operations
+    "seccomp=unconfined" // Relax security for Docker operations
   ],
   "forwardPorts": [8501]
 }
