@@ -12,7 +12,7 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Copy only requirements first for better caching
-COPY proxy/requirements.txt .
+COPY archive/proxy/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --user -r requirements.txt
