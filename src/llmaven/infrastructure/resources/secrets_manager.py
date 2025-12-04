@@ -177,12 +177,13 @@ class SecretsManager:
 
         for db_name in database_names:
             # Build connection string
+            # Use default parameter to capture db_name value (avoid closure bug)
             connection_string = Output.all(
                 postgres_server_fqdn, admin_password
             ).apply(
-                lambda args: build_postgres_connection_string(
+                lambda args, db=db_name: build_postgres_connection_string(
                     server_fqdn=args[0],
-                    database_name=db_name,
+                    database_name=db,
                     admin_login=admin_login,
                     admin_password=args[1],
                 )
