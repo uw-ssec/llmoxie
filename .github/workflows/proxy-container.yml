@@ -1,12 +1,12 @@
 name: Build and Push Proxy Container
 
 on:
-#   push:
-#     branches:
-#       - main
-#     paths:
-#       - "archive/proxy/**"
-#       - ".github/workflows/proxy-container.yml"
+  #   push:
+  #     branches:
+  #       - main
+  #     paths:
+  #       - "archive/proxy/**"
+  #       - ".github/workflows/proxy-container.yml"
   workflow_dispatch:
 
 env:
