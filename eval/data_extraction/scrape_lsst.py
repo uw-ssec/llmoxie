@@ -70,7 +70,7 @@ def strip_html(text):
 def scrape_forum(delay=2, last_scrape_date=None):
     qa_pairs = []
     page = 0
-    
+
     while True:
         print(f"Fetching page {page}...")
         data = fetch_topics(page)
@@ -84,7 +84,7 @@ def scrape_forum(delay=2, last_scrape_date=None):
 
         for topic in tqdm(topics, desc=f"Processing Page {page}"):
             topic_data = extract_topic_data(topic)
-            
+
             # Skip topics already scraped
             if last_scrape_date and topic_data["question_date"] <= last_scrape_date:
                 print(f"Skipping topic {topic_data['topic_id']} - already scraped.")
@@ -111,7 +111,7 @@ def scrape_forum(delay=2, last_scrape_date=None):
                         "is_accepted_answer": reply_data["is_accepted_answer"]
                     })
             time.sleep(delay)
-        
+
         page += 1
 
     return qa_pairs
@@ -119,22 +119,22 @@ def scrape_forum(delay=2, last_scrape_date=None):
 def main():
     last_scrape_date = get_last_scrape_date()
     print(f"Last scrape date: {last_scrape_date}")
-    
+
     qa_data = scrape_forum(last_scrape_date=last_scrape_date)
     qa_df = pd.DataFrame(qa_data)
-    
+
     if not qa_df.empty:
         qa_df["question_date"] = pd.to_datetime(qa_df["question_date"]).dt.date
         qa_df["answer_date"] = pd.to_datetime(qa_df["answer_date"]).dt.date
         qa_df.sort_values(by=["question_date", "answer_date"], ascending=[False, False], inplace=True)
         qa_df.reset_index(drop=True, inplace=True)
-        
+
         if os.path.exists(CSV_FILENAME):
             existing_df = pd.read_csv(CSV_FILENAME)
             updated_df = pd.concat([existing_df, qa_df], ignore_index=True).drop_duplicates()
         else:
             updated_df = qa_df
-        
+
         updated_df.to_csv(CSV_FILENAME, index=False)
         print("Scraping complete! Data successfully saved.")
     else:
