@@ -5,6 +5,7 @@ VNet integration, monitoring, and workload profiles.
 """
 
 from typing import Dict, Optional
+import datetime
 
 import pulumi
 import pulumi_azure_native as azure_native
@@ -154,6 +155,14 @@ def create_container_app_with_key_vault_secrets(
     """
     # Build environment variables list
     env_list = []
+
+    # Add refresh trigger environment variable
+    env_list.append(
+        azure_native.app.EnvironmentVarArgs(
+            name="REFRESH_TRIGGER",
+            value=datetime.datetime.utcnow().isoformat(),
+        )
+    )
 
     # Add non-sensitive environment variables
     if env_vars:
