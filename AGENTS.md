@@ -108,7 +108,6 @@ graph TB
 ### Current Architecture Components
 
 1. **LLMaven API Package** (`src/llmaven/`): Modern installable package with:
-
    - FastAPI REST API with versioned endpoints
    - Streamlit interactive frontend
    - CLI for server and infrastructure management
@@ -116,7 +115,6 @@ graph TB
    - Azure infrastructure deployment system
 
 2. **Infrastructure Management**: Production-ready deployment system:
-
    - YAML-based configuration schema
    - Pulumi-based Azure resource provisioning
    - Comprehensive validation and secret management
