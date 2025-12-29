@@ -161,8 +161,8 @@ class ContainerAppConfig(BaseModel):
     env_vars: Dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )
-    secrets: List[str] = Field(
-        default_factory=list, description="Secret names from Key Vault"
+    key_vault_secret_refs: Dict[str, str] = Field(
+        default_factory=dict, description="Key/Value mapping for Key Vault secrets"
     )
 
 
@@ -178,9 +178,14 @@ class MLflowConfig(ContainerAppConfig):
         default_factory=lambda: {"MLFLOW_HOST": "0.0.0.0"},
         description="MLflow environment variables",
     )
-    secrets: List[str] = Field(
-        default_factory=lambda: ["db-connection-string", "storage-account-key"],
-        description="MLflow secrets",
+
+    key_vault_secret_refs: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "MLFLOW_BACKEND_STORE_URI": "db-connection-string-mlflow-db",
+            "MLFLOW_DEFAULT_ARTIFACT_ROOT": "mlflow-artifact-root",
+            "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
+        },
+        description="MLflow Key Vault secret references",
     )
 
 
@@ -199,15 +204,19 @@ class LiteLLMConfig(ContainerAppConfig):
         default_factory=lambda: {"LITELLM_HOST": "0.0.0.0"},
         description="LiteLLM environment variables",
     )
-    secrets: List[str] = Field(
-        default_factory=lambda: [
-            "litellm-master-key",
-            "azure-openai-api-key",
-            "anthropic-api-key",
-            "db-connection-string",
-            "mlflow-tracking-uri",
-        ],
-        description="LiteLLM secrets",
+
+    key_vault_secret_refs: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "DATABASE_URL": "db-connection-string-litellm-db",
+            "LITELLM_MASTER_KEY": "litellm-master-key",
+            "AZURE_API_BASE": "azure-api-base",
+            "AZURE_API_KEY": "azure-api-key",
+            "AZURE_API_VERSION": "azure-api-version",
+            "ANTHROPIC_API_KEY": "anthropic-api-key",
+            "MLFLOW_EXPERIMENT_NAME": "mlflow-experiment-name",
+            "MLFLOW_TRACKING_URI": "mlflow-tracking-uri",
+        },
+        description="LiteLLM Key Vault secret references",
     )
 
 

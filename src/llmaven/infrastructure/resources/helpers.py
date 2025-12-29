@@ -188,6 +188,7 @@ def create_mlflow_app(
     max_replicas: int,
     env_vars: Dict[str, str],
     key_vault: azure_native.keyvault.Vault,
+    key_vault_secret_refs: Dict[str, str],
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
 ) -> azure_native.app.ContainerApp:
@@ -234,14 +235,8 @@ def create_mlflow_app(
                 environment = part
                 break
 
-    # Build secret references for Key Vault
-    # These reference secrets that should already exist in Key Vault
-    # MLflow uses PostgreSQL URI for backend and Azure Blob for artifacts
-    key_vault_secret_refs = {
-        "MLFLOW_BACKEND_STORE_URI": "db-connection-string-mlflow-db",
-        "MLFLOW_DEFAULT_ARTIFACT_ROOT": "mlflow-artifact-root",
-        "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
-    }
+    # key_vault_secret_refs is passed as an argument
+
 
     # Create container app
     return create_container_app_with_key_vault_secrets(
@@ -280,6 +275,7 @@ def create_litellm_app(
     max_replicas: int,
     env_vars: Dict[str, str],
     key_vault: azure_native.keyvault.Vault,
+    key_vault_secret_refs: Dict[str, str],
     config_file: Optional[str] = None,
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -334,18 +330,8 @@ def create_litellm_app(
                 environment = part
                 break
 
-    # Build secret references for Key Vault
-    # These reference secrets that should already exist in Key Vault
-    # (API keys from user environment variables)
-    key_vault_secret_refs = {
-        "DATABASE_URL": "db-connection-string-litellm-db",
-        "LITELLM_MASTER_KEY": "litellm-master-key",
-        "AZURE_API_BASE": "azure-api-base",
-        "AZURE_API_KEY": "azure-api-key",
-        "AZURE_API_VERSION": "azure-api-version",
-        "MLFLOW_EXPERIMENT_NAME": "mlflow-experiment-name",
-        "MLFLOW_TRACKING_URI": "mlflow-tracking-uri",
-    }
+    # key_vault_secret_refs is passed as an argument
+
 
     # Prepare volumes, volume mounts, and inline secrets if config file is provided
     volumes = None

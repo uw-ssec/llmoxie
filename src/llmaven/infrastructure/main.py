@@ -320,6 +320,7 @@ def create_pulumi_program(config_path: Path):
                 max_replicas=config.mlflow.max_replicas,
                 env_vars=config.mlflow.env_vars,
                 key_vault=key_vault,
+                key_vault_secret_refs=config.mlflow.key_vault_secret_refs,
                 managed_identity_id=mlflow_managed_identity.id if mlflow_managed_identity else None,
                 tags=config.tags,
             )
@@ -352,6 +353,7 @@ def create_pulumi_program(config_path: Path):
                 max_replicas=config.litellm.max_replicas,
                 env_vars=config.litellm.env_vars,
                 key_vault=key_vault,
+                key_vault_secret_refs=config.litellm.key_vault_secret_refs,
                 config_file=config.litellm.config_file if hasattr(config.litellm, 'config_file') else None,
                 managed_identity_id=litellm_managed_identity.id if litellm_managed_identity else None,
                 tags=config.tags,
