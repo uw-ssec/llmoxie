@@ -299,7 +299,7 @@ mlflow:
   max_replicas: {config.mlflow.max_replicas}
   env_vars:
     MLFLOW_HOST: "0.0.0.0"
-  
+
   # Key Vault Secret References (Env Var -> Secret Name)
   key_vault_secret_refs:
     MLFLOW_BACKEND_STORE_URI: "db-connection-string-mlflow-db"
@@ -318,7 +318,7 @@ litellm:
   config_file: docker/config.yaml  # Path to LiteLLM config
   env_vars:
     LITELLM_HOST: "0.0.0.0"
-  
+
   # Key Vault Secret References (Env Var -> Secret Name)
   key_vault_secret_refs:
     DATABASE_URL: "db-connection-string-litellm-db"
