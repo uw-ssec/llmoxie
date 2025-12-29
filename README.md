@@ -78,28 +78,24 @@ graph TB
 ### Core Components
 
 1. **FastAPI Backend** (`/src/llmaven/main.py`)
-
    - RESTful API with automatic OpenAPI documentation
    - CORS middleware for frontend integration
    - Error handling and validation
    - Health check endpoints
 
 2. **Streamlit Frontend** (`/src/llmaven/frontend/app.py`)
-
    - Interactive chat interface
    - Document upload (PDF support)
    - Real-time retrieval and generation
    - Chat history display
 
 3. **Retrieval Service** (`/src/llmaven/services/retrieval_service.py`)
-
    - Document embedding and vector storage
    - Semantic search using Qdrant
    - MMR (Maximal Marginal Relevance) retrieval
    - Support for temporary and persistent collections
 
 4. **Generation Service** (`/src/llmaven/services/generation_service.py`)
-
    - Language model inference with caching
    - Quantized model loading (4-bit/8-bit)
    - HuggingFace Pipeline integration
@@ -653,19 +649,16 @@ llmaven version
    ```
 
 2. **Model download fails**
-
    - Check internet connection
    - Verify HuggingFace model name
    - Check disk space (models can be several GB)
 
 3. **Out of memory during generation**
-
    - Use 8-bit or 4-bit quantization
    - Reduce batch size
    - Use a smaller model
 
 4. **Vector store not found**
-
    - Verify the path in configuration
    - Create vector store first using the notebook
    - Check file permissions

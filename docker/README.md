@@ -801,7 +801,6 @@ volumes:
 ```
 
 - **llmaven_postgres_data**: Named volume for PostgreSQL database files
-
   - Persists database data across container restarts and recreations
   - Explicitly named as `llmaven_postgres_data`
   - Contains all PostgreSQL databases (`llmaven`, `mlflow_db`, `litellm_db`)
@@ -1195,13 +1194,11 @@ pixi run -e llmaven up
    ```
 
 2. **Use Secret Management**:
-
    - Store credentials in HashiCorp Vault, AWS Secrets Manager, or Azure Key
      Vault
    - Mount secrets as files instead of environment variables
 
 3. **Enable TLS/HTTPS**:
-
    - Configure reverse proxy (nginx, Traefik) with SSL certificates
    - Enable HTTPS for all services
 
@@ -1213,19 +1210,16 @@ pixi run -e llmaven up
 #### Scaling Considerations
 
 1. **PostgreSQL**:
-
    - Use managed database service (AWS RDS, Azure Database, Google Cloud SQL)
    - Configure connection pooling
    - Set up replication for high availability
 
 2. **MinIO**:
-
    - Use managed S3 service (AWS S3, Azure Blob, Google Cloud Storage)
    - Enable distributed mode for multi-node setup
    - Configure erasure coding for data protection
 
 3. **LiteLLM**:
-
    - Run multiple instances behind load balancer
    - Use Redis for shared caching
    - Configure rate limiting and quotas
@@ -1430,19 +1424,16 @@ with mlflow.start_run():
 ### Official Documentation
 
 - **LiteLLM**: https://docs.litellm.ai/
-
   - [Proxy Server](https://docs.litellm.ai/docs/proxy/quick_start)
   - [Supported Models](https://docs.litellm.ai/docs/providers)
   - [Logging & Observability](https://docs.litellm.ai/docs/proxy/logging)
 
 - **MLflow**: https://mlflow.org/docs/latest/index.html
-
   - [Tracking](https://mlflow.org/docs/latest/tracking.html)
   - [Models](https://mlflow.org/docs/latest/models.html)
   - [Model Registry](https://mlflow.org/docs/latest/model-registry.html)
 
 - **MinIO**: https://min.io/docs/minio/linux/index.html
-
   - [Docker Deployment](https://min.io/docs/minio/container/index.html)
   - [S3 Compatibility](https://min.io/docs/minio/linux/integrations/aws-cli-with-minio.html)
 
