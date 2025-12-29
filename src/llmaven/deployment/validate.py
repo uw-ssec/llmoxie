@@ -214,10 +214,15 @@ def check_secrets(
 
     # Check required secrets for MLflow
     if config.mlflow and config.mlflow.enabled:
-        mlflow_secrets = config.mlflow.secrets or []
+        mlflow_secrets = list(config.mlflow.key_vault_secret_refs.values()) if config.mlflow.key_vault_secret_refs else []
         for secret_name in mlflow_secrets:
             # Skip auto-generated secrets
-            if secret_name in ["db-connection-string-mlflow-db", "storage-account-key"]:
+            if secret_name in [
+                "db-connection-string-mlflow-db",
+                "storage-account-key",
+                "mlflow-artifact-root",
+                "storage-connection-string",
+            ]:
                 continue
 
             if secret_name not in available_secrets:
@@ -227,7 +232,7 @@ def check_secrets(
 
     # Check required secrets for LiteLLM
     if config.litellm and config.litellm.enabled:
-        litellm_secrets = config.litellm.secrets or []
+        litellm_secrets = list(config.litellm.key_vault_secret_refs.values()) if config.litellm.key_vault_secret_refs else []
         for secret_name in litellm_secrets:
             # Skip auto-generated secrets
             if secret_name in ["db-connection-string-litellm-db", "mlflow-tracking-uri"]:

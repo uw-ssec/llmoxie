@@ -70,7 +70,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             min_replicas=1,
             max_replicas=2,
             env_vars={"MLFLOW_HOST": "0.0.0.0"},
-            secrets=["db-connection-string", "storage-account-key"],
+
         ),
         "litellm": LiteLLMConfig(
             enabled=True,
@@ -82,13 +82,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             max_replicas=2,
             config_file="docker/config.yaml",
             env_vars={"LITELLM_HOST": "0.0.0.0"},
-            secrets=[
-                "litellm-master-key",
-                "azure-openai-api-key",
-                "anthropic-api-key",
-                "db-connection-string",
-                "mlflow-tracking-uri",
-            ],
+
         ),
         "llmaven_api": LLMavenAPIConfig(
             enabled=False,
@@ -99,7 +93,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             min_replicas=1,
             max_replicas=3,
             env_vars={},
-            secrets=[],
+
         ),
         "tags": {
             "Environment": environment,
@@ -305,12 +299,12 @@ mlflow:
   max_replicas: {config.mlflow.max_replicas}
   env_vars:
     MLFLOW_HOST: "0.0.0.0"
-  # Secrets are NOT stored in this config file
-  # Database and storage credentials are automatically generated and stored in Key Vault
-  # Additional secrets can be set via LLMAVEN_SECRETS_ environment variables
-  secrets:
-    - db-connection-string
-    - storage-account-key
+
+  # Key Vault Secret References (Env Var -> Secret Name)
+  key_vault_secret_refs:
+    MLFLOW_BACKEND_STORE_URI: "db-connection-string-mlflow-db"
+    MLFLOW_DEFAULT_ARTIFACT_ROOT: "mlflow-artifact-root"
+    AZURE_STORAGE_CONNECTION_STRING: "storage-connection-string"
 
 # LiteLLM Container App
 litellm:
@@ -324,18 +318,17 @@ litellm:
   config_file: docker/config.yaml  # Path to LiteLLM config
   env_vars:
     LITELLM_HOST: "0.0.0.0"
-  # Secrets are NOT stored in this config file
-  # Instead, set environment variables with LLMAVEN_SECRETS_ prefix:
-  #   export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="your-key-here"
-  #   export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-key-here"
-  #   export LLMAVEN_SECRETS_ANTHROPIC_API_KEY="your-key-here"
-  # These will be automatically stored in Azure Key Vault during deployment
-  secrets:
-    - litellm-master-key
-    - azure-openai-api-key
-    - anthropic-api-key
-    - db-connection-string
-    - mlflow-tracking-uri
+
+  # Key Vault Secret References (Env Var -> Secret Name)
+  key_vault_secret_refs:
+    DATABASE_URL: "db-connection-string-litellm-db"
+    LITELLM_MASTER_KEY: "litellm-master-key"
+    AZURE_API_BASE: "azure-api-base"
+    AZURE_API_KEY: "azure-api-key"
+    AZURE_API_VERSION: "azure-api-version"
+    ANTHROPIC_API_KEY: "anthropic-api-key"
+    MLFLOW_EXPERIMENT_NAME: "mlflow-experiment-name"
+    MLFLOW_TRACKING_URI: "mlflow-tracking-uri"
 
 # LLMaven API Container App (optional)
 llmaven_api:
