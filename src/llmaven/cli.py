@@ -72,11 +72,12 @@ def serve(
         False,
         "--reload",
         "-r",
+        is_flag=True,
         help="Enable auto-reload on code changes (development mode only)",
     ),
     access_log: bool = typer.Option(
         True,
-        "--access-log/--no-access-log",
+        is_flag=True,
         help="Enable access logging",
     ),
 ) -> None:
@@ -193,7 +194,7 @@ def ui(
     ),
     browser: bool = typer.Option(
         True,
-        "--browser/--no-browser",
+        is_flag=True,
         help="Automatically open the app in a browser",
     ),
 ) -> None:
@@ -273,7 +274,7 @@ def init(
     ),
     interactive: bool = typer.Option(
         True,
-        "--interactive/--no-interactive",
+        is_flag=True,
         help="Interactive mode with prompts",
     ),
 ) -> None:
@@ -312,11 +313,13 @@ def validate(
     strict: bool = typer.Option(
         False,
         "--strict",
+        is_flag=True,
         help="Fail on warnings (useful for CI/CD)",
     ),
     skip_secrets: bool = typer.Option(
         False,
         "--skip-secrets",
+        is_flag=True,
         help="Skip secrets validation (use with caution)",
     ),
     env_file: Optional[str] = typer.Option(
@@ -381,12 +384,14 @@ def deploy(
         False,
         "--preview",
         "-p",
+        is_flag=True,
         help="Preview changes without deploying",
     ),
     auto_approve: bool = typer.Option(
         False,
         "--yes",
         "-y",
+        is_flag=True,
         help="Automatically approve deployment",
     ),
     env_file: Optional[str] = typer.Option(
@@ -448,6 +453,7 @@ def destroy(
         False,
         "--yes",
         "-y",
+        is_flag=True,
         help="Automatically approve destruction",
     ),
 ) -> None:
@@ -534,6 +540,7 @@ def refresh(
         False,
         "--yes",
         "-y",
+        is_flag=True,
         help="Automatically approve refresh",
     ),
 ) -> None:

@@ -32,7 +32,7 @@ class TestAgenticConfigDefaults:
     def test_default_dense_model(self):
         """Test default dense embedding model."""
         config = AgenticConfig()
-        assert config.dense_model == "sentence-transformers/all-MiniLM-L12-v2"
+        assert config.dense_model == "sentence-transformers/all-MiniLM-L6-v2"
 
     def test_default_sparse_model(self):
         """Test default sparse embedding model."""

@@ -17,7 +17,7 @@ class AgenticConfig(BaseSettings):
         qdrant_url: Qdrant server URL (default: http://localhost:6333)
         qdrant_api_key: Optional API key for Qdrant authentication
         collection_name: Default collection name for agentic RAG (default: agentic-rag)
-        dense_model: Dense embedding model (default: sentence-transformers/all-MiniLM-L12-v2)
+        dense_model: Dense embedding model (default: sentence-transformers/all-MiniLM-L6-v2)
         sparse_model: Sparse embedding model (default: Qdrant/bm25)
         colbert_model: ColBERT embedding model (default: colbert-ir/colbertv2.0)
         llm_provider: LLM provider to use (openai, ollama, huggingface)
@@ -44,7 +44,7 @@ class AgenticConfig(BaseSettings):
     collection_name: str = "agentic-rag"
 
     # Embedding model configuration
-    dense_model: str = "sentence-transformers/all-MiniLM-L12-v2"  # 384-dim
+    dense_model: str = "sentence-transformers/all-MiniLM-L6-v2"  # 384-dim (fastembed supported)
     sparse_model: str = "Qdrant/bm25"
     colbert_model: str = "colbert-ir/colbertv2.0"
 
