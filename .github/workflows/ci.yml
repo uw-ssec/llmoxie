@@ -81,79 +81,79 @@ jobs:
           echo "- Python: $(pixi run -e llmaven python --version)" >> $GITHUB_STEP_SUMMARY
           echo "- Qdrant: Testcontainer (dynamic port)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-# 2026-01-02: Temporarily disabling macOS tests due to docker not working on macOS arm64 runners.
-#  Once docker support is available, re-enable the macOS tests.
-#  Refer to: https://github.com/docker/actions-toolkit/issues/317
-#   test-macos:
-#     name: Test on macOS
-#     runs-on: macos-latest
-#     timeout-minutes: 30
+  # 2026-01-02: Temporarily disabling macOS tests due to docker not working on macOS arm64 runners.
+  #  Once docker support is available, re-enable the macOS tests.
+  #  Refer to: https://github.com/docker/actions-toolkit/issues/317
+  #   test-macos:
+  #     name: Test on macOS
+  #     runs-on: macos-latest
+  #     timeout-minutes: 30
 
-#     steps:
-#       - name: Checkout repository
-#         uses: actions/checkout@v4
+  #     steps:
+  #       - name: Checkout repository
+  #         uses: actions/checkout@v4
 
-#       - name: Set up Docker
-#         uses: docker/setup-docker-action@v4
+  #       - name: Set up Docker
+  #         uses: docker/setup-docker-action@v4
 
-#       - name: Setup pixi
-#         uses: prefix-dev/setup-pixi@v0.8.1
-#         with:
-#           pixi-version: ${{ env.PIXI_VERSION }}
-#           cache: true
-#           cache-write:
-#             ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-#           environments: llmaven
+  #       - name: Setup pixi
+  #         uses: prefix-dev/setup-pixi@v0.8.1
+  #         with:
+  #           pixi-version: ${{ env.PIXI_VERSION }}
+  #           cache: true
+  #           cache-write:
+  #             ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+  #           environments: llmaven
 
-#       - name: Verify pixi installation
-#         run: |
-#           pixi --version
-#           pixi info
+  #       - name: Verify pixi installation
+  #         run: |
+  #           pixi --version
+  #           pixi info
 
-#       - name: Install dependencies
-#         run: pixi install -e llmaven
+  #       - name: Install dependencies
+  #         run: pixi install -e llmaven
 
-#       - name: Check Docker status
-#         run: |
-#           docker info
-#           docker ps
+  #       - name: Check Docker status
+  #         run: |
+  #           docker info
+  #           docker ps
 
-#       - name: Run core tests
-#         run: |
-#           pixi run -e llmaven pytest tests/ \
-#             --verbose \
-#             --tb=short \
-#             --color=yes \
-#             --ignore=tests/agentic/ \
-#             --ignore=tests/v1/ \
-#             || echo "Core tests completed with status: $?"
+  #       - name: Run core tests
+  #         run: |
+  #           pixi run -e llmaven pytest tests/ \
+  #             --verbose \
+  #             --tb=short \
+  #             --color=yes \
+  #             --ignore=tests/agentic/ \
+  #             --ignore=tests/v1/ \
+  #             || echo "Core tests completed with status: $?"
 
-#       - name: Run agentic tests (excluding CLI integration tests)
-#         run: |
-#           pixi run -e llmaven pytest tests/agentic/ \
-#             --verbose \
-#             --tb=short \
-#             --color=yes \
-#             --ignore=tests/agentic/test_cli.py
+  #       - name: Run agentic tests (excluding CLI integration tests)
+  #         run: |
+  #           pixi run -e llmaven pytest tests/agentic/ \
+  #             --verbose \
+  #             --tb=short \
+  #             --color=yes \
+  #             --ignore=tests/agentic/test_cli.py
 
-#       - name: Run API endpoint tests
-#         run: |
-#           pixi run -e llmaven pytest tests/v1/ \
-#             --verbose \
-#             --tb=short \
-#             --color=yes
+  #       - name: Run API endpoint tests
+  #         run: |
+  #           pixi run -e llmaven pytest tests/v1/ \
+  #             --verbose \
+  #             --tb=short \
+  #             --color=yes
 
-#       - name: Generate test summary
-#         if: always()
-#         run: |
-#           echo "## Test Results - macOS" >> $GITHUB_STEP_SUMMARY
-#           echo "" >> $GITHUB_STEP_SUMMARY
-#           echo "### Environment" >> $GITHUB_STEP_SUMMARY
-#           echo "- OS: macos-latest" >> $GITHUB_STEP_SUMMARY
-#           echo "- Pixi version: ${{ env.PIXI_VERSION }}" >> $GITHUB_STEP_SUMMARY
-#           echo "- Python: $(pixi run -e llmaven python --version)" >> $GITHUB_STEP_SUMMARY
-#           echo "- Qdrant: Testcontainer (dynamic port)" >> $GITHUB_STEP_SUMMARY
-#           echo "" >> $GITHUB_STEP_SUMMARY
+  #       - name: Generate test summary
+  #         if: always()
+  #         run: |
+  #           echo "## Test Results - macOS" >> $GITHUB_STEP_SUMMARY
+  #           echo "" >> $GITHUB_STEP_SUMMARY
+  #           echo "### Environment" >> $GITHUB_STEP_SUMMARY
+  #           echo "- OS: macos-latest" >> $GITHUB_STEP_SUMMARY
+  #           echo "- Pixi version: ${{ env.PIXI_VERSION }}" >> $GITHUB_STEP_SUMMARY
+  #           echo "- Python: $(pixi run -e llmaven python --version)" >> $GITHUB_STEP_SUMMARY
+  #           echo "- Qdrant: Testcontainer (dynamic port)" >> $GITHUB_STEP_SUMMARY
+  #           echo "" >> $GITHUB_STEP_SUMMARY
 
   pre-commit:
     name: Pre-commit Hooks
