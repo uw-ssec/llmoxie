@@ -33,6 +33,14 @@ infra_app = typer.Typer(
 )
 app.add_typer(infra_app)
 
+# Create subcommand for agentic RAG operations
+agentic_app = typer.Typer(
+    name="agentic",
+    help="Agentic RAG commands",
+    add_completion=False,
+)
+app.add_typer(agentic_app)
+
 
 class Environment(str, Enum):
     """Environment modes for the server."""
@@ -612,6 +620,313 @@ def cancel(
     except Exception as e:
         typer.echo(f"✗ Cancel failed: {e}", err=True)
         sys.exit(1)
+
+
+@agentic_app.command()
+def ingest(
+    directories: list[str] = typer.Argument(
+        ...,
+        help="One or more directories containing documents to ingest",
+    ),
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Collection name (defaults to config)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        is_flag=True,
+        help="Overwrite existing collection without confirmation",
+    ),
+    batch_size: int = typer.Option(
+        100,
+        "--batch-size",
+        "-b",
+        help="Number of documents to process per batch",
+    ),
+) -> None:
+    """Ingest documents into Qdrant collection.
+
+    Ingests documents from one or more directories into a Qdrant collection
+    with multi-vector embeddings (Dense, Sparse, ColBERT).
+
+    Examples:
+        Ingest documents from docs directory:
+            llmaven agentic ingest ./docs
+
+        Ingest from multiple directories:
+            llmaven agentic ingest ./docs ./papers
+
+        Force overwrite existing collection:
+            llmaven agentic ingest ./docs --force
+
+        Use custom collection name:
+            llmaven agentic ingest ./docs --collection my-collection
+    """
+    import sys
+    from pathlib import Path
+    from rich.console import Console
+
+    from llmaven.agentic.ingestion import IngestionPipeline
+    from llmaven.agentic.exceptions import AgenticRAGError
+
+    console = Console()
+    console_err = Console(file=sys.stderr)
+
+    try:
+        # Validate directories exist
+        dir_paths_str = []
+        for directory in directories:
+            path = Path(directory)
+            if not path.exists():
+                console_err.print(f"[red]✗[/red] Directory not found: {directory}")
+                raise typer.Exit(code=1)
+            if not path.is_dir():
+                console_err.print(f"[red]✗[/red] Not a directory: {directory}")
+                raise typer.Exit(code=1)
+            dir_paths_str.append(str(path))
+
+        console.print(f"[blue]→[/blue] Initializing ingestion pipeline...")
+
+        # Create ingestion pipeline
+        pipeline = IngestionPipeline(
+            collection_name=collection,
+            batch_size=batch_size,
+        )
+
+        # Ingest documents
+        console.print(f"[blue]→[/blue] Ingesting documents from {len(dir_paths_str)} director{'y' if len(dir_paths_str) == 1 else 'ies'}...")
+
+        # Ingest all directories at once (ingest() accepts list of directory strings)
+        pipeline.ingest(directories=dir_paths_str, force=force)
+
+        console.print(
+            f"\n[green]✓[/green] Ingestion complete!"
+        )
+
+    except AgenticRAGError as e:
+        console_err.print(f"[red]✗[/red] Ingestion failed: {e}")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
+        raise typer.Exit(code=1)
+
+
+@agentic_app.command()
+def search(
+    query: str = typer.Argument(
+        ...,
+        help="Search query",
+    ),
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Collection name (defaults to config)",
+    ),
+    top_k: Optional[int] = typer.Option(
+        None,
+        "--top-k",
+        "-k",
+        help="Number of results to return (defaults to config)",
+    ),
+    prefetch_k: Optional[int] = typer.Option(
+        None,
+        "--prefetch-k",
+        "-p",
+        help="Number of prefetch candidates per method (defaults to config)",
+    ),
+    rerank: bool = typer.Option(
+        True,
+        "--rerank/--no-rerank",
+        help="Enable/disable ColBERT reranking",
+    ),
+) -> None:
+    """Search the knowledge base.
+
+    Executes a hybrid search query with Dense, Sparse, and optional
+    ColBERT reranking.
+
+    Examples:
+        Basic search:
+            llmaven agentic search "What is machine learning?"
+
+        Search with custom top-k:
+            llmaven agentic search "architecture patterns" --top-k 10
+
+        Search without reranking:
+            llmaven agentic search "deployment" --no-rerank
+
+        Search specific collection:
+            llmaven agentic search "query" --collection my-collection
+    """
+    import sys
+    from rich.console import Console
+    from rich.table import Table
+
+    from llmaven.agentic.search import HybridSearcher
+    from llmaven.agentic.exceptions import AgenticRAGError
+
+    console = Console()
+    console_err = Console(file=sys.stderr)
+
+    try:
+        console.print(f"[blue]→[/blue] Searching for: [bold]{query}[/bold]")
+
+        # Create searcher
+        searcher = HybridSearcher(
+            collection_name=collection,
+            enable_rerank=rerank,
+            prefetch_top_k=prefetch_k,
+            final_top_k=top_k,
+        )
+
+        # Execute search
+        results = searcher.search(query=query, limit=top_k)
+
+        if not results:
+            console.print("[yellow]![/yellow] No results found")
+            return
+
+        # Display results
+        console.print(f"\n[green]✓[/green] Found {len(results)} result{'s' if len(results) != 1 else ''}:\n")
+
+        for i, result in enumerate(results, 1):
+            console.print(f"[bold cyan]Result {i}[/bold cyan] (score: {result.score:.4f})")
+            console.print(f"[dim]Source:[/dim] {result.file_path}")
+            if result.heading_hierarchy:
+                console.print(f"[dim]Section:[/dim] {result.heading_hierarchy}")
+            console.print(f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}\n")
+
+    except AgenticRAGError as e:
+        console_err.print(f"[red]✗[/red] Search failed: {e}")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
+        raise typer.Exit(code=1)
+
+
+@agentic_app.command()
+def chat(
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Collection name (defaults to config)",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="LLM provider override (openai, ollama, huggingface)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="LLM model override",
+    ),
+) -> None:
+    """Launch interactive RAG chat.
+
+    Starts an interactive REPL for conversing with the RAG agent.
+    The agent has access to the knowledge base and can provide
+    answers with citations.
+
+    Examples:
+        Start chat:
+            llmaven agentic chat
+
+        Chat with specific collection:
+            llmaven agentic chat --collection my-docs
+
+        Use different LLM:
+            llmaven agentic chat --provider ollama --model llama2
+    """
+    import sys
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+
+    from llmaven.agentic.agent import RAGAgent
+    from llmaven.agentic.exceptions import AgenticRAGError
+
+    console = Console()
+    console_err = Console(file=sys.stderr)
+
+    try:
+        console.print("[blue]→[/blue] Initializing RAG agent...")
+
+        # Create agent
+        agent = RAGAgent(
+            collection_name=collection,
+            llm_provider=provider,
+            llm_model=model,
+        )
+
+        console.print(
+            Panel(
+                "[bold green]RAG Chat Session[/bold green]\n\n"
+                "Ask questions about your knowledge base.\n"
+                "Type 'exit' or 'quit' to end the session.",
+                border_style="green",
+            )
+        )
+
+        message_history = []
+
+        while True:
+            # Get user input
+            try:
+                query = console.input("\n[bold cyan]You:[/bold cyan] ")
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[yellow]![/yellow] Session ended")
+                break
+
+            if query.strip().lower() in ["exit", "quit"]:
+                console.print("[yellow]![/yellow] Session ended")
+                break
+
+            if not query.strip():
+                continue
+
+            # Get agent response
+            console.print("[blue]→[/blue] Thinking...")
+
+            try:
+                response = agent.run_sync(query=query, message_history=message_history)
+
+                # Display answer
+                console.print(f"\n[bold green]Assistant:[/bold green]")
+                console.print(Markdown(response.answer))
+
+                # Display citations
+                if response.citations:
+                    console.print(f"\n[dim]Citations ({len(response.citations)}):[/dim]")
+                    for i, citation in enumerate(response.citations, 1):
+                        console.print(
+                            f"  [{i}] {citation.source_file} "
+                            f"(score: {citation.relevance_score:.2f})"
+                        )
+                        console.print(f"      {citation.quote[:100]}...")
+
+                console.print(f"\n[dim]Confidence: {response.confidence:.2f} | Sources: {response.sources_used}[/dim]")
+
+                # Update message history
+                message_history.append({"role": "user", "content": query})
+                message_history.append({"role": "assistant", "content": response.answer})
+
+            except Exception as e:
+                console_err.print(f"[red]✗[/red] Error: {e}")
+
+    except AgenticRAGError as e:
+        console_err.print(f"[red]✗[/red] Failed to start chat: {e}")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
+        raise typer.Exit(code=1)
 
 
 @app.command()

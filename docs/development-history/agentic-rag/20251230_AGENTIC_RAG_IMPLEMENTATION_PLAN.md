@@ -566,20 +566,20 @@ class SearchError(AgenticRAGError):
 - [x] Add content hashing for duplicate detection
 
 ### Phase 3: Search Implementation
-- [ ] Implement `HybridSearcher` with prefetch logic
-- [ ] Document and implement prefetch combination strategy
-- [ ] Add optional ColBERT reranking
-- [ ] Create `SearchResult` model with score metadata
-- [ ] Add configurable `top-k` parameters
+- [x] Implement `HybridSearcher` with prefetch logic
+- [x] Document and implement prefetch combination strategy
+- [x] Add optional ColBERT reranking
+- [x] Create `SearchResult` model with score metadata
+- [x] Add configurable `top-k` parameters
 
 ### Phase 4: Basic Agent & CLI Integration
-- [ ] Decide on LLM provider integration strategy (OpenAI/Ollama vs HuggingFace)
-- [ ] Implement `RAGAgent` with `pydantic-ai` or adapter
-- [ ] Create `RAGResponse` and `Citation` models
-- [ ] Add CLI commands following existing Typer pattern
-- [ ] Create new API endpoints (`/v1/agentic/retrieve`, `/v1/agentic/chat`)
-- [ ] Add comprehensive test suite
-- [ ] Update documentation (AGENTS.md, README.md, API docs)
+- [x] Decide on LLM provider integration strategy (OpenAI/Ollama vs HuggingFace)
+- [x] Implement `RAGAgent` with `pydantic-ai` or adapter
+- [x] Create `RAGResponse` and `Citation` models
+- [x] Add CLI commands following existing Typer pattern
+- [x] Create new API endpoints (`/v1/agentic/retrieve`, `/v1/agentic/chat`)
+- [x] Add comprehensive test suite (test_rag_agent.py, test_cli.py, test_api_endpoints.py)
+- [x] Update documentation (AGENTS.md, README.md)
 
 ---
 

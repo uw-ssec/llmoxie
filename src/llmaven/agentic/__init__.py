@@ -9,10 +9,19 @@ __all__ = [
     "AgenticRAGError",
     "QdrantManager",
     "IngestionPipeline",
+    "HybridSearcher",
+    "SearchResult",
+    "RAGAgent",
+    "RAGResponse",
+    "Citation",
 ]
 
 from llmaven.agentic.settings import config
 from llmaven.agentic.exceptions import AgenticRAGError
 from llmaven.agentic.vector_store import QdrantManager
 from llmaven.agentic.ingestion import IngestionPipeline
+from llmaven.agentic.search import HybridSearcher
+from llmaven.agentic.search.models import SearchResult
+from llmaven.agentic.agent import RAGAgent
+from llmaven.agentic.agent.models import RAGResponse, Citation
 
