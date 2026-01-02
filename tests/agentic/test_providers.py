@@ -95,15 +95,20 @@ class TestOpenAIProvider:
     """Test suite for OpenAI provider creation."""
 
     @patch("pydantic_ai.models.openai.OpenAIChatModel")
-    def test_create_openai_model_direct(self, mock_model_class):
+    @patch("pydantic_ai.providers.openai.OpenAIProvider")
+    def test_create_openai_model_direct(self, mock_provider_class, mock_model_class):
         """Test creating OpenAI model directly."""
+        from unittest.mock import ANY
         with patch("llmaven.agentic.providers.factory.config") as mock_config:
             mock_config.llm_model = "gpt-4o-mini"
+            mock_provider_instance = MagicMock()
+            mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
             result = _create_openai_model()
 
-            mock_model_class.assert_called_once_with("gpt-4o-mini")
+            mock_provider_class.assert_called_once_with(http_client=ANY)
+            mock_model_class.assert_called_once_with("gpt-4o-mini", provider=mock_provider_instance)
             assert result is not None
 
 
@@ -123,9 +128,11 @@ class TestOllamaProvider:
 
             result = _create_ollama_model()
 
+            from unittest.mock import ANY
             mock_provider_class.assert_called_once_with(
                 base_url="http://localhost:11434/v1",
                 api_key="ollama",
+                http_client=ANY,
             )
             mock_model_class.assert_called_once_with(
                 "llama2",
@@ -146,9 +153,11 @@ class TestOllamaProvider:
 
             result = _create_ollama_model()
 
+            from unittest.mock import ANY
             mock_provider_class.assert_called_once_with(
                 base_url="http://custom:8080/v1",
                 api_key="custom-key",
+                http_client=ANY,
             )
             mock_model_class.assert_called_once_with(
                 "llama2",
@@ -175,9 +184,11 @@ class TestLiteLLMProvider:
 
             result = _create_litellm_model()
 
+            from unittest.mock import ANY
             mock_provider_class.assert_called_once_with(
                 base_url="http://localhost:4000",
                 api_key="test-key",
+                http_client=ANY,
             )
             mock_model_class.assert_called_once_with(
                 "openai/gpt-4o-mini",
@@ -200,9 +211,11 @@ class TestLiteLLMProvider:
 
             result = _create_litellm_model()
 
+            from unittest.mock import ANY
             mock_provider_class.assert_called_once_with(
                 base_url="http://localhost:4000",
                 api_key="dummy",
+                http_client=ANY,
             )
             mock_model_class.assert_called_once_with(
                 "gpt-4o-mini",

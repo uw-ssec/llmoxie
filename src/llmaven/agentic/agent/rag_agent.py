@@ -219,9 +219,15 @@ Your responses should be accurate, well-structured, and backed by citations.
             # pydantic-ai Agent.run() returns AgentRunResult with .output attribute, not .data
             try:
                 output = result.output
+                # Format confidence safely (handle Mock objects in tests)
+                confidence_str = (
+                    f"{output.confidence:.2f}"
+                    if isinstance(output.confidence, (int, float))
+                    else str(output.confidence)
+                )
                 logger.info(
                     f"Agent completed: {output.sources_used} sources, "
-                    f"confidence={output.confidence:.2f}"
+                    f"confidence={confidence_str}"
                 )
                 return output
             except Exception as output_error:

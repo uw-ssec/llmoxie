@@ -186,7 +186,7 @@ class TestRAGAgentRun:
 
         # Mock agent run result
         mock_result = Mock()
-        mock_result.data = RAGResponse(
+        mock_result.output = RAGResponse(
             answer="Test answer",
             citations=[
                 Citation(
@@ -229,7 +229,7 @@ class TestRAGAgentRun:
         mock_create_llm.return_value = Mock()
 
         mock_result = Mock()
-        mock_result.data = RAGResponse(
+        mock_result.output = RAGResponse(
             answer="Test answer", citations=[], confidence=0.8, sources_used=0
         )
         mock_agent_instance.run.return_value = mock_result
@@ -273,7 +273,7 @@ class TestRAGAgentRun:
         mock_create_llm.return_value = Mock()
 
         mock_result = Mock()
-        mock_result.data = RAGResponse(
+        mock_result.output = RAGResponse(
             answer="Test answer", citations=[], confidence=0.8, sources_used=0
         )
         mock_agent_instance.run.return_value = mock_result
