@@ -820,13 +820,43 @@ def chat(
     provider: Optional[str] = typer.Option(
         None,
         "--provider",
-        help="LLM provider override (openai, ollama, huggingface)",
+        help="LLM provider override (openai, ollama, litellm, azure, huggingface)",
     ),
     model: Optional[str] = typer.Option(
         None,
         "--model",
         "-m",
         help="LLM model override",
+    ),
+    litellm_base: Optional[str] = typer.Option(
+        None,
+        "--litellm-base",
+        help="LiteLLM proxy base URL (e.g., http://localhost:4000)",
+    ),
+    litellm_api_key: Optional[str] = typer.Option(
+        None,
+        "--litellm-api-key",
+        help="LiteLLM API key",
+    ),
+    litellm_model_prefix: Optional[str] = typer.Option(
+        None,
+        "--litellm-prefix",
+        help="LiteLLM model prefix (e.g., openai/, anthropic/)",
+    ),
+    azure_endpoint: Optional[str] = typer.Option(
+        None,
+        "--azure-endpoint",
+        help="Azure OpenAI endpoint URL (e.g., https://myresource.openai.azure.com)",
+    ),
+    azure_api_key: Optional[str] = typer.Option(
+        None,
+        "--azure-api-key",
+        help="Azure API key",
+    ),
+    azure_deployment: Optional[str] = typer.Option(
+        None,
+        "--azure-deployment",
+        help="Azure deployment name",
     ),
 ) -> None:
     """Launch interactive RAG chat.
@@ -844,6 +874,12 @@ def chat(
 
         Use different LLM:
             llmaven agentic chat --provider ollama --model llama2
+
+        Use LiteLLM proxy:
+            llmaven agentic chat --provider litellm --litellm-base http://localhost:4000 --model gpt-4o-mini
+
+        Use Azure OpenAI:
+            llmaven agentic chat --provider azure --azure-endpoint https://myresource.openai.azure.com --azure-deployment gpt-4o
     """
     import sys
     from rich.console import Console
@@ -852,12 +888,27 @@ def chat(
 
     from llmaven.agentic.agent import RAGAgent
     from llmaven.agentic.exceptions import AgenticRAGError
+    from llmaven.agentic.settings import config
 
     console = Console()
     console_err = Console(file=sys.stderr)
 
     try:
         console.print("[blue]→[/blue] Initializing RAG agent...")
+
+        # Override config with CLI options
+        if litellm_base:
+            config.litellm_api_base = litellm_base
+        if litellm_api_key:
+            config.litellm_api_key = litellm_api_key
+        if litellm_model_prefix:
+            config.litellm_model_prefix = litellm_model_prefix
+        if azure_endpoint:
+            config.azure_endpoint = azure_endpoint
+        if azure_api_key:
+            config.azure_api_key = azure_api_key
+        if azure_deployment:
+            config.azure_deployment_name = azure_deployment
 
         # Create agent
         agent = RAGAgent(

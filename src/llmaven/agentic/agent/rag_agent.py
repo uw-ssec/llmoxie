@@ -10,13 +10,13 @@ import logging
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models import KnownModelName
 
 from llmaven.agentic.settings import config
+from llmaven.agentic.providers import create_llm_model
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
 from llmaven.agentic.search.models import SearchResult
 from llmaven.agentic.agent.models import RAGResponse, Citation
-from llmaven.agentic.exceptions import AgenticRAGError
+from llmaven.agentic.exceptions import AgenticRAGError, ProviderConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -72,25 +72,29 @@ class RAGAgent:
 
         Raises:
             AgenticRAGError: If agent initialization fails
+            ProviderConfigurationError: If provider configuration is invalid
         """
         self.collection_name = collection_name or config.collection_name
         self.hybrid_searcher = hybrid_searcher or HybridSearcher(
             collection_name=self.collection_name
         )
 
-        # Determine LLM model to use
-        provider = llm_provider or config.llm_provider
-        model = llm_model or config.llm_model
+        # Override config if provider/model specified
+        if llm_provider:
+            config.llm_provider = llm_provider
+        if llm_model:
+            config.llm_model = llm_model
 
-        # Map provider to pydantic-ai model name
+        # Create LLM model using provider factory
         try:
-            model_name = self._get_model_name(provider, model)
-            logger.info(f"Initializing RAG Agent with model: {model_name}")
+            llm = create_llm_model()
+            logger.info(f"Initializing RAG Agent with provider: {config.llm_provider}, model: {config.llm_model}")
 
             # Create the agent with structured output
+            # Note: pydantic-ai uses 'output_type' not 'result_type'
             self.agent = Agent(
-                model_name,
-                result_type=RAGResponse,
+                llm,
+                output_type=RAGResponse,
                 system_prompt=self._get_system_prompt(),
             )
 
@@ -99,44 +103,13 @@ class RAGAgent:
 
             logger.info(
                 f"RAG Agent initialized for collection '{self.collection_name}' "
-                f"with model '{model_name}'"
+                f"with provider '{config.llm_provider}' and model '{config.llm_model}'"
             )
 
+        except ProviderConfigurationError:
+            raise
         except Exception as e:
             raise AgenticRAGError(f"Failed to initialize RAG Agent: {e}") from e
-
-    def _get_model_name(self, provider: str, model: str) -> KnownModelName | str:
-        """Get pydantic-ai model name from provider and model.
-
-        Args:
-            provider: LLM provider (openai, ollama, huggingface)
-            model: Model identifier
-
-        Returns:
-            Model name compatible with pydantic-ai
-
-        Raises:
-            AgenticRAGError: If provider is not supported
-        """
-        if provider == "openai":
-            # pydantic-ai supports OpenAI models directly
-            return f"openai:{model}"
-        elif provider == "ollama":
-            # pydantic-ai supports Ollama models via ollama: prefix
-            return f"ollama:{model}"
-        elif provider == "huggingface":
-            # For HuggingFace, we'll need to use a custom provider
-            # For now, fall back to OpenAI compatible endpoint
-            logger.warning(
-                "HuggingFace provider not fully supported yet, "
-                "falling back to OpenAI-compatible endpoint"
-            )
-            return f"openai:{model}"
-        else:
-            raise AgenticRAGError(
-                f"Unsupported LLM provider: {provider}. "
-                "Supported providers: openai, ollama, huggingface"
-            )
 
     def _get_system_prompt(self) -> str:
         """Get system prompt for the RAG agent.
@@ -225,19 +198,34 @@ Your responses should be accurate, well-structured, and backed by citations.
                 collection_name=self.collection_name,
             )
 
-            # Run the agent
-            result = await self.agent.run(
-                query,
-                deps=deps,
-                message_history=message_history,
-            )
+            # Run the agent with timeout wrapper
+            try:
+                import asyncio
+                try:
+                    # Add timeout wrapper (300 seconds = 5 minutes)
+                    result = await asyncio.wait_for(
+                        self.agent.run(
+                            query,
+                            deps=deps,
+                            message_history=message_history,
+                        ),
+                        timeout=300.0
+                    )
+                except asyncio.TimeoutError:
+                    raise AgenticRAGError("LLM generation timed out after 300 seconds")
+            except Exception as run_error:
+                raise
 
-            logger.info(
-                f"Agent completed: {result.data.sources_used} sources, "
-                f"confidence={result.data.confidence:.2f}"
-            )
-
-            return result.data
+            # pydantic-ai Agent.run() returns AgentRunResult with .output attribute, not .data
+            try:
+                output = result.output
+                logger.info(
+                    f"Agent completed: {output.sources_used} sources, "
+                    f"confidence={output.confidence:.2f}"
+                )
+                return output
+            except Exception as output_error:
+                raise
 
         except Exception as e:
             raise AgenticRAGError(f"Agent execution failed: {e}") from e
@@ -249,6 +237,9 @@ Your responses should be accurate, well-structured, and backed by citations.
     ) -> RAGResponse:
         """Synchronous wrapper for run().
 
+        Handles both cases: when event loop is running and when it's not.
+        Uses a thread with a new event loop if the current loop is already running.
+
         Args:
             query: User query
             message_history: Optional conversation history
@@ -257,11 +248,27 @@ Your responses should be accurate, well-structured, and backed by citations.
             RAGResponse with answer, citations, and confidence
         """
         import asyncio
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
 
+        # Check if event loop is already running
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            asyncio.get_running_loop()
+            # Loop is running - use a thread with a new event loop
+            def run_in_thread():
+                """Run the async function in a new event loop in a separate thread."""
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(self.run(query, message_history))
+                finally:
+                    new_loop.close()
 
-        return loop.run_until_complete(self.run(query, message_history))
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                result = future.result()
+        except RuntimeError:
+            # No running loop - use asyncio.run() (cleaner than run_until_complete)
+            result = asyncio.run(self.run(query, message_history))
+
+        return result

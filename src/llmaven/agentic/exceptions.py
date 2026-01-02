@@ -57,3 +57,13 @@ class SearchError(AgenticRAGError):
     """
 
     pass
+
+
+class ProviderConfigurationError(AgenticRAGError):
+    """Provider configuration is invalid or incomplete.
+
+    Raised when LLM provider configuration is missing required fields
+    or contains invalid values.
+    """
+
+    pass

@@ -37,14 +37,16 @@ class TestRAGAgentDependencies:
 class TestRAGAgentInitialization:
     """Test RAGAgent initialization."""
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_init_with_default_config(self, mock_searcher_cls, mock_agent_cls):
+    def test_init_with_default_config(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test initialization with default config."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         agent = RAGAgent()
 
@@ -53,62 +55,75 @@ class TestRAGAgentInitialization:
         mock_agent_cls.assert_called_once()
         assert mock_agent_instance.tool.called  # Tool should be registered
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_init_with_custom_collection(self, mock_searcher_cls, mock_agent_cls):
+    def test_init_with_custom_collection(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test initialization with custom collection."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         agent = RAGAgent(collection_name="custom-collection")
 
         assert agent.collection_name == "custom-collection"
         mock_searcher_cls.assert_called_once_with(collection_name="custom-collection")
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
-    def test_init_with_custom_searcher(self, mock_agent_cls):
+    def test_init_with_custom_searcher(self, mock_agent_cls, mock_create_llm):
         """Test initialization with custom hybrid searcher."""
         mock_searcher = Mock(spec=HybridSearcher)
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         agent = RAGAgent(hybrid_searcher=mock_searcher)
 
         assert agent.hybrid_searcher == mock_searcher
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_init_with_llm_provider_override(self, mock_searcher_cls, mock_agent_cls):
+    def test_init_with_llm_provider_override(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test initialization with LLM provider override."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_llm_model = Mock()
+        mock_create_llm.return_value = mock_llm_model
 
         agent = RAGAgent(llm_provider="ollama", llm_model="llama2")
 
-        # Verify Agent was called with correct model name
+        # Verify create_llm_model was called and Agent was called with the model
+        mock_create_llm.assert_called_once()
         call_args = mock_agent_cls.call_args
-        assert call_args[0][0] == "ollama:llama2"
+        assert call_args[0][0] == mock_llm_model
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_init_raises_on_invalid_provider(self, mock_searcher_cls, mock_agent_cls):
+    def test_init_raises_on_invalid_provider(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test that initialization raises error for invalid provider."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
+        from llmaven.agentic.exceptions import ProviderConfigurationError
+        mock_create_llm.side_effect = ProviderConfigurationError("Unsupported LLM provider")
 
-        with pytest.raises(AgenticRAGError, match="Unsupported LLM provider"):
+        with pytest.raises(ProviderConfigurationError, match="Unsupported LLM provider"):
             RAGAgent(llm_provider="invalid-provider")
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_init_raises_on_agent_error(self, mock_searcher_cls, mock_agent_cls):
+    def test_init_raises_on_agent_error(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test that initialization wraps agent errors."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
+        mock_create_llm.return_value = Mock()
         mock_agent_cls.side_effect = Exception("Agent creation failed")
 
         with pytest.raises(AgenticRAGError, match="Failed to initialize RAG Agent"):
@@ -118,48 +133,56 @@ class TestRAGAgentInitialization:
 class TestRAGAgentModelName:
     """Test model name resolution."""
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_get_model_name_openai(self, mock_searcher_cls, mock_agent_cls):
+    def test_get_model_name_openai(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test OpenAI model name resolution."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_llm_model = Mock()
+        mock_create_llm.return_value = mock_llm_model
 
         agent = RAGAgent(llm_provider="openai", llm_model="gpt-4o-mini")
 
         call_args = mock_agent_cls.call_args
-        assert call_args[0][0] == "openai:gpt-4o-mini"
+        assert call_args[0][0] == mock_llm_model
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_get_model_name_ollama(self, mock_searcher_cls, mock_agent_cls):
+    def test_get_model_name_ollama(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test Ollama model name resolution."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_llm_model = Mock()
+        mock_create_llm.return_value = mock_llm_model
 
         agent = RAGAgent(llm_provider="ollama", llm_model="llama2")
 
         call_args = mock_agent_cls.call_args
-        assert call_args[0][0] == "ollama:llama2"
+        assert call_args[0][0] == mock_llm_model
 
 
 class TestRAGAgentRun:
     """Test RAGAgent run methods."""
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
     @pytest.mark.asyncio
-    async def test_run_async_success(self, mock_searcher_cls, mock_agent_cls):
+    async def test_run_async_success(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test successful async run."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_instance.run = AsyncMock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         # Mock agent run result
         mock_result = Mock()
@@ -192,16 +215,18 @@ class TestRAGAgentRun:
         assert call_args[0][0] == "test query"
         assert "deps" in call_args[1]
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
     @pytest.mark.asyncio
-    async def test_run_with_message_history(self, mock_searcher_cls, mock_agent_cls):
+    async def test_run_with_message_history(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test run with message history."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_instance.run = AsyncMock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         mock_result = Mock()
         mock_result.data = RAGResponse(
@@ -216,10 +241,11 @@ class TestRAGAgentRun:
         call_args = mock_agent_instance.run.call_args
         assert call_args[1]["message_history"] == message_history
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
     @pytest.mark.asyncio
-    async def test_run_raises_on_error(self, mock_searcher_cls, mock_agent_cls):
+    async def test_run_raises_on_error(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test that run wraps errors."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
@@ -227,21 +253,24 @@ class TestRAGAgentRun:
         mock_agent_instance.run = AsyncMock()
         mock_agent_instance.run.side_effect = Exception("Agent execution failed")
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         agent = RAGAgent()
 
         with pytest.raises(AgenticRAGError, match="Agent execution failed"):
             await agent.run("test query")
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_run_sync_success(self, mock_searcher_cls, mock_agent_cls):
+    def test_run_sync_success(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test successful synchronous run."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_instance.run = AsyncMock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         mock_result = Mock()
         mock_result.data = RAGResponse(
@@ -259,24 +288,27 @@ class TestRAGAgentRun:
 class TestRAGAgentTool:
     """Test RAGAgent tool registration and execution."""
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_tool_registration(self, mock_searcher_cls, mock_agent_cls):
+    def test_tool_registration(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test that search_knowledge_base tool is registered."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         RAGAgent()
 
         # Verify tool decorator was called
         assert mock_agent_instance.tool.called
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
     @pytest.mark.asyncio
-    async def test_search_tool_execution(self, mock_searcher_cls, mock_agent_cls):
+    async def test_search_tool_execution(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test that search tool calls HybridSearcher correctly."""
         mock_searcher = Mock()
         mock_searcher.search.return_value = [
@@ -292,6 +324,7 @@ class TestRAGAgentTool:
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         agent = RAGAgent()
 
@@ -317,14 +350,16 @@ class TestRAGAgentTool:
 class TestRAGAgentSystemPrompt:
     """Test RAGAgent system prompt."""
 
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
     @patch("llmaven.agentic.agent.rag_agent.Agent")
     @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
-    def test_system_prompt_includes_instructions(self, mock_searcher_cls, mock_agent_cls):
+    def test_system_prompt_includes_instructions(self, mock_searcher_cls, mock_agent_cls, mock_create_llm):
         """Test that system prompt includes key instructions."""
         mock_searcher = Mock()
         mock_searcher_cls.return_value = mock_searcher
         mock_agent_instance = Mock()
         mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
 
         RAGAgent()
 

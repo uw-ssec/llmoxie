@@ -496,6 +496,406 @@ app.add_typer(agentic_app)
 
 ---
 
+## Phase 4.5: OpenAI-Compatible Model Support
+
+**Goal**: Extend the Agentic RAG system to support OpenAI-compatible model
+providers, specifically LiteLLM (for unified model access) and Azure AI Foundry
+(for enterprise Azure deployments).
+
+### Background
+
+`pydantic-ai` supports numerous OpenAI-compatible providers through the
+`OpenAIProvider` class and specialized provider classes. This phase adds support
+for:
+
+1. **LiteLLM**: A unified interface to 100+ LLM providers (OpenAI, Anthropic,
+   Cohere, etc.) via a proxy server or direct SDK
+2. **Azure AI Foundry**: Microsoft's enterprise AI platform with Azure OpenAI
+   deployments
+
+### Proposed Changes
+
+#### [MODIFY] `src/llmaven/agentic/settings.py`
+
+Update `AgenticConfig` to support additional providers and their configuration:
+
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Literal
+
+class AgenticConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+        env_prefix="AGENTIC_",
+    )
+
+    # Existing fields...
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
+    collection_name: str = "agentic-rag"
+    dense_model: str = "sentence-transformers/all-MiniLM-L12-v2"
+    sparse_model: str = "Qdrant/bm25"
+    colbert_model: str = "colbert-ir/colbertv2.0"
+
+    # Updated LLM provider configuration
+    llm_provider: Literal["openai", "ollama", "huggingface", "litellm", "azure"] = "openai"
+    llm_model: str = "gpt-4o-mini"
+
+    # LiteLLM-specific configuration
+    litellm_api_base: str | None = None  # e.g., "http://localhost:4000" for proxy
+    litellm_api_key: str | None = None
+    litellm_model_prefix: str = ""  # e.g., "openai/" or "anthropic/" or "custom/"
+
+    # Azure AI Foundry configuration
+    azure_endpoint: str | None = None  # e.g., "https://<resource>.openai.azure.com"
+    azure_api_key: str | None = None
+    azure_api_version: str = "2024-10-21"  # Default to stable API version
+    azure_deployment_name: str | None = None  # Azure deployment name
+
+    # Existing fields...
+    huggingface_model: str | None = None
+    enable_rerank: bool = True
+    prefetch_top_k: int = 20
+    final_top_k: int = 5
+```
+
+**Environment Variables:**
+
+| Variable                        | Description              | Example                               |
+| ------------------------------- | ------------------------ | ------------------------------------- |
+| `AGENTIC_LLM_PROVIDER`          | Provider type            | `litellm`, `azure`                    |
+| `AGENTIC_LITELLM_API_BASE`      | LiteLLM proxy URL        | `http://localhost:4000`               |
+| `AGENTIC_LITELLM_API_KEY`       | LiteLLM API key          | `sk-...`                              |
+| `AGENTIC_LITELLM_MODEL_PREFIX`  | Model prefix for LiteLLM | `openai/`, `anthropic/`, `custom/`    |
+| `AGENTIC_AZURE_ENDPOINT`        | Azure OpenAI endpoint    | `https://myresource.openai.azure.com` |
+| `AGENTIC_AZURE_API_KEY`         | Azure API key            | `abc123...`                           |
+| `AGENTIC_AZURE_API_VERSION`     | Azure API version        | `2024-10-21`                          |
+| `AGENTIC_AZURE_DEPLOYMENT_NAME` | Azure deployment name    | `gpt-4o-deployment`                   |
+
+---
+
+#### [NEW] `src/llmaven/agentic/providers/__init__.py`
+
+Create a new `providers/` subpackage for provider management.
+
+---
+
+#### [NEW] `src/llmaven/agentic/providers/factory.py`
+
+Implement a provider factory for dynamic provider selection:
+
+```python
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.litellm import LiteLLMProvider
+
+from llmaven.agentic.settings import config
+from llmaven.agentic.exceptions import ProviderConfigurationError
+
+
+def create_llm_model() -> OpenAIChatModel:
+    """Create an LLM model based on the configured provider."""
+    provider = config.llm_provider.lower()
+
+    if provider == "openai":
+        return _create_openai_model()
+    elif provider == "ollama":
+        return _create_ollama_model()
+    elif provider == "litellm":
+        return _create_litellm_model()
+    elif provider == "azure":
+        return _create_azure_model()
+    elif provider == "huggingface":
+        return _create_huggingface_model()
+    else:
+        raise ProviderConfigurationError(f"Unsupported provider: {provider}")
+
+
+def _create_openai_model() -> OpenAIChatModel:
+    """Create OpenAI model using default provider."""
+    return OpenAIChatModel(config.llm_model)
+
+
+def _create_ollama_model() -> OpenAIChatModel:
+    """Create Ollama model using OpenAI-compatible endpoint."""
+    import os
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    return OpenAIChatModel(
+        config.llm_model,
+        provider=OpenAIProvider(
+            base_url=base_url,
+            api_key=os.getenv("OLLAMA_API_KEY", "ollama"),  # Ollama doesn't require key
+        ),
+    )
+
+
+def _create_litellm_model() -> OpenAIChatModel:
+    """Create LiteLLM model for unified provider access."""
+    if not config.litellm_api_base:
+        raise ProviderConfigurationError(
+            "AGENTIC_LITELLM_API_BASE is required for LiteLLM provider"
+        )
+
+    # Construct model name with prefix if specified
+    model_name = f"{config.litellm_model_prefix}{config.llm_model}"
+
+    return OpenAIChatModel(
+        model_name,
+        provider=LiteLLMProvider(
+            api_base=config.litellm_api_base,
+            api_key=config.litellm_api_key,
+        ),
+    )
+
+
+def _create_azure_model() -> OpenAIChatModel:
+    """Create Azure AI Foundry model."""
+    from pydantic_ai.providers.azure import AzureProvider
+
+    if not config.azure_endpoint:
+        raise ProviderConfigurationError(
+            "AGENTIC_AZURE_ENDPOINT is required for Azure provider"
+        )
+    if not config.azure_api_key:
+        raise ProviderConfigurationError(
+            "AGENTIC_AZURE_API_KEY is required for Azure provider"
+        )
+
+    # Use deployment name if specified, otherwise use model name
+    deployment = config.azure_deployment_name or config.llm_model
+
+    return OpenAIChatModel(
+        deployment,
+        provider=AzureProvider(
+            azure_endpoint=config.azure_endpoint,
+            api_key=config.azure_api_key,
+            api_version=config.azure_api_version,
+        ),
+    )
+
+
+def _create_huggingface_model():
+    """Create HuggingFace model adapter."""
+    # Placeholder for HuggingFace integration
+    # Uses existing LanguageModel class as adapter
+    raise NotImplementedError("HuggingFace provider not yet implemented")
+```
+
+---
+
+#### [MODIFY] `src/llmaven/agentic/exceptions.py`
+
+Add provider-specific exception:
+
+```python
+class ProviderConfigurationError(AgenticRAGError):
+    """Provider configuration is invalid or incomplete."""
+    pass
+```
+
+---
+
+#### [MODIFY] `src/llmaven/agentic/agent/rag_agent.py`
+
+Update `RAGAgent` to use the provider factory:
+
+```python
+from pydantic_ai import Agent
+from llmaven.agentic.providers.factory import create_llm_model
+from llmaven.agentic.agent.models import RAGResponse
+from llmaven.agentic.search.hybrid_searcher import HybridSearcher
+
+
+class RAGAgent:
+    def __init__(self, searcher: HybridSearcher):
+        self.searcher = searcher
+        self.model = create_llm_model()
+        self.agent = Agent(
+            self.model,
+            result_type=RAGResponse,
+            system_prompt=self._get_system_prompt(),
+        )
+        self._register_tools()
+
+    def _get_system_prompt(self) -> str:
+        return """You are a helpful RAG assistant. Use the search_knowledge_base
+        tool to find relevant information before answering questions. Always
+        cite your sources with specific quotes from the retrieved documents."""
+
+    def _register_tools(self):
+        @self.agent.tool
+        async def search_knowledge_base(ctx, query: str) -> list[dict]:
+            """Search the knowledge base for relevant documents."""
+            results = await self.searcher.search(query)
+            return [
+                {
+                    "text": r.text,
+                    "file_path": r.file_path,
+                    "heading": r.heading_hierarchy,
+                    "score": r.score,
+                }
+                for r in results
+            ]
+
+    async def query(self, question: str) -> RAGResponse:
+        """Query the RAG agent with a question."""
+        result = await self.agent.run(question)
+        return result.data
+```
+
+---
+
+#### [MODIFY] `src/llmaven/cli.py`
+
+Update CLI commands with new provider options:
+
+```python
+@agentic_app.command("chat")
+def agentic_chat(
+    collection: str = typer.Option(None, help="Collection name"),
+    provider: str = typer.Option(
+        None,
+        help="LLM provider override (openai, ollama, litellm, azure, huggingface)"
+    ),
+    model: str = typer.Option(None, help="LLM model override"),
+    litellm_base: str = typer.Option(None, help="LiteLLM proxy base URL"),
+    azure_endpoint: str = typer.Option(None, help="Azure AI Foundry endpoint"),
+):
+    """Launch an interactive chat session with the RAG agent."""
+    # Override config with CLI options
+    if provider:
+        config.llm_provider = provider
+    if model:
+        config.llm_model = model
+    if litellm_base:
+        config.litellm_api_base = litellm_base
+    if azure_endpoint:
+        config.azure_endpoint = azure_endpoint
+
+    # ... rest of implementation
+```
+
+---
+
+### LiteLLM Configuration Examples
+
+#### Using LiteLLM Proxy Server
+
+LiteLLM can run as a proxy server that provides a unified OpenAI-compatible API
+for multiple providers:
+
+```bash
+# Start LiteLLM proxy (separate process)
+litellm --model gpt-4o-mini --port 4000
+
+# Configure llmaven to use the proxy
+export AGENTIC_LLM_PROVIDER=litellm
+export AGENTIC_LITELLM_API_BASE=http://localhost:4000
+export AGENTIC_LLM_MODEL=gpt-4o-mini
+```
+
+#### Direct LiteLLM SDK Usage
+
+For models that require specific prefixes:
+
+```bash
+# Using Anthropic via LiteLLM
+export AGENTIC_LLM_PROVIDER=litellm
+export AGENTIC_LITELLM_API_BASE=https://api.anthropic.com
+export AGENTIC_LITELLM_MODEL_PREFIX=anthropic/
+export AGENTIC_LLM_MODEL=claude-3-sonnet-20240229
+export ANTHROPIC_API_KEY=sk-...
+
+# Using custom/local models
+export AGENTIC_LITELLM_MODEL_PREFIX=custom/
+export AGENTIC_LLM_MODEL=my-fine-tuned-model
+```
+
+---
+
+### Azure AI Foundry Configuration Examples
+
+#### Standard Azure OpenAI Deployment
+
+```bash
+export AGENTIC_LLM_PROVIDER=azure
+export AGENTIC_AZURE_ENDPOINT=https://my-resource.openai.azure.com
+export AGENTIC_AZURE_API_KEY=abc123...
+export AGENTIC_AZURE_API_VERSION=2024-10-21
+export AGENTIC_AZURE_DEPLOYMENT_NAME=gpt-4o-deployment
+```
+
+#### Using Azure with Managed Identity (Advanced)
+
+For production deployments using Azure Managed Identity:
+
+```python
+from azure.identity import DefaultAzureCredential
+from pydantic_ai.providers.azure import AzureProvider
+
+# Custom provider with managed identity
+credential = DefaultAzureCredential()
+provider = AzureProvider(
+    azure_endpoint=config.azure_endpoint,
+    azure_ad_token_provider=credential.get_token,
+    api_version=config.azure_api_version,
+)
+```
+
+---
+
+### Verification Plan for Phase 4.5
+
+#### Automated Tests
+
+| Test File                                   | Description                                      |
+| ------------------------------------------- | ------------------------------------------------ |
+| `tests/agentic/test_providers_factory.py`   | Test provider factory with all provider types    |
+| `tests/agentic/test_litellm_provider.py`    | Test LiteLLM provider configuration and usage    |
+| `tests/agentic/test_azure_provider.py`      | Test Azure provider configuration and auth       |
+| `tests/agentic/test_provider_validation.py` | Test configuration validation and error handling |
+
+#### Manual Verification
+
+1. **LiteLLM Proxy**: Start LiteLLM proxy, configure llmaven, run
+   `llmaven agentic chat` and verify responses
+2. **Azure AI Foundry**: Configure Azure credentials, run search and chat
+   commands
+3. **Provider Switching**: Test switching between providers via CLI options
+4. **Error Handling**: Verify clear error messages for missing configuration
+
+---
+
+### Updated Package Structure
+
+```
+agentic/
+├── __init__.py
+├── settings.py
+├── exceptions.py
+├── providers/              # NEW
+│   ├── __init__.py
+│   └── factory.py
+├── vector_store/
+│   ├── __init__.py
+│   └── qdrant_manager.py
+├── ingestion/
+│   ├── __init__.py
+│   └── pipeline.py
+├── search/
+│   ├── __init__.py
+│   └── hybrid_searcher.py
+└── agent/
+    ├── __init__.py
+    ├── rag_agent.py
+    └── models.py
+```
+
+---
+
 ## API Integration Strategy
 
 ### Coexistence with Existing Endpoints
@@ -680,6 +1080,17 @@ class SearchError(AgenticRAGError):
       test_api_endpoints.py)
 - [x] Update documentation (AGENTS.md, README.md)
 
+### Phase 4.5: OpenAI-Compatible Model Support (LiteLLM & Azure AI Foundry)
+
+- [x] Add LiteLLM provider support with proxy server configuration
+- [x] Add Azure AI Foundry provider support with Azure authentication
+- [x] Update `AgenticConfig` with new provider options and environment variables
+- [x] Create provider factory for dynamic provider selection
+- [x] Add configuration validation for provider-specific requirements
+- [x] Update CLI commands with new provider options
+- [x] Add tests for LiteLLM and Azure providers
+- [x] Update documentation with provider configuration examples
+
 ---
 
 ## Summary of Plan Updates
@@ -693,6 +1104,8 @@ evaluation. Key improvements include:
 - Clarified Qdrant client version compatibility (1.11.2 supports Named Vectors)
 - Defined API integration strategy (coexistence with legacy endpoints)
 - Specified LLM provider integration options (OpenAI/Ollama vs HuggingFace)
+- **Phase 4.5**: Added OpenAI-compatible model support for LiteLLM and Azure AI
+  Foundry
 
 ### ✅ **Code Quality & Patterns**
 
