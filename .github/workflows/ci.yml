@@ -27,9 +27,7 @@ jobs:
           - 6334:6334
         options: >-
           --health-cmd "curl -f http://localhost:6333/healthz || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -40,7 +38,8 @@ jobs:
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
-          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          cache-write:
+            ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           environments: llmaven
 
       - name: Verify pixi installation
@@ -102,7 +101,8 @@ jobs:
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
-          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          cache-write:
+            ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           environments: llmaven
 
       - name: Verify pixi installation
