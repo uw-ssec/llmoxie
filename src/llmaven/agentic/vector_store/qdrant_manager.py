@@ -13,6 +13,7 @@ from qdrant_client.models import (
     VectorParams,
     Distance,
     SparseVectorParams,
+    SparseVector,
     MultiVectorConfig,
     MultiVectorComparator,
     PointStruct,
@@ -191,9 +192,18 @@ class QdrantManager:
 
             # Sparse query
             if "sparse" in query_vectors:
+                # Convert dict to SparseVector object if needed
+                sparse_query_raw = query_vectors["sparse"]
+                if isinstance(sparse_query_raw, dict):
+                    sparse_query = SparseVector(
+                        indices=sparse_query_raw["indices"],
+                        values=sparse_query_raw["values"],
+                    )
+                else:
+                    sparse_query = sparse_query_raw
                 sparse_results = self.client.query_points(
                     collection_name=collection_name,
-                    query=query_vectors["sparse"],
+                    query=sparse_query,
                     query_filter=None,
                     limit=prefetch_top_k,
                     using="sparse",
