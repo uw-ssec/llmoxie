@@ -15,19 +15,9 @@ env:
 
 jobs:
   test-linux:
-    name: Test on Ubuntu (with Qdrant)
+    name: Test on Ubuntu
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    services:
-      qdrant:
-        image: qdrant/qdrant:latest
-        ports:
-          - 6333:6333
-          - 6334:6334
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/healthz || exit 1"
-          --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -49,6 +39,11 @@ jobs:
 
       - name: Install dependencies
         run: pixi install -e llmaven
+
+      - name: Set up Docker
+        run: |
+          docker info
+          docker ps
 
       - name: Run core tests
         run: |
@@ -78,17 +73,17 @@ jobs:
       - name: Generate test summary
         if: always()
         run: |
-          echo "## Test Results - Ubuntu (with Qdrant)" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Results - Ubuntu" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Environment" >> $GITHUB_STEP_SUMMARY
           echo "- OS: ubuntu-latest" >> $GITHUB_STEP_SUMMARY
           echo "- Pixi version: ${{ env.PIXI_VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "- Python: $(pixi run -e llmaven python --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- Qdrant: Service container (localhost:6333)" >> $GITHUB_STEP_SUMMARY
+          echo "- Qdrant: Testcontainer (dynamic port)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
   test-macos:
-    name: Test on macOS (unit tests only)
+    name: Test on macOS
     runs-on: macos-latest
     timeout-minutes: 30
 
@@ -113,7 +108,22 @@ jobs:
       - name: Install dependencies
         run: pixi install -e llmaven
 
-      - name: Run unit tests (no Qdrant)
+      - name: Set up Docker
+        run: |
+          docker info
+          docker ps
+
+      - name: Run core tests
+        run: |
+          pixi run -e llmaven pytest tests/ \
+            --verbose \
+            --tb=short \
+            --color=yes \
+            --ignore=tests/agentic/ \
+            --ignore=tests/v1/ \
+            || echo "Core tests completed with status: $?"
+
+      - name: Run agentic tests (excluding CLI integration tests)
         run: |
           pixi run -e llmaven pytest tests/agentic/ \
             --verbose \
@@ -121,16 +131,23 @@ jobs:
             --color=yes \
             --ignore=tests/agentic/test_cli.py
 
+      - name: Run API endpoint tests
+        run: |
+          pixi run -e llmaven pytest tests/v1/ \
+            --verbose \
+            --tb=short \
+            --color=yes
+
       - name: Generate test summary
         if: always()
         run: |
-          echo "## Test Results - macOS (unit tests only)" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Results - macOS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Environment" >> $GITHUB_STEP_SUMMARY
           echo "- OS: macos-latest" >> $GITHUB_STEP_SUMMARY
           echo "- Pixi version: ${{ env.PIXI_VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "- Python: $(pixi run -e llmaven python --version)" >> $GITHUB_STEP_SUMMARY
-          echo "- Note: Qdrant integration tests skipped (no service containers on macOS)" >> $GITHUB_STEP_SUMMARY
+          echo "- Qdrant: Testcontainer (dynamic port)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
   pre-commit:
@@ -168,8 +185,8 @@ jobs:
           echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Job Status" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux Tests (with Qdrant): ${{ needs.test-linux.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS Tests (unit tests): ${{ needs.test-macos.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux Tests: ${{ needs.test-linux.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS Tests: ${{ needs.test-macos.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Pre-commit Hooks: ${{ needs.pre-commit.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 

@@ -1111,6 +1111,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/87/68/84c15afe47d089f5b9c830772582f39a80134b61211cb2a4d667465ec409/deepsearch_glm-0.21.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/50/3d/9373ad9c56321fdab5b41197068e1d8c25883b3fea29dd361f9b55116869/dill-0.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/e3/26/57c6fb270950d476074c087527a558ccb6f4436657314bfb6cdf484114c4/docker-7.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b3/06/45b1481732ed5508406d4c54df591efb306bf12531b49e46378fbb939e0e/docling-1.11.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/85/10/97e5c39ed0feac61868f939205b214a14405d9845ef8badaa1dcd2ac9f57/docling_core-1.7.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b0/13/2bbe4eacf025b139c847b2259fdb009e2319dfbdafe945fa000ef4a7c960/docling_ibm_models-1.3.3-py3-none-any.whl
@@ -1284,6 +1285,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/40/44/4a5f08c96eb108af5cb50b41f76142f0afa346dfa99d5296fe7202a11854/tabulate-0.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/11/6f/16663eef877b61faa5fd917b3a63497416ec4319195af75f6169a1594479/temporalio-1.16.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/73/27/c2f24b19dafa197c514abe70eda69bc031c5152c6b1f1e5b20099e2ceedd/testcontainers-4.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/fe/e59859aa1134fac065d36864752daf13215c98b379cb5d93f954dc0ec830/tifffile-2025.12.20-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f2/90/273b6c7ec78af547694eddeea9e05de771278bd20476525ab930cecaf7d8/tokenizers-0.21.4-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
@@ -1304,6 +1306,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b5/e8/dbf020b4d98251a9860752a094d09a65e1b436ad181faf929983f697048f/watchdog-6.0.0-py3-none-manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/af/b5/123f13c975e9f27ab9c0770f514345bd406d0e8d3b7a0723af9d43f710af/wcwidth-0.2.14-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/14/8f/aa61f528fba38578ec553c145857a181384c72b98156f858ca5c8e82d9d3/websockets-15.0.1-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/11/53/3e794346c39f462bcf1f58ac0487ff9bdad02f9b6d5ee2dc84c72e0243b2/wrapt-2.0.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/db/0f/0d52c98b8a885aeda831224b78f3be7ec2e1aa4a62091f9f9188c3c65b56/yarl-1.22.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
@@ -1389,6 +1392,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/95/76/64c16d8a273b70fc639e7586c1297d0c81659bdb88651b57dcd916b8096f/deepsearch_glm-0.21.1-cp312-cp312-macosx_13_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/50/3d/9373ad9c56321fdab5b41197068e1d8c25883b3fea29dd361f9b55116869/dill-0.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/e3/26/57c6fb270950d476074c087527a558ccb6f4436657314bfb6cdf484114c4/docker-7.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b3/06/45b1481732ed5508406d4c54df591efb306bf12531b49e46378fbb939e0e/docling-1.11.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/85/10/97e5c39ed0feac61868f939205b214a14405d9845ef8badaa1dcd2ac9f57/docling_core-1.7.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b0/13/2bbe4eacf025b139c847b2259fdb009e2319dfbdafe945fa000ef4a7c960/docling_ibm_models-1.3.3-py3-none-any.whl
@@ -1546,6 +1550,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/40/44/4a5f08c96eb108af5cb50b41f76142f0afa346dfa99d5296fe7202a11854/tabulate-0.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e0/36/12bb7234c83ddca4b8b032c8f1a9e07a03067c6ed6d2ddb39c770a4c87c6/temporalio-1.16.0-cp39-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/73/27/c2f24b19dafa197c514abe70eda69bc031c5152c6b1f1e5b20099e2ceedd/testcontainers-4.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/fe/e59859aa1134fac065d36864752daf13215c98b379cb5d93f954dc0ec830/tifffile-2025.12.20-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/8d/a6/28975479e35ddc751dc1ddc97b9b69bf7fcf074db31548aab37f8116674c/tokenizers-0.21.4-cp39-abi3-macosx_11_0_arm64.whl
@@ -1564,6 +1569,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ee/d9/d88e73ca598f4f6ff671fb5fde8a32925c2e08a637303a1d12883c7305fa/uvicorn-0.38.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/af/b5/123f13c975e9f27ab9c0770f514345bd406d0e8d3b7a0723af9d43f710af/wcwidth-0.2.14-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/3d/69/1a681dd6f02180916f116894181eab8b2e25b31e484c5d0eae637ec01f7c/websockets-15.0.1-cp312-cp312-macosx_11_0_arm64.whl
+      - pypi: https://files.pythonhosted.org/packages/4d/8a/5b4b1e44b791c22046e90d9b175f9a7581a8cc7a0debbb930f81e6ae8e25/wrapt-2.0.1-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/ba/f5/0601483296f09c3c65e303d60c070a5c19fcdbc72daa061e96170785bc7d/yarl-1.22.0-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
@@ -3833,6 +3839,24 @@ packages:
   license: ISC
   size: 196500
   timestamp: 1757292856922
+- pypi: https://files.pythonhosted.org/packages/e3/26/57c6fb270950d476074c087527a558ccb6f4436657314bfb6cdf484114c4/docker-7.1.0-py3-none-any.whl
+  name: docker
+  version: 7.1.0
+  sha256: c96b93b7f0a746f9e77d325bcfb87422a3d8bd4f03136ae8a85b37f1898d5fc0
+  requires_dist:
+  - pywin32>=304 ; sys_platform == 'win32'
+  - requests>=2.26.0
+  - urllib3>=1.26.0
+  - coverage==7.2.7 ; extra == 'dev'
+  - pytest-cov==4.1.0 ; extra == 'dev'
+  - pytest-timeout==2.1.0 ; extra == 'dev'
+  - pytest==7.4.2 ; extra == 'dev'
+  - ruff==0.1.8 ; extra == 'dev'
+  - myst-parser==0.18.0 ; extra == 'docs'
+  - sphinx==5.1.1 ; extra == 'docs'
+  - paramiko>=2.4.3 ; extra == 'ssh'
+  - websocket-client>=1.3.0 ; extra == 'websockets'
+  requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/docker-cli-28.3.1-h73b1eb8_0.conda
   sha256: e1a32bc3cddeab74eb6b1e42432f20f36a2ef68dbe53ce95fe579abd17b15a38
   md5: 64b0464ae744c111045654552a125168
@@ -7861,7 +7885,7 @@ packages:
 - pypi: ./
   name: llmaven
   version: 0.1.0
-  sha256: fb55dd440829d23e100d8fbbff012ead05dcbb15d9ac2510efab8011e103f2ca
+  sha256: aa3dde9f67ab36f50af14dc4c21b3d3383ef7ea9137cb1fcf5f51d72d38f7a41
   requires_dist:
   - accelerate>=0.26.0
   - arxiv>=2.1.3,<2.2
@@ -7897,6 +7921,7 @@ packages:
   - httpx>=0.27.0 ; extra == 'test'
   - pytest-asyncio>=0.23.0 ; extra == 'test'
   - pytest>=8.0.0 ; extra == 'test'
+  - testcontainers[qdrant]>=4.0.0 ; extra == 'test'
   requires_python: '>=3.12'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/llvm-openmp-21.1.5-h4a912ad_2.conda
@@ -12933,6 +12958,50 @@ packages:
   - pkg:pypi/terminado?source=hash-mapping
   size: 22717
   timestamp: 1710265922593
+- pypi: https://files.pythonhosted.org/packages/73/27/c2f24b19dafa197c514abe70eda69bc031c5152c6b1f1e5b20099e2ceedd/testcontainers-4.13.3-py3-none-any.whl
+  name: testcontainers
+  version: 4.13.3
+  sha256: 063278c4805ffa6dd85e56648a9da3036939e6c0ac1001e851c9276b19b05970
+  requires_dist:
+  - azure-cosmos ; extra == 'cosmosdb'
+  - azure-storage-blob>=12.19,<13.0 ; extra == 'azurite'
+  - bcrypt ; extra == 'registry'
+  - boto3 ; extra == 'aws' or extra == 'localstack'
+  - cassandra-driver==3.29.1 ; extra == 'scylla'
+  - chromadb-client>=1.0.0,<2.0.0 ; extra == 'chroma'
+  - cryptography ; extra == 'mailpit' or extra == 'sftp'
+  - docker
+  - google-cloud-datastore>=2 ; extra == 'google'
+  - google-cloud-pubsub>=2 ; extra == 'google'
+  - httpx ; extra == 'aws' or extra == 'generic' or extra == 'test-module-import'
+  - ibm-db-sa ; platform_machine != 'aarch64' and platform_machine != 'arm64' and extra == 'db2'
+  - influxdb ; extra == 'influxdb'
+  - influxdb-client ; extra == 'influxdb'
+  - kubernetes ; extra == 'k3s'
+  - minio ; extra == 'minio'
+  - nats-py ; extra == 'nats'
+  - neo4j ; extra == 'neo4j'
+  - openfga-sdk ; python_full_version >= '3.10' and extra == 'openfga'
+  - opensearch-py ; python_full_version < '4' and extra == 'opensearch'
+  - oracledb>=3.4.1 ; extra == 'oracle' or extra == 'oracle-free'
+  - pika ; extra == 'rabbitmq'
+  - pymongo ; extra == 'mongodb'
+  - pymssql>=2.3.9 ; (platform_machine != 'arm64' and extra == 'mssql') or (python_full_version >= '3.10' and extra == 'mssql')
+  - pymysql[rsa] ; extra == 'mysql'
+  - python-arango>=7.8,<8.0 ; extra == 'arangodb'
+  - python-dotenv
+  - python-keycloak ; extra == 'keycloak'
+  - pyyaml>=6.0.3 ; extra == 'k3s'
+  - qdrant-client ; extra == 'qdrant'
+  - redis ; extra == 'generic' or extra == 'redis'
+  - selenium ; extra == 'selenium'
+  - sqlalchemy ; extra == 'db2' or extra == 'mssql' or extra == 'mysql' or extra == 'oracle' or extra == 'oracle-free'
+  - trino ; extra == 'trino'
+  - typing-extensions
+  - urllib3
+  - weaviate-client>=4.5.4,<5.0.0 ; extra == 'weaviate'
+  - wrapt
+  requires_python: '>=3.9.2'
 - conda: https://conda.anaconda.org/conda-forge/noarch/testcontainers-4.8.2-pyhd8ed1ab_0.conda
   sha256: 9a5d4a826aa3199904c5fa3545e790e4f244a37943350c8892732869dc1998ef
   md5: dedad370a72190c627f4ef975ff13253
@@ -14245,6 +14314,22 @@ packages:
   - pkg:pypi/widgetsnbextension?source=hash-mapping
   size: 889195
   timestamp: 1762040404362
+- pypi: https://files.pythonhosted.org/packages/11/53/3e794346c39f462bcf1f58ac0487ff9bdad02f9b6d5ee2dc84c72e0243b2/wrapt-2.0.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+  name: wrapt
+  version: 2.0.1
+  sha256: 7b219cb2182f230676308cdcacd428fa837987b89e4b7c5c9025088b8a6c9faf
+  requires_dist:
+  - pytest ; extra == 'dev'
+  - setuptools ; extra == 'dev'
+  requires_python: '>=3.8'
+- pypi: https://files.pythonhosted.org/packages/4d/8a/5b4b1e44b791c22046e90d9b175f9a7581a8cc7a0debbb930f81e6ae8e25/wrapt-2.0.1-cp312-cp312-macosx_11_0_arm64.whl
+  name: wrapt
+  version: 2.0.1
+  sha256: 386fb54d9cd903ee0012c09291336469eb7b244f7183d40dc3e86a16a4bace62
+  requires_dist:
+  - pytest ; extra == 'dev'
+  - setuptools ; extra == 'dev'
+  requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/wrapt-2.0.1-py311h49ec1c0_1.conda
   sha256: 81327871ef18cbdd095e1e7650a198fd13f02355a39f23f1e377aa6d899f8ce0
   md5: e8442f5d358d1449deaf4ba76f5e212c
