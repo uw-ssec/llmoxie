@@ -230,4 +230,3 @@ class TestExceptionUsagePatterns:
 
         with pytest.raises(QdrantConnectionError):
             operation_that_might_fail("connection")
-

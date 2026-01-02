@@ -1,10 +1,12 @@
 # Adding New API Endpoints
 
-This guide covers the step-by-step process for adding new REST API endpoints to LLMaven.
+This guide covers the step-by-step process for adding new REST API endpoints to
+LLMaven.
 
 ## Overview
 
 LLMaven follows a layered architecture:
+
 1. **Schema** → Define request/response models
 2. **Service** → Implement business logic
 3. **Endpoint** → Create the route handler

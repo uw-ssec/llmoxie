@@ -12,29 +12,29 @@ LLMaven follows [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## Types
 
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation only |
-| `style` | Formatting, no code change |
-| `refactor` | Code restructuring |
-| `test` | Adding/updating tests |
-| `chore` | Maintenance tasks |
-| `perf` | Performance improvements |
+| Type       | Description                |
+| ---------- | -------------------------- |
+| `feat`     | New feature                |
+| `fix`      | Bug fix                    |
+| `docs`     | Documentation only         |
+| `style`    | Formatting, no code change |
+| `refactor` | Code restructuring         |
+| `test`     | Adding/updating tests      |
+| `chore`    | Maintenance tasks          |
+| `perf`     | Performance improvements   |
 
 ---
 
 ## Scopes
 
-| Scope | Area |
-|-------|------|
-| `api` | REST API endpoints |
-| `ui` | Streamlit frontend |
-| `infra` | Pulumi infrastructure |
-| `core` | ML/AI components |
-| `cli` | Command-line interface |
-| `agentic` | Agentic RAG system |
+| Scope     | Area                   |
+| --------- | ---------------------- |
+| `api`     | REST API endpoints     |
+| `ui`      | Streamlit frontend     |
+| `infra`   | Pulumi infrastructure  |
+| `core`    | ML/AI components       |
+| `cli`     | Command-line interface |
+| `agentic` | Agentic RAG system     |
 
 ---
 

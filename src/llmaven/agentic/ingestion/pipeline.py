@@ -98,15 +98,15 @@ class IngestionPipeline:
             if self._dense_model is None:
                 console.print(f"  [dim]• Dense model: {config.dense_model}[/dim]")
                 self._dense_model = TextEmbedding(model_name=config.dense_model)
-            
+
             if self._sparse_model is None:
                 console.print(f"  [dim]• Sparse model: {config.sparse_model}[/dim]")
                 self._sparse_model = SparseTextEmbedding(model_name=config.sparse_model)
-            
+
             if self._colbert_model is None:
                 console.print(f"  [dim]• ColBERT model: {config.colbert_model}[/dim]")
                 self._colbert_model = LateInteractionTextEmbedding(model_name=config.colbert_model)
-            
+
             console.print("[green]✅ Embedding models ready[/green]\n")
             self._models_initialized = True
         except Exception as e:
@@ -447,4 +447,3 @@ class IngestionPipeline:
                     total_chunks += len(embedded_chunks)
 
             progress.add_task(f"✅ Ingested {total_chunks} chunks from {len(documents)} documents", completed=1)
-

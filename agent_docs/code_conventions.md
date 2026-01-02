@@ -1,15 +1,16 @@
 # Code Conventions
 
-This document describes the naming conventions and code style patterns used in LLMaven.
+This document describes the naming conventions and code style patterns used in
+LLMaven.
 
 ## Naming Conventions
 
 ### Files
 
-| Type | Convention | Example |
-|------|------------|---------|
-| Python modules | `snake_case.py` | `embedding_model.py` |
-| Config files | `kebab-case.yml` | `llmaven-config.yaml` |
+| Type           | Convention       | Example               |
+| -------------- | ---------------- | --------------------- |
+| Python modules | `snake_case.py`  | `embedding_model.py`  |
+| Config files   | `kebab-case.yml` | `llmaven-config.yaml` |
 
 ### Classes
 
@@ -43,11 +44,11 @@ DEFAULT_COLLECTION = "research_papers"
 
 ## Code Style
 
-| Setting | Value | Config File |
-|---------|-------|-------------|
-| Max line length | 120 characters | `.flake8` |
-| Linter | Flake8 | `.flake8` |
-| Formatter | Pre-commit hooks | `.pre-commit-config.yaml` |
+| Setting         | Value            | Config File               |
+| --------------- | ---------------- | ------------------------- |
+| Max line length | 120 characters   | `.flake8`                 |
+| Linter          | Flake8           | `.flake8`                 |
+| Formatter       | Pre-commit hooks | `.pre-commit-config.yaml` |
 
 ---
 

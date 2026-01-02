@@ -151,7 +151,8 @@ LLMaven uses multiple Pixi environments for different components:
 
 ### Option 1: Agentic RAG (Recommended for New Projects)
 
-The agentic RAG system provides superior retrieval accuracy with hybrid search and intelligent agent-based Q&A.
+The agentic RAG system provides superior retrieval accuracy with hybrid search
+and intelligent agent-based Q&A.
 
 #### Quick Start
 
@@ -216,7 +217,8 @@ export AGENTIC_PREFETCH_TOP_K=20
 export AGENTIC_FINAL_TOP_K=5
 ```
 
-See [AGENTS.md](AGENTS.md) for complete configuration options and architecture details.
+See [AGENTS.md](AGENTS.md) for complete configuration options and architecture
+details.
 
 ### Option 2: Local Development (API and UI)
 

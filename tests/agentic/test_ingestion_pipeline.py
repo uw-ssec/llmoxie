@@ -90,12 +90,12 @@ class TestIngestionPipelineParse:
         mock_qdrant_manager = MagicMock()
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             doc = {
                 "file_path": "test.txt",
                 "content": "This is a test document with multiple sentences. Here is another sentence.",
             }
-            
+
             parsed = pipeline.parse(doc)
             assert parsed["text"] == doc["content"]
             assert parsed["file_path"] == "test.txt"
@@ -105,12 +105,12 @@ class TestIngestionPipelineParse:
         mock_qdrant_manager = MagicMock()
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             doc = {
                 "file_path": "test.md",
                 "content": "# Heading\n\nParagraph text.",
             }
-            
+
             parsed = pipeline.parse(doc)
             assert "text" in parsed
             assert parsed["file_path"] == "test.md"
@@ -121,7 +121,7 @@ class TestIngestionPipelineParse:
         mock_qdrant_manager = MagicMock()
         mock_converter_instance = MagicMock()
         mock_converter.return_value = mock_converter_instance
-        
+
         # Mock docling output
         mock_doc = MagicMock()
         mock_doc.document.export_to_dict.return_value = {
@@ -132,12 +132,12 @@ class TestIngestionPipelineParse:
 
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             doc = {
                 "file_path": "test.pdf",
                 "content": b"PDF bytes",
             }
-            
+
             parsed = pipeline.parse(doc)
             assert "text" in parsed
             assert parsed["file_path"] == "test.pdf"
@@ -160,15 +160,15 @@ class TestIngestionPipelineParse:
             mock_doc.__exit__ = lambda self, *args: None
             mock_fitz.open.return_value = mock_doc
             sys.modules["fitz"] = mock_fitz
-            
+
             try:
                 pipeline = IngestionPipeline()
-                
+
                 doc = {
                     "file_path": "test.pdf",
                     "content": b"PDF bytes",
                 }
-                
+
                 parsed = pipeline.parse(doc)
                 assert "text" in parsed
                 assert "PDF text content" in parsed["text"]
@@ -186,12 +186,12 @@ class TestIngestionPipelineChunk:
         mock_qdrant_manager = MagicMock()
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             doc = {
                 "text": "Sentence one. Sentence two. Sentence three.",
                 "file_path": "test.txt",
             }
-            
+
             chunks = pipeline.chunk(doc)
             assert len(chunks) > 0
             assert all("text" in chunk for chunk in chunks)
@@ -203,7 +203,7 @@ class TestIngestionPipelineChunk:
         mock_qdrant_manager = MagicMock()
         mock_converter_instance = MagicMock()
         mock_converter.return_value = mock_converter_instance
-        
+
         mock_doc = MagicMock()
         mock_doc.document.export_to_dict.return_value = {
             "content": [
@@ -215,15 +215,15 @@ class TestIngestionPipelineChunk:
 
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             doc = {
                 "file_path": "test.md",
                 "content": "# Section 1\n\nContent",
             }
-            
+
             parsed = pipeline.parse(doc)
             chunks = pipeline.chunk(parsed)
-            
+
             assert len(chunks) > 0
             # Verify heading hierarchy is preserved
             assert any("heading_hierarchy" in chunk for chunk in chunks)
@@ -253,14 +253,14 @@ class TestIngestionPipelineEmbed:
         mock_qdrant_manager = MagicMock()
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             chunk = {
                 "text": "Test chunk",
                 "file_path": "test.txt",
             }
-            
+
             embedded = pipeline.embed(chunk)
-            
+
             assert "dense" in embedded
             assert "sparse" in embedded
             assert "colbert" in embedded
@@ -273,10 +273,10 @@ class TestIngestionPipelineEmbed:
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             with patch("llmaven.agentic.ingestion.pipeline.TextEmbedding") as mock_dense:
                 mock_dense.side_effect = Exception("Embedding failed")
-                
+
                 pipeline = IngestionPipeline()
                 chunk = {"text": "test", "file_path": "test.txt"}
-                
+
                 with pytest.raises(EmbeddingError):
                     pipeline.embed(chunk)
 
@@ -287,10 +287,10 @@ class TestIngestionPipelineUpsert:
     def test_upsert_chunks_to_qdrant(self):
         """Test upserting embedded chunks to Qdrant."""
         mock_qdrant_manager = MagicMock()
-        
+
         with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
             pipeline = IngestionPipeline()
-            
+
             embedded_chunks = [
                 {
                     "text": "Chunk 1",
@@ -309,9 +309,9 @@ class TestIngestionPipelineUpsert:
                     "chunk_index": 1,
                 },
             ]
-            
+
             pipeline.upsert(embedded_chunks)
-            
+
             # Verify ensure_collection was called
             mock_qdrant_manager.ensure_collection.assert_called_once_with("agentic-rag", force=False)
             # Verify upsert_points was called
@@ -358,7 +358,7 @@ class TestIngestionPipelineFullPipeline:
     def test_ingest_with_batch_processing(self):
         """Test ingestion with batch processing for large document sets."""
         mock_qdrant_manager = MagicMock()
-        
+
         # Create many mock documents
         mock_documents = [
             {"file_path": f"doc{i}.txt", "content": f"Content {i}"}
@@ -383,12 +383,11 @@ class TestIngestionPipelineFullPipeline:
                         mock_colbert.return_value = mock_colbert_instance
 
                         pipeline = IngestionPipeline(batch_size=50)
-                        
+
                         # Mock load to return many documents
                         pipeline.load = MagicMock(return_value=mock_documents)
-                        
+
                         pipeline.ingest([])
 
                         # Verify upsert was called multiple times (batched)
                         assert mock_qdrant_manager.upsert_points.call_count >= 2
-

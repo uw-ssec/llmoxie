@@ -334,4 +334,3 @@ class TestRAGAgentSystemPrompt:
         assert "search_knowledge_base" in system_prompt.lower()
         assert "cite" in system_prompt.lower()
         assert "confidence" in system_prompt.lower()
-

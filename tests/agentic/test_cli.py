@@ -434,4 +434,3 @@ class TestCLIIntegration:
         assert len(call_args[1]["directories"]) == 2
         assert "/dir1" in call_args[1]["directories"]
         assert "/dir2" in call_args[1]["directories"]
-

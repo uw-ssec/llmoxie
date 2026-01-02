@@ -1,11 +1,14 @@
 # Phase 3 Progress Report: Hybrid Search Implementation
 
-**Date**: January 2, 2026  
-**Status**: ✅ Complete
+**Date**: January 2, 2026 **Status**: ✅ Complete
 
 ## Overview
 
-Phase 3 of the Agentic RAG implementation focused on building high-accuracy hybrid retrieval with Prefetch (Dense + Sparse) and Rerank (ColBERT) capabilities. The implementation delivers a production-ready search system with multi-vector embeddings, configurable prefetch and rerank pipeline, and comprehensive test coverage.
+Phase 3 of the Agentic RAG implementation focused on building high-accuracy
+hybrid retrieval with Prefetch (Dense + Sparse) and Rerank (ColBERT)
+capabilities. The implementation delivers a production-ready search system with
+multi-vector embeddings, configurable prefetch and rerank pipeline, and
+comprehensive test coverage.
 
 ---
 
@@ -13,9 +16,11 @@ Phase 3 of the Agentic RAG implementation focused on building high-accuracy hybr
 
 ### 1. SearchResult Model (`src/llmaven/agentic/search/models.py`)
 
-**Purpose:** Pydantic model for structured search results with comprehensive metadata.
+**Purpose:** Pydantic model for structured search results with comprehensive
+metadata.
 
 **Key Features**:
+
 - Text content and metadata (file path, heading hierarchy, chunk index)
 - Multi-score tracking (final score, prefetch score, rerank score)
 - Content hash for deduplication
@@ -23,6 +28,7 @@ Phase 3 of the Agentic RAG implementation focused on building high-accuracy hybr
 - JSON schema examples for API documentation
 
 **Example**:
+
 ```python
 SearchResult(
     text="Machine learning is a subset of artificial intelligence...",
@@ -40,36 +46,43 @@ SearchResult(
 
 ### 2. HybridSearcher (`src/llmaven/agentic/search/hybrid_searcher.py`)
 
-**Purpose:** Three-stage hybrid search pipeline with configurable prefetch and rerank.
+**Purpose:** Three-stage hybrid search pipeline with configurable prefetch and
+rerank.
 
 **Pipeline Stages**:
 
 #### **Stage 1: Query Embedding Generation**
+
 - Generates Dense embeddings using `TextEmbedding` (384-dim)
 - Generates Sparse embeddings using `SparseTextEmbedding` (BM25)
-- Generates ColBERT embeddings using `LateInteractionTextEmbedding` (128-dim per token)
+- Generates ColBERT embeddings using `LateInteractionTextEmbedding` (128-dim per
+  token)
 - Lazy model loading with proper error handling
 - HuggingFace progress bar suppression for clean CLI output
 
 #### **Stage 2: Prefetch (Dense + Sparse)**
+
 - Executes Dense and Sparse queries in parallel via `QdrantManager`
 - Configurable `prefetch_top_k` candidates per method (default: 20)
 - Union of results with deduplication by point ID
 - Keeps highest score for duplicate points
 
 #### **Stage 3: Rerank (ColBERT MaxSim)**
+
 - Optional ColBERT reranking using MaxSim comparator
 - Filters reranked results to only prefetch candidates
 - Returns top-K by rerank score (default: 5)
 - Can be disabled for faster prefetch-only search
 
 **Configuration**:
+
 - `enable_rerank`: Toggle ColBERT reranking (default: `True`)
 - `prefetch_top_k`: Candidates per prefetch method (default: `20`)
 - `final_top_k`: Final results to return (default: `5`)
 - All configurable via `AgenticConfig` or method parameters
 
 **Error Handling**:
+
 - Empty query validation with `SearchError`
 - Embedding generation errors wrapped in `EmbeddingError`
 - Qdrant errors caught and wrapped in `SearchError`
@@ -80,10 +93,12 @@ SearchResult(
 ### 3. Module Exports (`src/llmaven/agentic/search/__init__.py`)
 
 Updated module exports to include:
+
 - `HybridSearcher` class
 - `SearchResult` model
 
 Enables clean imports:
+
 ```python
 from llmaven.agentic.search import HybridSearcher, SearchResult
 ```
@@ -94,13 +109,18 @@ from llmaven.agentic.search import HybridSearcher, SearchResult
 
 ### 1. Qdrant Sparse Vector Format Requirement
 
-**Issue:** Qdrant's `query_points()` method expects a `SparseVector` object when querying sparse vectors (`using="sparse"`), but the code was passing a plain dictionary `{"indices": [...], "values": [...]}`.
+**Issue:** Qdrant's `query_points()` method expects a `SparseVector` object when
+querying sparse vectors (`using="sparse"`), but the code was passing a plain
+dictionary `{"indices": [...], "values": [...]}`.
 
 **Error:** `ValueError: Unsupported query type: <class 'dict'>`
 
-**Root Cause:** The sparse embedding flow converts `SparseEmbedding` objects to dicts in `hybrid_searcher.py` for storage/transport, but these dicts must be converted back to `SparseVector` objects before Qdrant queries.
+**Root Cause:** The sparse embedding flow converts `SparseEmbedding` objects to
+dicts in `hybrid_searcher.py` for storage/transport, but these dicts must be
+converted back to `SparseVector` objects before Qdrant queries.
 
-**Solution:** Added conversion logic in `qdrant_manager.py` to convert dicts to `SparseVector` objects before calling `query_points()`:
+**Solution:** Added conversion logic in `qdrant_manager.py` to convert dicts to
+`SparseVector` objects before calling `query_points()`:
 
 ```python
 # Convert dict to SparseVector object if needed
@@ -115,11 +135,16 @@ else:
 ```
 
 **Files Modified:**
-- `src/llmaven/agentic/vector_store/qdrant_manager.py:13` - Added `SparseVector` import
-- `src/llmaven/agentic/vector_store/qdrant_manager.py:194-203` - Added conversion logic
+
+- `src/llmaven/agentic/vector_store/qdrant_manager.py:13` - Added `SparseVector`
+  import
+- `src/llmaven/agentic/vector_store/qdrant_manager.py:194-203` - Added
+  conversion logic
 
 **Key Insight:** Sparse embedding flow:
-- `fastembed.SparseTextEmbedding` produces `SparseEmbedding` objects with `.indices` and `.values` attributes
+
+- `fastembed.SparseTextEmbedding` produces `SparseEmbedding` objects with
+  `.indices` and `.values` attributes
 - These are converted to dicts in `hybrid_searcher.py` for storage/transport
 - Dicts must be converted back to `SparseVector` objects before Qdrant queries
 
@@ -128,35 +153,43 @@ else:
 ### 2. Model Loading and Performance
 
 **First Query Latency:**
+
 - Dense model loading: ~500-800ms
 - Sparse model loading: ~200-400ms
 - ColBERT model loading: ~1-2s
 - **Total warmup**: ~2-3s (subsequent searches use cached models)
 
 **Subsequent Query Performance:**
+
 - Query Embedding: ~50-100ms
 - Prefetch: ~20-50ms (Dense + Sparse parallel queries)
 - Rerank: ~30-80ms (ColBERT MaxSim on candidates)
 - **Total**: ~100-230ms per query (after model warmup)
 
 **Memory Footprint:**
+
 - Dense model: ~100MB
 - Sparse model: ~50MB
 - ColBERT model: ~200MB
 - **Total**: ~350MB for all 3 models
 - **Prefetch-only mode**: ~150MB (saves 200MB by skipping ColBERT)
 
-**Mitigation:** Models are lazy-loaded and cached. Consider pre-loading models on application startup in production.
+**Mitigation:** Models are lazy-loaded and cached. Consider pre-loading models
+on application startup in production.
 
 ---
 
 ### 3. Prefetch Score Loss During Reranking
 
-**Limitation:** When reranking is enabled, the original prefetch scores are not preserved by Qdrant's API. The `SearchResult.prefetch_score` field will be `None` when reranking is used.
+**Limitation:** When reranking is enabled, the original prefetch scores are not
+preserved by Qdrant's API. The `SearchResult.prefetch_score` field will be
+`None` when reranking is used.
 
-**Workaround:** Run two separate queries (with and without reranking) to compare scores.
+**Workaround:** Run two separate queries (with and without reranking) to compare
+scores.
 
-**Future Enhancement:** Store prefetch scores in payload for reranking comparison.
+**Future Enhancement:** Store prefetch scores in payload for reranking
+comparison.
 
 ---
 
@@ -166,17 +199,18 @@ else:
 
 Comprehensive test suite with **19 test cases** covering:
 
-| Category | Tests | Description |
-|----------|-------|-------------|
-| **Initialization** | 3 | Default configuration, custom settings, QdrantManager injection |
-| **Model Loading** | 4 | Successful loading, ColBERT skip when disabled, error handling, lazy loading |
-| **Query Embedding** | 4 | All 3 vectors, without ColBERT, empty query validation, error handling |
-| **Search** | 6 | With/without reranking, custom parameters, empty results, error propagation |
-| **Result Conversion** | 2 | Full payload conversion, minimal payload handling |
+| Category              | Tests | Description                                                                  |
+| --------------------- | ----- | ---------------------------------------------------------------------------- |
+| **Initialization**    | 3     | Default configuration, custom settings, QdrantManager injection              |
+| **Model Loading**     | 4     | Successful loading, ColBERT skip when disabled, error handling, lazy loading |
+| **Query Embedding**   | 4     | All 3 vectors, without ColBERT, empty query validation, error handling       |
+| **Search**            | 6     | With/without reranking, custom parameters, empty results, error propagation  |
+| **Result Conversion** | 2     | Full payload conversion, minimal payload handling                            |
 
 **Test Results**: ✅ **19/19 passed** (100% pass rate)
 
 **Coverage**:
+
 - All public methods tested
 - Error paths validated
 - Edge cases covered (empty queries, empty results, missing payloads)
@@ -185,6 +219,7 @@ Comprehensive test suite with **19 test cases** covering:
 ### Manual Test Script (`test-docs/test_phase3_search.py`)
 
 Created comprehensive manual test script demonstrating:
+
 1. **Collection Creation**: Uses `IngestionPipeline` to create test data
 2. **Search with Reranking**: Demonstrates ColBERT reranking
 3. **Search without Reranking**: Prefetch-only mode
@@ -192,6 +227,7 @@ Created comprehensive manual test script demonstrating:
 5. **Comparison**: Side-by-side reranking impact analysis
 
 **Usage**:
+
 ```bash
 # Start Qdrant
 docker run -p 6333:6333 qdrant/qdrant
@@ -204,7 +240,9 @@ pixi run -e llmaven python test-docs/test_phase3_search.py
 
 ## Configuration Changes
 
-No configuration changes required. Phase 3 uses existing `AgenticConfig` settings from Phase 1:
+No configuration changes required. Phase 3 uses existing `AgenticConfig`
+settings from Phase 1:
+
 - `dense_model`: `sentence-transformers/all-MiniLM-L6-v2` (384-dim)
 - `sparse_model`: `Qdrant/bm25`
 - `colbert_model`: `colbert-ir/colbertv2.0` (128-dim per token)
@@ -218,32 +256,33 @@ No configuration changes required. Phase 3 uses existing `AgenticConfig` setting
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `src/llmaven/agentic/search/models.py` | SearchResult Pydantic model |
+| File                                            | Purpose                       |
+| ----------------------------------------------- | ----------------------------- |
+| `src/llmaven/agentic/search/models.py`          | SearchResult Pydantic model   |
 | `src/llmaven/agentic/search/hybrid_searcher.py` | HybridSearcher implementation |
-| `tests/agentic/test_hybrid_searcher.py` | Comprehensive unit test suite |
-| `test-docs/test_phase3_search.py` | Manual test script |
+| `tests/agentic/test_hybrid_searcher.py`         | Comprehensive unit test suite |
+| `test-docs/test_phase3_search.py`               | Manual test script            |
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `src/llmaven/agentic/search/__init__.py` | Added exports for HybridSearcher and SearchResult |
+| File                                                 | Changes                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------- |
+| `src/llmaven/agentic/search/__init__.py`             | Added exports for HybridSearcher and SearchResult        |
 | `src/llmaven/agentic/vector_store/qdrant_manager.py` | Added SparseVector import and conversion logic (bug fix) |
 
 ---
 
 ## Dependencies Used
 
-| Package | Purpose |
-|---------|---------|
-| `fastembed` | Multi-vector embedding generation (Dense, Sparse, ColBERT) |
-| `qdrant-client` | Vector search operations |
-| `pydantic` | Data validation and configuration |
-| `rich` | Progress indicators (future CLI integration) |
+| Package         | Purpose                                                    |
+| --------------- | ---------------------------------------------------------- |
+| `fastembed`     | Multi-vector embedding generation (Dense, Sparse, ColBERT) |
+| `qdrant-client` | Vector search operations                                   |
+| `pydantic`      | Data validation and configuration                          |
+| `rich`          | Progress indicators (future CLI integration)               |
 
-**Note:** All dependencies were already present from Phase 2. No new dependencies added.
+**Note:** All dependencies were already present from Phase 2. No new
+dependencies added.
 
 ---
 
@@ -274,6 +313,7 @@ See `20251230_AGENTIC_RAG_IMPLEMENTATION_PLAN.md` for Phase 4 details.
 ## Usage Examples
 
 ### Basic Search
+
 ```python
 from llmaven.agentic.search import HybridSearcher
 
@@ -286,12 +326,14 @@ for result in results:
 ```
 
 ### Search Without Reranking
+
 ```python
 searcher = HybridSearcher(enable_rerank=False)
 results = searcher.search("vector embeddings", limit=3)
 ```
 
 ### Custom Parameters
+
 ```python
 searcher = HybridSearcher()
 results = searcher.search(
@@ -303,6 +345,7 @@ results = searcher.search(
 ```
 
 ### Search Result Inspection
+
 ```python
 result = results[0]
 
@@ -371,7 +414,9 @@ print(f"Hash: {result.content_hash}")
 
 ## Conclusion
 
-Phase 3 successfully delivers a production-ready hybrid search implementation with:
+Phase 3 successfully delivers a production-ready hybrid search implementation
+with:
+
 - ✅ Multi-vector retrieval (Dense, Sparse, ColBERT)
 - ✅ Configurable prefetch and rerank pipeline
 - ✅ Comprehensive error handling and logging
@@ -380,7 +425,8 @@ Phase 3 successfully delivers a production-ready hybrid search implementation wi
 - ✅ Integration with existing components
 - ✅ Bug fix for sparse vector query format
 
-The implementation follows best practices and is ready for Phase 4 integration with the RAG Agent and CLI.
+The implementation follows best practices and is ready for Phase 4 integration
+with the RAG Agent and CLI.
 
 ---
 
@@ -394,26 +440,35 @@ The manual test script `test-docs/test_phase3_search.py` was failing with error:
 ValueError: Unsupported query type: <class 'dict'>
 ```
 
-The error occurred when executing sparse vector queries through Qdrant's `query_points()` method.
+The error occurred when executing sparse vector queries through Qdrant's
+`query_points()` method.
 
 ### Root Cause
 
-Qdrant's `query_points()` method expects a `SparseVector` object when querying sparse vectors (`using="sparse"`), but the code was passing a plain dictionary `{"indices": [...], "values": [...]}`.
+Qdrant's `query_points()` method expects a `SparseVector` object when querying
+sparse vectors (`using="sparse"`), but the code was passing a plain dictionary
+`{"indices": [...], "values": [...]}`.
 
 **Sparse Embedding Flow:**
-1. `fastembed.SparseTextEmbedding` produces `SparseEmbedding` objects with `.indices` and `.values` attributes
+
+1. `fastembed.SparseTextEmbedding` produces `SparseEmbedding` objects with
+   `.indices` and `.values` attributes
 2. These are converted to dicts in `hybrid_searcher.py` for storage/transport
 3. Dicts must be converted back to `SparseVector` objects before Qdrant queries
 
 ### Investigation Process
 
-Used systematic hypothesis-driven debugging with runtime instrumentation to identify the exact type mismatch at the Qdrant query boundary.
+Used systematic hypothesis-driven debugging with runtime instrumentation to
+identify the exact type mismatch at the Qdrant query boundary.
 
-**Confirmed Hypothesis:** Qdrant's Python client requires `SparseVector` objects (not dicts) when querying sparse vectors via `query_points()` with `using="sparse"`.
+**Confirmed Hypothesis:** Qdrant's Python client requires `SparseVector` objects
+(not dicts) when querying sparse vectors via `query_points()` with
+`using="sparse"`.
 
 ### Solution
 
-Added conversion logic in `qdrant_manager.py` to convert the sparse vector dictionary to a `SparseVector` object before passing it to `query_points()`:
+Added conversion logic in `qdrant_manager.py` to convert the sparse vector
+dictionary to a `SparseVector` object before passing it to `query_points()`:
 
 ```python
 # Before: Direct dict pass (caused error)
@@ -433,24 +488,30 @@ query=sparse_query
 
 ### Files Modified
 
-| File | Changes |
-|------|---------|
-| `src/llmaven/agentic/vector_store/qdrant_manager.py:13` | Added `SparseVector` import from `qdrant_client.models` |
+| File                                                         | Changes                                                   |
+| ------------------------------------------------------------ | --------------------------------------------------------- |
+| `src/llmaven/agentic/vector_store/qdrant_manager.py:13`      | Added `SparseVector` import from `qdrant_client.models`   |
 | `src/llmaven/agentic/vector_store/qdrant_manager.py:194-203` | Added sparse vector dict-to-SparseVector conversion logic |
 
 ### Key Learnings
 
-1. **Qdrant API Requirement**: Qdrant's Python client requires `SparseVector` objects (not dicts) when querying sparse vectors via `query_points()` with `using="sparse"`. The `SparseVector` class is imported from `qdrant_client.models` and takes `indices` and `values` parameters.
+1. **Qdrant API Requirement**: Qdrant's Python client requires `SparseVector`
+   objects (not dicts) when querying sparse vectors via `query_points()` with
+   `using="sparse"`. The `SparseVector` class is imported from
+   `qdrant_client.models` and takes `indices` and `values` parameters.
 
-2. **Type Safety**: The conversion logic handles both dict and `SparseVector` inputs for robustness, ensuring backward compatibility.
+2. **Type Safety**: The conversion logic handles both dict and `SparseVector`
+   inputs for robustness, ensuring backward compatibility.
 
-3. **No Breaking Changes**: The fix is backward-compatible and doesn't affect other parts of the system.
+3. **No Breaking Changes**: The fix is backward-compatible and doesn't affect
+   other parts of the system.
 
 ### Status
 
-✅ **COMPLETE** - Bug fixed, test passes, instrumentation removed. The Phase 3 hybrid search implementation is now fully functional.
+✅ **COMPLETE** - Bug fixed, test passes, instrumentation removed. The Phase 3
+hybrid search implementation is now fully functional.
 
 ---
 
-**Phase 3 Status**: ✅ Production-ready, fully tested, ready for Phase 4 integration
-
+**Phase 3 Status**: ✅ Production-ready, fully tested, ready for Phase 4
+integration

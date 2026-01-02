@@ -64,17 +64,18 @@ Tears down all infrastructure (use with caution).
 
 ## Key Files
 
-| Path | Purpose |
-|------|---------|
-| `src/llmaven/infrastructure/` | Pulumi Azure resource definitions |
-| `src/llmaven/deployment/` | Deployment utilities |
-| `llmaven-config.yaml` | Infrastructure configuration (gitignored) |
+| Path                          | Purpose                                   |
+| ----------------------------- | ----------------------------------------- |
+| `src/llmaven/infrastructure/` | Pulumi Azure resource definitions         |
+| `src/llmaven/deployment/`     | Deployment utilities                      |
+| `llmaven-config.yaml`         | Infrastructure configuration (gitignored) |
 
 ---
 
 ## Deployed Resources
 
 The infrastructure includes:
+
 - Azure Container Apps (API hosting)
 - Azure Blob Storage (document storage)
 - Azure Key Vault (secrets management)

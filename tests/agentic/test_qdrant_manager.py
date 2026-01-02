@@ -74,7 +74,7 @@ class TestQdrantManagerEnsureCollection:
             mock_client.create_collection.assert_called_once()
             call_kwargs = mock_client.create_collection.call_args[1]
             assert call_kwargs["collection_name"] == "test-collection"
-            
+
             # Verify vectors config
             vectors_config = call_kwargs["vectors_config"]
             assert "dense" in vectors_config
@@ -84,7 +84,7 @@ class TestQdrantManagerEnsureCollection:
             assert vectors_config["colbert"].size == 128
             assert vectors_config["colbert"].distance == Distance.COSINE
             assert vectors_config["colbert"].multivector_config.comparator == MultiVectorComparator.MAX_SIM
-            
+
             # Verify sparse vectors config
             sparse_config = call_kwargs["sparse_vectors_config"]
             assert "sparse" in sparse_config
@@ -186,27 +186,27 @@ class TestQdrantManagerSearch:
     def test_search_with_prefetch_and_rerank(self):
         """Test search with prefetch and rerank."""
         mock_client = MagicMock()
-        
+
         # Mock prefetch results (QueryResponse objects)
         mock_dense_response = MagicMock()
         mock_dense_response.points = [
             ScoredPoint(id=1, score=0.9, payload={"text": "doc1"}, version=0),
             ScoredPoint(id=2, score=0.8, payload={"text": "doc2"}, version=0),
         ]
-        
+
         mock_sparse_response = MagicMock()
         mock_sparse_response.points = [
             ScoredPoint(id=2, score=0.85, payload={"text": "doc2"}, version=0),
             ScoredPoint(id=3, score=0.75, payload={"text": "doc3"}, version=0),
         ]
-        
+
         # Mock rerank results
         mock_rerank_response = MagicMock()
         mock_rerank_response.points = [
             ScoredPoint(id=2, score=0.95, payload={"text": "doc2"}, version=0),
             ScoredPoint(id=1, score=0.85, payload={"text": "doc1"}, version=0),
         ]
-        
+
         mock_client.query_points.side_effect = [
             mock_dense_response,   # Dense query
             mock_sparse_response,  # Sparse query
@@ -220,7 +220,7 @@ class TestQdrantManagerSearch:
                 "sparse": {"indices": [1], "values": [0.5]},
                 "colbert": [[0.1] * 128] * 10,
             }
-            
+
             results = manager.search("test-collection", query_vectors, limit=5)
 
             assert len(results) == 2
@@ -229,19 +229,19 @@ class TestQdrantManagerSearch:
     def test_search_without_rerank(self):
         """Test search without reranking."""
         mock_client = MagicMock()
-        
+
         # Mock prefetch results
         mock_dense_response = MagicMock()
         mock_dense_response.points = [
             ScoredPoint(id=1, score=0.9, payload={"text": "doc1"}, version=0),
             ScoredPoint(id=2, score=0.8, payload={"text": "doc2"}, version=0),
         ]
-        
+
         mock_sparse_response = MagicMock()
         mock_sparse_response.points = [
             ScoredPoint(id=2, score=0.85, payload={"text": "doc2"}, version=0),
         ]
-        
+
         mock_client.query_points.side_effect = [
             mock_dense_response,   # Dense query
             mock_sparse_response,  # Sparse query
@@ -253,7 +253,7 @@ class TestQdrantManagerSearch:
                 "dense": [0.1] * 384,
                 "sparse": {"indices": [1], "values": [0.5]},
             }
-            
+
             results = manager.search("test-collection", query_vectors, limit=5, enable_rerank=False)
 
             assert len(results) <= 5
@@ -296,9 +296,8 @@ class TestQdrantManagerValidation:
 
         with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
             manager = QdrantManager()
-            
+
             with pytest.raises(ValueError, match="explicit confirmation"):
                 manager.delete_collection("test-collection", confirm=False)
 
             mock_client.delete_collection.assert_not_called()
-

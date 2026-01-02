@@ -413,4 +413,3 @@ class TestAgenticEndpointsIntegration:
         data = response.json()
         assert len(data["citations"]) == 3
         assert data["sources_used"] == 3
-

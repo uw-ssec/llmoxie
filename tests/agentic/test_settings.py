@@ -315,4 +315,3 @@ class TestAgenticConfigEdgeCases:
         )
         assert config.prefetch_top_k == 1000
         assert config.final_top_k == 100
-

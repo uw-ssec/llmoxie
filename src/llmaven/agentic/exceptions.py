@@ -57,4 +57,3 @@ class SearchError(AgenticRAGError):
     """
 
     pass
-

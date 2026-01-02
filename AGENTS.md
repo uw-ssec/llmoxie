@@ -1,6 +1,7 @@
 # AGENTS.md - LLMaven AI Assistant Guide
 
-> Essential context for AI coding assistants. See `agent_docs/` for detailed guides.
+> Essential context for AI coding assistants. See `agent_docs/` for detailed
+> guides.
 
 ---
 
@@ -21,18 +22,18 @@ deployment via Pulumi.
 
 ## Directory Map
 
-| Path | Purpose | Notes |
-|------|---------|-------|
-| `src/llmaven/` | Main installable package | Core development |
-| `src/llmaven/v1/` | REST API v1 endpoints | Route handlers |
-| `src/llmaven/core/` | ML/AI components | Embeddings, retrieval, generation |
-| `src/llmaven/services/` | Business logic | Service orchestration |
-| `src/llmaven/schemas/` | Pydantic models | API contracts |
-| `src/llmaven/frontend/` | Streamlit UI | User interface |
-| `src/llmaven/agentic/` | Agentic RAG system | Ingestion, agents, vector store |
-| `src/llmaven/infrastructure/` | Pulumi resources | Azure deployment |
-| `archive/` | Archived code | **DO NOT MODIFY** |
-| `tests/` | Test suite | pytest |
+| Path                          | Purpose                  | Notes                             |
+| ----------------------------- | ------------------------ | --------------------------------- |
+| `src/llmaven/`                | Main installable package | Core development                  |
+| `src/llmaven/v1/`             | REST API v1 endpoints    | Route handlers                    |
+| `src/llmaven/core/`           | ML/AI components         | Embeddings, retrieval, generation |
+| `src/llmaven/services/`       | Business logic           | Service orchestration             |
+| `src/llmaven/schemas/`        | Pydantic models          | API contracts                     |
+| `src/llmaven/frontend/`       | Streamlit UI             | User interface                    |
+| `src/llmaven/agentic/`        | Agentic RAG system       | Ingestion, agents, vector store   |
+| `src/llmaven/infrastructure/` | Pulumi resources         | Azure deployment                  |
+| `archive/`                    | Archived code            | **DO NOT MODIFY**                 |
+| `tests/`                      | Test suite               | pytest                            |
 
 ---
 
@@ -61,15 +62,15 @@ pre-commit run --all-files                # Lint and format
 
 ## Key Technologies
 
-| Category | Technology | Purpose |
-|----------|------------|---------|
-| API | FastAPI | REST endpoints |
-| UI | Streamlit | Interactive frontend |
-| Vector DB | Qdrant | Semantic search |
-| LLM | LangChain + HuggingFace | RAG orchestration |
-| Agentic RAG | pydantic-ai + fastembed | Hybrid search with multi-vector embeddings |
-| Infra | Pulumi | Azure deployment |
-| Package Manager | Pixi | Dependencies |
+| Category        | Technology              | Purpose                                    |
+| --------------- | ----------------------- | ------------------------------------------ |
+| API             | FastAPI                 | REST endpoints                             |
+| UI              | Streamlit               | Interactive frontend                       |
+| Vector DB       | Qdrant                  | Semantic search                            |
+| LLM             | LangChain + HuggingFace | RAG orchestration                          |
+| Agentic RAG     | pydantic-ai + fastembed | Hybrid search with multi-vector embeddings |
+| Infra           | Pulumi                  | Azure deployment                           |
+| Package Manager | Pixi                    | Dependencies                               |
 
 ---
 
@@ -77,13 +78,13 @@ pre-commit run --all-files                # Lint and format
 
 Before starting work, review relevant docs in `agent_docs/`:
 
-| Document | When to Read |
-|----------|--------------|
-| [`adding_endpoints.md`](agent_docs/adding_endpoints.md) | Adding new API endpoints |
+| Document                                                | When to Read                     |
+| ------------------------------------------------------- | -------------------------------- |
+| [`adding_endpoints.md`](agent_docs/adding_endpoints.md) | Adding new API endpoints         |
 | [`code_conventions.md`](agent_docs/code_conventions.md) | Naming patterns, style questions |
-| [`commit_messages.md`](agent_docs/commit_messages.md) | Writing commit messages |
-| [`infrastructure.md`](agent_docs/infrastructure.md) | Pulumi/Azure deployment |
-| [`troubleshooting.md`](agent_docs/troubleshooting.md) | Debugging common issues |
+| [`commit_messages.md`](agent_docs/commit_messages.md)   | Writing commit messages          |
+| [`infrastructure.md`](agent_docs/infrastructure.md)     | Pulumi/Azure deployment          |
+| [`troubleshooting.md`](agent_docs/troubleshooting.md)   | Debugging common issues          |
 
 ---
 
@@ -97,7 +98,10 @@ Before starting work, review relevant docs in `agent_docs/`:
 
 ## Agentic RAG System
 
-The Agentic RAG system is a next-generation retrieval and question-answering system that combines hybrid search (Dense + Sparse + ColBERT) with intelligent agent-based answer generation. It provides superior retrieval accuracy compared to the legacy single-vector search system.
+The Agentic RAG system is a next-generation retrieval and question-answering
+system that combines hybrid search (Dense + Sparse + ColBERT) with intelligent
+agent-based answer generation. It provides superior retrieval accuracy compared
+to the legacy single-vector search system.
 
 ### Architecture Overview
 
@@ -132,6 +136,7 @@ The agentic RAG system consists of four main components:
 #### CLI Commands
 
 **Ingest Documents:**
+
 ```bash
 # Ingest documents from a directory
 llmaven agentic ingest ./docs
@@ -147,6 +152,7 @@ llmaven agentic ingest ./docs --batch-size 50
 ```
 
 **Search Knowledge Base:**
+
 ```bash
 # Basic hybrid search
 llmaven agentic search "What is machine learning?"
@@ -162,6 +168,7 @@ llmaven agentic search "query" --collection my-collection
 ```
 
 **Interactive Chat:**
+
 ```bash
 # Start interactive RAG chat
 llmaven agentic chat
@@ -199,6 +206,7 @@ for citation in response.citations:
 The agentic RAG system uses environment variables with the `AGENTIC_` prefix:
 
 **Qdrant Configuration:**
+
 ```bash
 AGENTIC_QDRANT_URL=http://localhost:6333
 AGENTIC_QDRANT_API_KEY=your-api-key  # Optional
@@ -206,6 +214,7 @@ AGENTIC_COLLECTION_NAME=agentic-rag
 ```
 
 **Embedding Models:**
+
 ```bash
 AGENTIC_DENSE_MODEL=sentence-transformers/all-MiniLM-L6-v2
 AGENTIC_SPARSE_MODEL=Qdrant/bm25
@@ -213,6 +222,7 @@ AGENTIC_COLBERT_MODEL=colbert-ir/colbertv2.0
 ```
 
 **LLM Configuration:**
+
 ```bash
 AGENTIC_LLM_PROVIDER=openai  # Options: openai, ollama, huggingface
 AGENTIC_LLM_MODEL=gpt-4o-mini
@@ -220,6 +230,7 @@ AGENTIC_HUGGINGFACE_MODEL=optional-local-model
 ```
 
 **Search Configuration:**
+
 ```bash
 AGENTIC_ENABLE_RERANK=true
 AGENTIC_PREFETCH_TOP_K=20
@@ -228,22 +239,26 @@ AGENTIC_FINAL_TOP_K=5
 
 ### Migration from Legacy System
 
-The agentic RAG system coexists with the legacy `core/retriever/` and `core/embeddings/` modules. During the transition period:
+The agentic RAG system coexists with the legacy `core/retriever/` and
+`core/embeddings/` modules. During the transition period:
 
-1. **Legacy endpoints remain functional**: `/v1/retrieve` and `/v1/generate` continue to work
-2. **New endpoints available**: `/v1/agentic/retrieve` and `/v1/agentic/chat` provide enhanced capabilities
-3. **Separate collections**: Agentic system uses its own Qdrant collections (default: `agentic-rag`)
+1. **Legacy endpoints remain functional**: `/v1/retrieve` and `/v1/generate`
+   continue to work
+2. **New endpoints available**: `/v1/agentic/retrieve` and `/v1/agentic/chat`
+   provide enhanced capabilities
+3. **Separate collections**: Agentic system uses its own Qdrant collections
+   (default: `agentic-rag`)
 4. **No breaking changes**: Existing code continues to work unchanged
 
 **Key Differences:**
 
-| Feature | Legacy System | Agentic System |
-|---------|--------------|----------------|
-| Embeddings | Single dense vector | Multi-vector (Dense + Sparse + ColBERT) |
-| Search | Single method | Hybrid (Prefetch + Rerank) |
-| Document Processing | Basic text extraction | `docling` with structure preservation |
-| Answer Generation | Simple prompt | Agent-based with citations |
-| Vector Store | Standard Qdrant | Named Vectors support |
+| Feature             | Legacy System         | Agentic System                          |
+| ------------------- | --------------------- | --------------------------------------- |
+| Embeddings          | Single dense vector   | Multi-vector (Dense + Sparse + ColBERT) |
+| Search              | Single method         | Hybrid (Prefetch + Rerank)              |
+| Document Processing | Basic text extraction | `docling` with structure preservation   |
+| Answer Generation   | Simple prompt         | Agent-based with citations              |
+| Vector Store        | Standard Qdrant       | Named Vectors support                   |
 
 **Migration Path:**
 
@@ -254,4 +269,5 @@ The agentic RAG system coexists with the legacy `core/retriever/` and `core/embe
 
 ---
 
-**Last Updated**: 2025-12-31 | **Maintained By**: LLMaven Development Team (UW SSEC)
+**Last Updated**: 2025-12-31 | **Maintained By**: LLMaven Development Team (UW
+SSEC)

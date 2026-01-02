@@ -1,39 +1,53 @@
 # Agentic RAG Implementation Roadmap (Phases 1-4)
 
-This plan details the roadmap for implementing the Agentic RAG system within `llmaven`, covering Phases 1 through 4 as outlined in the [AGENTIC_RAG_PLAN.md](./AGENTIC_RAG_PLAN.md) and informed by the [AGENTIC_RAG_FEEDBACK.md](./AGENTIC_RAG_FEEDBACK.md).
+This plan details the roadmap for implementing the Agentic RAG system within
+`llmaven`, covering Phases 1 through 4 as outlined in the
+[AGENTIC_RAG_PLAN.md](./AGENTIC_RAG_PLAN.md) and informed by the
+[AGENTIC_RAG_FEEDBACK.md](./AGENTIC_RAG_FEEDBACK.md).
 
 ## Architecture Decision
 
-> [!NOTE]
-> **Decision**: The new Agentic RAG modules will **eventually replace** the existing `core/retriever/` and `core/embeddings/` modules.
+> [!NOTE] **Decision**: The new Agentic RAG modules will **eventually replace**
+> the existing `core/retriever/` and `core/embeddings/` modules.
 >
-> The existing modules use `langchain` and `HuggingFaceEmbeddings`. The new components will use `fastembed` for multi-vector embeddings and direct `qdrant-client` for Named Vector support. During the transition, both will co-exist, but the legacy modules will be deprecated and removed in a future phase.
+> The existing modules use `langchain` and `HuggingFaceEmbeddings`. The new
+> components will use `fastembed` for multi-vector embeddings and direct
+> `qdrant-client` for Named Vector support. During the transition, both will
+> co-exist, but the legacy modules will be deprecated and removed in a future
+> phase.
 
 ### Deprecation Timeline
 
-| Phase | Milestone | Legacy Module Status |
-|-------|-----------|---------------------|
-| Phase 1-4 | Agentic RAG MVP | Legacy modules fully functional, no changes |
-| Phase 5 | Feature parity achieved | Add deprecation warnings to `core/retriever/` and `core/embeddings/` |
-| Phase 6 | Migration period (3 months) | Document migration path, provide conversion utilities |
-| Phase 7 | Legacy removal | Remove `core/retriever/` and `core/embeddings/` modules |
+| Phase     | Milestone                   | Legacy Module Status                                                 |
+| --------- | --------------------------- | -------------------------------------------------------------------- |
+| Phase 1-4 | Agentic RAG MVP             | Legacy modules fully functional, no changes                          |
+| Phase 5   | Feature parity achieved     | Add deprecation warnings to `core/retriever/` and `core/embeddings/` |
+| Phase 6   | Migration period (3 months) | Document migration path, provide conversion utilities                |
+| Phase 7   | Legacy removal              | Remove `core/retriever/` and `core/embeddings/` modules              |
 
 **Migration Path for Existing Users**:
+
 1. Existing Qdrant collections will continue to work with legacy `Retriever`
-2. New `QdrantManager` can import/convert legacy collections to Named Vectors format (conversion utility planned for Phase 5)
-3. API endpoints will maintain backward compatibility via versioning (`/v1/` vs `/v2/`)
+2. New `QdrantManager` can import/convert legacy collections to Named Vectors
+   format (conversion utility planned for Phase 5)
+3. API endpoints will maintain backward compatibility via versioning (`/v1/` vs
+   `/v2/`)
 4. Deprecation warnings will be logged 3 months before removal
 
 ---
 
 ## Phase 1: Project Scaffolding & Configuration
 
-**Goal**: Establish the project foundation with new dependencies and a dedicated `Settings` class for the agentic components.
+**Goal**: Establish the project foundation with new dependencies and a dedicated
+`Settings` class for the agentic components.
 
 ### Proposed Changes
 
 #### [MODIFY] `pyproject.toml`
-Add the following new dependencies to the core `dependencies` list with proper version constraints:
+
+Add the following new dependencies to the core `dependencies` list with proper
+version constraints:
+
 - `pydantic-ai` (Agent Framework)
 - `fastembed` (Multi-vector Embeddings: Dense, Sparse, ColBERT)
 - `docling` (Multi-format Document Processing)
@@ -52,19 +66,26 @@ Add the following new dependencies to the core `dependencies` list with proper v
  ]
 ```
 
-**Note**: The current `qdrant-client>=1.11.2,<1.12` constraint is compatible with Named Vectors (requires Qdrant 1.7.0+). Consider updating to `>=1.11.2,<2.0` to allow future versions, but verify ColBERT `MaxSim` multivector config is available in 1.11.2.
+**Note**: The current `qdrant-client>=1.11.2,<1.12` constraint is compatible
+with Named Vectors (requires Qdrant 1.7.0+). Consider updating to
+`>=1.11.2,<2.0` to allow future versions, but verify ColBERT `MaxSim`
+multivector config is available in 1.11.2.
 
 ---
 
 #### [NEW] `src/llmaven/agentic/settings.py`
-Create a new `Settings` class using `pydantic-settings` to manage configuration for the agentic components. This will live in a new `agentic/` directory.
+
+Create a new `Settings` class using `pydantic-settings` to manage configuration
+for the agentic components. This will live in a new `agentic/` directory.
 
 **⚠️ Important**: Follow the existing pattern from `src/llmaven/config.py`:
+
 - Use `pydantic_settings.BaseSettings`
 - Use `SettingsConfigDict` with `env_file`, `env_prefix`, `extra="ignore"`
 - Create a global instance for easy access
 
 **Implementation pattern:**
+
 ```python
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -76,7 +97,7 @@ class AgenticConfig(BaseSettings):
         extra="ignore",  # Ignore unexpected environment variables
         env_prefix="AGENTIC_",  # Consistent with API_ prefix pattern
     )
-    
+
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
     collection_name: str = "agentic-rag"
@@ -96,15 +117,20 @@ config = AgenticConfig()
 ```
 
 **Key fields:**
+
 - `qdrant_url: str` (default: `http://localhost:6333`)
 - `qdrant_api_key: Optional[str]`
-- `collection_name: str` (default: `agentic-rag`) - **Note**: Consider namespace prefix to avoid conflicts
-- `dense_model: str` (default: `sentence-transformers/all-MiniLM-L12-v2`) - **Updated**: Use L12 variant for 384-dim
+- `collection_name: str` (default: `agentic-rag`) - **Note**: Consider namespace
+  prefix to avoid conflicts
+- `dense_model: str` (default: `sentence-transformers/all-MiniLM-L12-v2`) -
+  **Updated**: Use L12 variant for 384-dim
 - `sparse_model: str` (default: `Qdrant/bm25`)
 - `colbert_model: str` (default: `colbert-ir/colbertv2.0`)
-- `llm_provider: str` (e.g., `openai`, `ollama`, `huggingface`) - **Added**: Support for HuggingFace
+- `llm_provider: str` (e.g., `openai`, `ollama`, `huggingface`) - **Added**:
+  Support for HuggingFace
 - `llm_model: str` (e.g., `gpt-4o-mini`)
-- `huggingface_model: str | None` - **Added**: For local HuggingFace model integration
+- `huggingface_model: str | None` - **Added**: For local HuggingFace model
+  integration
 - `enable_rerank: bool` (default: `True`)
 - `prefetch_top_k: int` (default: `20`)
 - `final_top_k: int` (default: `5`)
@@ -113,21 +139,24 @@ config = AgenticConfig()
 
 ## Pre-Phase 2: Technical Verification
 
-> [!IMPORTANT]
-> Before proceeding with Phase 2 implementation, the following technical verifications must be completed to ensure compatibility.
+> [!IMPORTANT] Before proceeding with Phase 2 implementation, the following
+> technical verifications must be completed to ensure compatibility.
 
 ### Qdrant Named Vectors Verification
 
-| Verification Item | Expected | Status |
-|-------------------|----------|--------|
-| Collection creation with 3 named vectors | Works | ✅ Verified (1.11.3) |
-| Sparse vector format (dict with `indices` and `values`) | Compatible | ✅ Verified |
-| `MultiVectorConfig` with `Comparator.MAX_SIM` exists | Available in 1.11.2+ | ✅ Verified |
+| Verification Item                                       | Expected             | Status               |
+| ------------------------------------------------------- | -------------------- | -------------------- |
+| Collection creation with 3 named vectors                | Works                | ✅ Verified (1.11.3) |
+| Sparse vector format (dict with `indices` and `values`) | Compatible           | ✅ Verified          |
+| `MultiVectorConfig` with `Comparator.MAX_SIM` exists    | Available in 1.11.2+ | ✅ Verified          |
 
-> [!TIP]
-> **Version Constraint Recommendation**: The current `qdrant-client>=1.11.2,<1.12` constraint in `pyproject.toml` is narrow but safe. After Phase 2 implementation is complete and tested, consider relaxing to `>=1.11.2,<2.0` for better future compatibility.
+> [!TIP] **Version Constraint Recommendation**: The current
+> `qdrant-client>=1.11.2,<1.12` constraint in `pyproject.toml` is narrow but
+> safe. After Phase 2 implementation is complete and tested, consider relaxing
+> to `>=1.11.2,<2.0` for better future compatibility.
 
 **Test Script**:
+
 ```python
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -159,13 +188,14 @@ print("✅ Named Vectors with ColBERT MaxSim verified!")
 
 ### fastembed Model Verification
 
-| Model | Expected Dimensions | Status |
-|-------|---------------------|--------|
-| `sentence-transformers/all-MiniLM-L12-v2` | 384 | ⏳ Pending |
-| `Qdrant/bm25` | Sparse (dict format) | ⏳ Pending |
-| `colbert-ir/colbertv2.0` | 128 per token | ⏳ Pending |
+| Model                                     | Expected Dimensions  | Status     |
+| ----------------------------------------- | -------------------- | ---------- |
+| `sentence-transformers/all-MiniLM-L12-v2` | 384                  | ⏳ Pending |
+| `Qdrant/bm25`                             | Sparse (dict format) | ⏳ Pending |
+| `colbert-ir/colbertv2.0`                  | 128 per token        | ⏳ Pending |
 
 **Test Script**:
+
 ```python
 from fastembed import TextEmbedding, SparseTextEmbedding, LateInteractionTextEmbedding
 
@@ -190,45 +220,55 @@ print(f"✅ ColBERT model: {colbert_vec.shape} shape")
 
 fastembed models are automatically cached to `~/.cache/fastembed/` on first use:
 
-| Aspect | Behavior |
-|--------|----------|
-| First download | Models downloaded automatically on first use |
+| Aspect         | Behavior                                                                |
+| -------------- | ----------------------------------------------------------------------- |
+| First download | Models downloaded automatically on first use                            |
 | Cache location | `~/.cache/fastembed/` (configurable via `FASTEMBED_CACHE_PATH` env var) |
-| Offline mode | Set `FASTEMBED_CACHE_PATH` to pre-downloaded models directory |
-| Cache size | ~500MB for all 3 models combined |
+| Offline mode   | Set `FASTEMBED_CACHE_PATH` to pre-downloaded models directory           |
+| Cache size     | ~500MB for all 3 models combined                                        |
 
 **Recommendations**:
+
 - Document first-run download behavior for users
 - For CI/CD: Pre-cache models or mock embedding calls
-- For air-gapped environments: Pre-download models and set `FASTEMBED_CACHE_PATH`
+- For air-gapped environments: Pre-download models and set
+  `FASTEMBED_CACHE_PATH`
 
 ---
 
 ## Phase 2: Qdrant Client & Ingestion Pipeline
 
-**Goal**: Build the ingestion pipeline from documents to Qdrant Points with **Named Vectors** (Dense, Sparse, ColBERT).
+**Goal**: Build the ingestion pipeline from documents to Qdrant Points with
+**Named Vectors** (Dense, Sparse, ColBERT).
 
 ### Proposed Changes
 
 #### [NEW] `src/llmaven/agentic/vector_store/qdrant_manager.py`
+
 Implement the `QdrantManager` class to handle all Qdrant interactions.
 
 **Key responsibilities:**
-- `ensure_collection()`: Create or verify the collection with Named Vectors config:
+
+- `ensure_collection()`: Create or verify the collection with Named Vectors
+  config:
   - `dense`: `size=384`, `distance=Cosine`
   - `sparse`: `index_type=Sparse`
   - `colbert`: `size=128`, `distance=Cosine`, `multivector_config=MaxSim`
 - `upsert_points(points: list[PointStruct])`: Batch upsert with rich payloads.
 - `search(query_vectors: dict, limit: int)`: Execute Prefetch + Rerank query.
-- `validate_collection_exists(collection_name: str)`: Check if collection exists before operations.
-- `delete_collection(collection_name: str, confirm: bool = False)`: Safe collection deletion.
+- `validate_collection_exists(collection_name: str)`: Check if collection exists
+  before operations.
+- `delete_collection(collection_name: str, confirm: bool = False)`: Safe
+  collection deletion.
 
 **⚠️ Verification Required**:
+
 - Confirm `MaxSim` is the correct config name in Qdrant 1.11.2
 - Verify ColBERT model produces 128-dim vectors
 - Test sparse vector format (dict vs list) compatibility
 
 **Error Handling**:
+
 - Raise `QdrantConnectionError` for connection issues
 - Raise `CollectionNotFoundError` when collection doesn't exist
 - Implement retry logic for transient failures
@@ -236,36 +276,49 @@ Implement the `QdrantManager` class to handle all Qdrant interactions.
 ---
 
 #### [NEW] `src/llmaven/agentic/ingestion/pipeline.py`
+
 Implement the `IngestionPipeline` class.
 
 **Key responsibilities:**
-1. **Load**: Traverse input directories, filter by supported file types (PDF, MD, TXT, etc.).
-2. **Parse**: Use `docling` to convert documents and extract `heading_hierarchy` metadata.
-   - **Fallback**: If `docling` fails, use basic text extraction (PyMuPDF for PDFs, file read for text)
+
+1. **Load**: Traverse input directories, filter by supported file types (PDF,
+   MD, TXT, etc.).
+2. **Parse**: Use `docling` to convert documents and extract `heading_hierarchy`
+   metadata.
+   - **Fallback**: If `docling` fails, use basic text extraction (PyMuPDF for
+     PDFs, file read for text)
 3. **Chunk**: Use `docling`'s Hybrid Chunking strategy.
-4. **Embed**: Use `fastembed` to generate 3 vectors per chunk (Dense, Sparse, ColBERT).
+4. **Embed**: Use `fastembed` to generate 3 vectors per chunk (Dense, Sparse,
+   ColBERT).
 5. **Upsert**: Construct `PointStruct` objects with:
    - `vectors`: `{"dense": [...], "sparse": {...}, "colbert": [...]}`
-   - `payload`: `{"text": "...", "file_path": "...", "heading_hierarchy": "...", "chunk_index": N, "content_hash": "..."}`
+   - `payload`:
+     `{"text": "...", "file_path": "...", "heading_hierarchy": "...", "chunk_index": N, "content_hash": "..."}`
 
 **Additional features:**
+
 - **Batch Processing**: Process documents in batches for large collections
 - **Progress Indicators**: Use `rich` for progress bars and status updates
-- **Collection Validation**: Check if collection exists and warn before overwriting (unless `--force` flag)
+- **Collection Validation**: Check if collection exists and warn before
+  overwriting (unless `--force` flag)
 - **Content Hashing**: Generate MD5/SHA256 hashes to detect duplicate content
 - **Error Recovery**: Continue processing remaining documents if one fails
 
 **Collection Naming**:
+
 - Validate collection names to prevent conflicts with existing collections
-- Consider namespace prefix: `agentic_{collection_name}` for automatic namespacing
+- Consider namespace prefix: `agentic_{collection_name}` for automatic
+  namespacing
 - Add `--force` flag to allow overwriting existing collections
 
 ---
 
 #### [NEW] `src/llmaven/agentic/__init__.py`
+
 Create the `agentic` package with proper module structure.
 
 **Package structure:**
+
 ```
 agentic/
 ├── __init__.py
@@ -289,29 +342,37 @@ agentic/
 
 ## Phase 3: Search Implementation
 
-**Goal**: Implement high-accuracy hybrid retrieval with Prefetch (Dense + Sparse) and Rerank (ColBERT).
+**Goal**: Implement high-accuracy hybrid retrieval with Prefetch (Dense +
+Sparse) and Rerank (ColBERT).
 
 ### Proposed Changes
 
 #### [NEW] `src/llmaven/agentic/search/hybrid_searcher.py`
+
 Implement the `HybridSearcher` class.
 
 **Key responsibilities:**
-1. **Query Embedding**: Generate Dense, Sparse, and ColBERT vectors for the input query using `fastembed`.
+
+1. **Query Embedding**: Generate Dense, Sparse, and ColBERT vectors for the
+   input query using `fastembed`.
 2. **Prefetch**: Execute parallel Qdrant queries:
-   - Dense: Top-K candidates from `dense` vector (configurable via `prefetch_top_k`).
+   - Dense: Top-K candidates from `dense` vector (configurable via
+     `prefetch_top_k`).
    - Sparse: Top-K candidates from `sparse` vector (BM25).
    - **Combination Strategy**: Union of results, then deduplicate by point ID
-3. **Rerank**: Use `colbert` vector with `MaxSim` to rerank the combined prefetch results (optional via `enable_rerank` flag).
+3. **Rerank**: Use `colbert` vector with `MaxSim` to rerank the combined
+   prefetch results (optional via `enable_rerank` flag).
 4. **Return**: Final list of `SearchResult` objects (top `final_top_k` results).
 
 **Prefetch Combination Strategy**:
+
 - Take union of Dense and Sparse results
 - Deduplicate by point ID (keep highest score)
 - If reranking disabled, return top-K by combined score
 - If reranking enabled, use ColBERT MaxSim for final ranking
 
 **`SearchResult` model:**
+
 ```python
 class SearchResult(BaseModel):
     text: str
@@ -323,6 +384,7 @@ class SearchResult(BaseModel):
 ```
 
 **Configuration**:
+
 - `prefetch_top_k`: Number of candidates from each prefetch method (default: 20)
 - `final_top_k`: Final number of results to return (default: 5)
 - `enable_rerank`: Whether to apply ColBERT reranking (default: True)
@@ -336,9 +398,11 @@ class SearchResult(BaseModel):
 ### Proposed Changes
 
 #### [NEW] `src/llmaven/agentic/agent/models.py`
+
 Define Pydantic models for structured output.
 
 **Key models:**
+
 ```python
 class Citation(BaseModel):
     source_file: str
@@ -354,34 +418,49 @@ class RAGResponse(BaseModel):
 ---
 
 #### [NEW] `src/llmaven/agentic/agent/rag_agent.py`
+
 Define `RAGAgent` using `pydantic-ai`.
 
 **Key responsibilities:**
+
 - Define `search_knowledge_base` tool that wraps `HybridSearcher`.
 - Configure structured output using `RAGResponse` model.
 - Use Dependency Injection for `QdrantManager` and `HybridSearcher`.
 
 **⚠️ LLM Provider Integration Strategy**:
 
-The current codebase uses HuggingFace models via `LanguageModel` class (`src/llmaven/core/generator/language_model.py`). `pydantic-ai` primarily supports OpenAI and Ollama out of the box.
+The current codebase uses HuggingFace models via `LanguageModel` class
+(`src/llmaven/core/generator/language_model.py`). `pydantic-ai` primarily
+supports OpenAI and Ollama out of the box.
 
 **Options**:
-1. **Option A (Recommended for MVP)**: Use `pydantic-ai` with OpenAI/Ollama for agentic features, keep HuggingFace separate for generation
-2. **Option B**: Create custom `pydantic-ai` provider adapter for HuggingFace models
-3. **Option C**: Use `pydantic-ai` for structured output only, call HuggingFace `LanguageModel` directly
+
+1. **Option A (Recommended for MVP)**: Use `pydantic-ai` with OpenAI/Ollama for
+   agentic features, keep HuggingFace separate for generation
+2. **Option B**: Create custom `pydantic-ai` provider adapter for HuggingFace
+   models
+3. **Option C**: Use `pydantic-ai` for structured output only, call HuggingFace
+   `LanguageModel` directly
 
 **Implementation Notes**:
-- If using OpenAI/Ollama: Configure via `AgenticConfig.llm_provider` and `llm_model`
+
+- If using OpenAI/Ollama: Configure via `AgenticConfig.llm_provider` and
+  `llm_model`
 - If using HuggingFace: Create adapter that wraps existing `LanguageModel` class
-- Consider caching agent instances similar to `generation_service.py` model caching
-- Handle API key requirements gracefully (warn if missing, provide clear error messages)
+- Consider caching agent instances similar to `generation_service.py` model
+  caching
+- Handle API key requirements gracefully (warn if missing, provide clear error
+  messages)
 
 ---
 
 #### [MODIFY] `src/llmaven/cli.py`
-Add new `typer` subcommands under an `agentic` group, following the existing pattern.
+
+Add new `typer` subcommands under an `agentic` group, following the existing
+pattern.
 
 **Implementation pattern** (consistent with `server_app` and `infra_app`):
+
 ```python
 agentic_app = typer.Typer(
     name="agentic",
@@ -392,6 +471,7 @@ app.add_typer(agentic_app)
 ```
 
 **New commands:**
+
 - `llmaven agentic ingest [DIRECTORIES]...`
   - Ingests documents from one or more directories.
   - Options:
@@ -404,7 +484,8 @@ app.add_typer(agentic_app)
   - Options:
     - `--top-k`: Final number of results (default: 5)
     - `--prefetch-k`: Prefetch candidates per method (default: 20)
-    - `--rerank/--no-rerank`: Enable/disable ColBERT reranking (default: enabled)
+    - `--rerank/--no-rerank`: Enable/disable ColBERT reranking (default:
+      enabled)
     - `--collection`: Collection name (default: from config)
 - `llmaven agentic chat`
   - Launches an interactive REPL for conversing with the agent.
@@ -420,24 +501,33 @@ app.add_typer(agentic_app)
 ### Coexistence with Existing Endpoints
 
 **Current Endpoints**:
+
 - `POST /v1/retrieve` - Uses legacy `Retriever` class
 - `POST /v1/generate` - Uses `LanguageModel` class
 
-**Recommended Approach**: Add new endpoints alongside existing ones during transition period.
+**Recommended Approach**: Add new endpoints alongside existing ones during
+transition period.
 
 #### [NEW] `src/llmaven/v1/endpoints/agentic_retrieve.py`
+
 Create new endpoint for agentic retrieval:
+
 - `POST /v1/agentic/retrieve` - Uses `HybridSearcher`
-- Request schema similar to existing `/v1/retrieve` but with agentic-specific options
+- Request schema similar to existing `/v1/retrieve` but with agentic-specific
+  options
 - Response includes `SearchResult` objects with scores
 
 #### [NEW] `src/llmaven/v1/endpoints/agentic_chat.py`
+
 Create new endpoint for agentic chat:
+
 - `POST /v1/agentic/chat` - Uses `RAGAgent`
-- Request: `{"query": str, "collection": str | None, "conversation_id": str | None}`
+- Request:
+  `{"query": str, "collection": str | None, "conversation_id": str | None}`
 - Response: `RAGResponse` with structured citations
 
 **Future Migration Path**:
+
 - Phase 5+: Gradually migrate existing endpoints to use agentic system
 - Add deprecation warnings to legacy endpoints
 - Provide migration guide for API consumers
@@ -477,6 +567,7 @@ class SearchError(AgenticRAGError):
 ```
 
 **Error Handling Patterns**:
+
 - Use specific exceptions in services
 - Convert to `HTTPException` in API endpoints
 - Log errors with context (collection name, query, etc.)
@@ -488,25 +579,28 @@ class SearchError(AgenticRAGError):
 
 ### Automated Tests
 
-| Test File | Description |
-|-----------|-------------|
-| `tests/agentic/test_settings.py` | Verify `Settings` loads from env and defaults. |
-| `tests/agentic/test_ingestion.py` | Test `IngestionPipeline` chunking and embedding logic (mocked embeddings). |
-| `tests/agentic/test_qdrant_manager.py` | Test `QdrantManager` collection creation/upsert (mocked client). |
-| `tests/agentic/test_hybrid_searcher.py` | Test `HybridSearcher` prefetch/rerank logic (mocked Qdrant). |
-| `tests/agentic/test_rag_agent.py` | Test `RAGAgent` tool calling and structured output. |
-| `tests/agentic/test_cli.py` | Test CLI commands (ingest, search, chat). |
-| `tests/agentic/test_api_endpoints.py` | Test new API endpoints (`/v1/agentic/retrieve`, `/v1/agentic/chat`). |
-| `tests/agentic/test_integration.py` | Integration tests comparing agentic vs legacy retrieval. |
+| Test File                               | Description                                                                |
+| --------------------------------------- | -------------------------------------------------------------------------- |
+| `tests/agentic/test_settings.py`        | Verify `Settings` loads from env and defaults.                             |
+| `tests/agentic/test_ingestion.py`       | Test `IngestionPipeline` chunking and embedding logic (mocked embeddings). |
+| `tests/agentic/test_qdrant_manager.py`  | Test `QdrantManager` collection creation/upsert (mocked client).           |
+| `tests/agentic/test_hybrid_searcher.py` | Test `HybridSearcher` prefetch/rerank logic (mocked Qdrant).               |
+| `tests/agentic/test_rag_agent.py`       | Test `RAGAgent` tool calling and structured output.                        |
+| `tests/agentic/test_cli.py`             | Test CLI commands (ingest, search, chat).                                  |
+| `tests/agentic/test_api_endpoints.py`   | Test new API endpoints (`/v1/agentic/retrieve`, `/v1/agentic/chat`).       |
+| `tests/agentic/test_integration.py`     | Integration tests comparing agentic vs legacy retrieval.                   |
 
 ### Manual Verification
 
-1. **Infrastructure**: Start Qdrant Docker (`docker run -p 6333:6333 qdrant/qdrant`).
-2. **Ingestion**: Run `llmaven agentic ingest ./docs` on sample docs. Verify in Qdrant UI:
+1. **Infrastructure**: Start Qdrant Docker
+   (`docker run -p 6333:6333 qdrant/qdrant`).
+2. **Ingestion**: Run `llmaven agentic ingest ./docs` on sample docs. Verify in
+   Qdrant UI:
    - Collection `agentic-rag` exists.
    - Points have `dense`, `sparse`, `colbert` named vectors.
    - Payloads contain `text`, `file_path`, `heading_hierarchy`.
-3. **Search**: Run `llmaven agentic search "explain the architecture"`. Manually inspect:
+3. **Search**: Run `llmaven agentic search "explain the architecture"`. Manually
+   inspect:
    - Results are relevant.
    - Keyword-heavy vs semantic-heavy queries return appropriate results.
    - Reranking improves result quality.
@@ -548,6 +642,7 @@ class SearchError(AgenticRAGError):
 ## Implementation Checklist
 
 ### Phase 1: Project Scaffolding & Configuration
+
 - [x] Verify all new dependencies support Python 3.12
 - [x] Test Qdrant Named Vectors with current client version (1.11.2)
 - [x] Add dependencies to `pyproject.toml` with proper version constraints
@@ -557,6 +652,7 @@ class SearchError(AgenticRAGError):
 - [x] Create exception hierarchy in `agentic/exceptions.py`
 
 ### Phase 2: Qdrant Client & Ingestion Pipeline
+
 - [x] Verify ColBERT `MaxSim` configuration with Qdrant 1.11.2
 - [x] Implement `QdrantManager` with Named Vectors support
 - [x] Add collection validation and conflict prevention
@@ -566,6 +662,7 @@ class SearchError(AgenticRAGError):
 - [x] Add content hashing for duplicate detection
 
 ### Phase 3: Search Implementation
+
 - [x] Implement `HybridSearcher` with prefetch logic
 - [x] Document and implement prefetch combination strategy
 - [x] Add optional ColBERT reranking
@@ -573,53 +670,65 @@ class SearchError(AgenticRAGError):
 - [x] Add configurable `top-k` parameters
 
 ### Phase 4: Basic Agent & CLI Integration
+
 - [x] Decide on LLM provider integration strategy (OpenAI/Ollama vs HuggingFace)
 - [x] Implement `RAGAgent` with `pydantic-ai` or adapter
 - [x] Create `RAGResponse` and `Citation` models
 - [x] Add CLI commands following existing Typer pattern
 - [x] Create new API endpoints (`/v1/agentic/retrieve`, `/v1/agentic/chat`)
-- [x] Add comprehensive test suite (test_rag_agent.py, test_cli.py, test_api_endpoints.py)
+- [x] Add comprehensive test suite (test_rag_agent.py, test_cli.py,
+      test_api_endpoints.py)
 - [x] Update documentation (AGENTS.md, README.md)
 
 ---
 
 ## Summary of Plan Updates
 
-This implementation plan has been updated based on comprehensive codebase evaluation. Key improvements include:
+This implementation plan has been updated based on comprehensive codebase
+evaluation. Key improvements include:
 
 ### ✅ **Compatibility & Integration**
+
 - Added Python 3.12 compatibility verification requirements
 - Clarified Qdrant client version compatibility (1.11.2 supports Named Vectors)
 - Defined API integration strategy (coexistence with legacy endpoints)
 - Specified LLM provider integration options (OpenAI/Ollama vs HuggingFace)
 
 ### ✅ **Code Quality & Patterns**
-- Updated settings to follow existing `config.py` pattern with `pydantic-settings`
+
+- Updated settings to follow existing `config.py` pattern with
+  `pydantic-settings`
 - Added proper exception hierarchy for error handling
 - Specified CLI command structure following existing Typer patterns
 - Added collection naming conflict prevention
 
 ### ✅ **Technical Corrections**
+
 - Updated dense model default to `all-MiniLM-L12-v2` (384-dim verified)
 - Added prefetch combination strategy documentation
 - Clarified ColBERT `MaxSim` configuration requirements
-- Added configurable parameters (`prefetch_top_k`, `final_top_k`, `enable_rerank`)
+- Added configurable parameters (`prefetch_top_k`, `final_top_k`,
+  `enable_rerank`)
 
 ### ✅ **Enhanced Features**
+
 - Added batch processing for large document sets
 - Implemented progress indicators using `rich`
 - Added error recovery and fallback parsing
 - Included content hashing for duplicate detection
 
 ### ✅ **Testing & Documentation**
+
 - Expanded test coverage (integration tests, API endpoint tests)
 - Added documentation requirements (AGENTS.md, README.md, Migration Guide)
 - Included manual verification steps for all phases
 
 ### ✅ **Production Readiness**
+
 - Added error handling patterns and exception hierarchy
 - Specified retry logic for Qdrant operations
 - Included validation and safety checks (collection overwrite prevention)
 - Added comprehensive implementation checklist
 
-This updated plan ensures seamless integration with the existing `llmaven` codebase while maintaining code quality standards and production readiness.
+This updated plan ensures seamless integration with the existing `llmaven`
+codebase while maintaining code quality standards and production readiness.

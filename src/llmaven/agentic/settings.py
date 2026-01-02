@@ -61,4 +61,3 @@ class AgenticConfig(BaseSettings):
 
 # Global configuration instance
 config = AgenticConfig()
-

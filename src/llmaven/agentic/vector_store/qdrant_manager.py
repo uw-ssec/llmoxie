@@ -223,7 +223,7 @@ class QdrantManager:
             if enable_rerank and "colbert" in query_vectors and deduplicated:
                 # Extract point IDs from prefetch results for filtering
                 prefetch_ids = {point.id for point in deduplicated}
-                
+
                 # Query ColBERT for reranking (Qdrant will use MaxSim automatically)
                 # Query more candidates than needed to ensure we get prefetch results
                 rerank_results = self.client.query_points(
@@ -233,7 +233,7 @@ class QdrantManager:
                     limit=min(len(deduplicated) * 2, 100),  # Query more to get prefetch candidates
                     using="colbert",
                 )
-                
+
                 # Filter to only include prefetch candidates and return top-K
                 reranked_filtered = [
                     point for point in rerank_results.points
@@ -306,4 +306,3 @@ class QdrantManager:
             raise
         except Exception as e:
             raise QdrantConnectionError(f"Failed to delete collection: {e}") from e
-

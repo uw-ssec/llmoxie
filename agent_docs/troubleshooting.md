@@ -20,11 +20,13 @@ print([c.name for c in client.get_collections().collections])
 ```
 
 **Common Causes**:
+
 - Wrong collection name
 - Incorrect Qdrant path
 - Collection not yet created
 
-**Solution**: Verify the collection exists and the path matches your configuration.
+**Solution**: Verify the collection exists and the path matches your
+configuration.
 
 ---
 
@@ -57,6 +59,7 @@ llmaven server serve --env development --reload
 ```
 
 Check for:
+
 - Port 8000 already in use (`lsof -i :8000`)
 - Missing environment variables
 - Import errors in modules

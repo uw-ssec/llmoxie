@@ -12,4 +12,3 @@ __all__ = [
 
 from llmaven.agentic.agent.rag_agent import RAGAgent, RAGAgentDependencies
 from llmaven.agentic.agent.models import Citation, RAGResponse
-
