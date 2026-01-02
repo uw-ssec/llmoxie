@@ -248,13 +248,13 @@ class TestAzureProvider:
             http_call_kwargs = mock_http_client_class.call_args[1]
             assert http_call_kwargs["params"]["api-version"] == "2024-10-21"
             assert http_call_kwargs["headers"]["api-key"] == "test-key"
-            
+
             mock_provider_class.assert_called_once()
             provider_call_kwargs = mock_provider_class.call_args[1]
             assert provider_call_kwargs["base_url"] == "https://myresource.openai.azure.com/openai/deployments/gpt-4o-deployment"
             assert provider_call_kwargs["api_key"] == "test-key"
             assert provider_call_kwargs["http_client"] == mock_http_client_instance
-            
+
             mock_model_class.assert_called_once_with(
                 "gpt-4o-deployment",
                 provider=mock_provider_instance,
@@ -283,7 +283,7 @@ class TestAzureProvider:
             mock_provider_class.assert_called_once()
             provider_call_kwargs = mock_provider_class.call_args[1]
             assert provider_call_kwargs["base_url"] == "https://myresource.openai.azure.com/openai/deployments/gpt-4o"
-            
+
             mock_model_class.assert_called_once_with(
                 "gpt-4o",
                 provider=mock_provider_instance,

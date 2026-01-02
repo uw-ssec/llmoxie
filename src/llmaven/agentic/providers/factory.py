@@ -55,7 +55,7 @@ def _create_openai_model() -> OpenAIChatModel:
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min total, 10 sec connect
     )
-    
+
     provider = OpenAIProvider(http_client=http_client)
     return OpenAIChatModel(config.llm_model, provider=provider)
 
@@ -114,13 +114,13 @@ def _create_litellm_model() -> OpenAIChatModel:
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min total, 10 sec connect
     )
-    
+
     provider = OpenAIProvider(
         base_url=config.litellm_api_base,
         api_key=config.litellm_api_key or "dummy",  # Some proxies don't require keys
         http_client=http_client,
     )
-    
+
     return OpenAIChatModel(model_name, provider=provider)
 
 
