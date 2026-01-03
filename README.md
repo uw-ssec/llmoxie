@@ -21,6 +21,8 @@ individual researchers.
   model generation
 - **Vector Database**: Qdrant-based document storage with semantic search (MMR -
   Maximal Marginal Relevance)
+- **Agentic RAG System** (NEW): Next-generation hybrid search with multi-vector
+  embeddings (Dense + Sparse + ColBERT) and intelligent agent-based Q&A
 - **Flexible Models**:
   - Embedding models via HuggingFace (default:
     sentence-transformers/all-MiniLM-L12-v2)
@@ -147,7 +149,78 @@ LLMaven uses multiple Pixi environments for different components:
 
 ## Usage
 
-### Option 1: Local Development (API and UI)
+### Option 1: Agentic RAG (Recommended for New Projects)
+
+The agentic RAG system provides superior retrieval accuracy with hybrid search
+and intelligent agent-based Q&A.
+
+#### Quick Start
+
+1. **Start Qdrant** (required for vector storage):
+
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+2. **Ingest Documents**:
+
+```bash
+# Enter the llmaven environment
+pixi shell -e llmaven
+
+# Ingest documents from a directory
+llmaven agentic ingest ./docs
+
+# Or ingest from multiple directories
+llmaven agentic ingest ./docs ./papers --collection research-docs
+```
+
+3. **Search the Knowledge Base**:
+
+```bash
+# Hybrid search with reranking
+llmaven agentic search "What is machine learning?"
+
+# Search without reranking (faster)
+llmaven agentic search "vector embeddings" --no-rerank
+
+# Custom top-k results
+llmaven agentic search "transformer architecture" --top-k 10
+```
+
+4. **Interactive Chat**:
+
+```bash
+# Start interactive RAG chat
+llmaven agentic chat
+
+# Use custom collection or LLM provider
+llmaven agentic chat --collection my-docs --provider ollama --model llama2
+```
+
+#### Configuration
+
+Set environment variables with `AGENTIC_` prefix:
+
+```bash
+# Qdrant configuration
+export AGENTIC_QDRANT_URL=http://localhost:6333
+export AGENTIC_COLLECTION_NAME=agentic-rag
+
+# LLM configuration
+export AGENTIC_LLM_PROVIDER=openai
+export AGENTIC_LLM_MODEL=gpt-4o-mini
+
+# Search configuration
+export AGENTIC_ENABLE_RERANK=true
+export AGENTIC_PREFETCH_TOP_K=20
+export AGENTIC_FINAL_TOP_K=5
+```
+
+See [AGENTS.md](AGENTS.md) for complete configuration options and architecture
+details.
+
+### Option 2: Local Development (API and UI)
 
 The primary way to use LLMaven is through its FastAPI backend and Streamlit
 frontend.
@@ -346,7 +419,38 @@ When you deploy infrastructure, LLMaven creates:
 
 ## API Endpoints
 
-### Retrieval Endpoint
+### Agentic RAG Endpoints (NEW)
+
+**POST** `/v1/agentic/retrieve`
+
+Hybrid search with multi-vector retrieval (Dense, Sparse, ColBERT).
+
+```bash
+curl -X POST http://localhost:8000/v1/agentic/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is machine learning?",
+    "collection": "agentic-rag",
+    "top_k": 5,
+    "enable_rerank": true
+  }'
+```
+
+**POST** `/v1/agentic/chat`
+
+RAG chat with structured responses and citations.
+
+```bash
+curl -X POST http://localhost:8000/v1/agentic/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Explain transformers",
+    "collection": "agentic-rag",
+    "message_history": []
+  }'
+```
+
+### Legacy Endpoints
 
 **POST** `/v1/retrieve`
 
@@ -479,10 +583,16 @@ llmaven/
 │   ├── cli.py                # Command-line interface
 │   ├── config.py             # API configuration
 │   ├── main.py               # FastAPI application
-│   ├── core/                 # Core RAG components
+│   ├── core/                 # Core RAG components (legacy)
 │   │   ├── embeddings/       # Embedding model wrapper
 │   │   ├── generator/        # Language model wrapper
 │   │   └── retriever/        # Vector retrieval logic
+│   ├── agentic/              # Agentic RAG system (NEW)
+│   │   ├── agent/            # RAG agent with pydantic-ai
+│   │   ├── ingestion/        # Document ingestion pipeline
+│   │   ├── search/           # Hybrid search implementation
+│   │   ├── vector_store/     # Qdrant manager with Named Vectors
+│   │   └── settings.py       # Configuration management
 │   ├── frontend/             # Streamlit UI
 │   │   ├── app.py            # Main UI application
 │   │   └── config.py         # Frontend configuration
@@ -569,6 +679,35 @@ Changes to Python files will automatically restart the server.
 ## CLI Reference
 
 LLMaven provides a comprehensive command-line interface:
+
+### Agentic RAG Commands
+
+```bash
+# Ingest documents
+llmaven agentic ingest [DIRECTORIES]... [OPTIONS]
+
+Options:
+  --collection, -c TEXT    Collection name (defaults to config)
+  --force, -f              Overwrite existing collection
+  --batch-size, -b INT     Documents per batch (default: 100)
+
+# Search knowledge base
+llmaven agentic search <QUERY> [OPTIONS]
+
+Options:
+  --collection, -c TEXT    Collection name (defaults to config)
+  --top-k, -k INT          Number of results (default: 5)
+  --prefetch-k, -p INT     Prefetch candidates per method (default: 20)
+  --rerank/--no-rerank     Enable/disable ColBERT reranking
+
+# Interactive chat
+llmaven agentic chat [OPTIONS]
+
+Options:
+  --collection, -c TEXT    Collection name (defaults to config)
+  --provider TEXT          LLM provider (openai, ollama, huggingface)
+  --model, -m TEXT         LLM model identifier
+```
 
 ### Server Commands
 

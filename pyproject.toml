@@ -22,12 +22,16 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
+    "pydantic-ai>=0.1.0,<1.0",
+    "fastembed>=0.5.0,<1.0",
+    "docling>=1.0.0,<2.0",
+    "rich>=13.0.0,<14.0",
     "fastapi>=0.115.0,<1",
     "uvicorn>=0.30.0,<1",
     "httpx>=0.27.0",
     "pydantic>=2.12.4",
     "pydantic-settings>=2.0.0",
-    "typer>=0.9.0",
+    "typer>=0.21.0",
     "streamlit>=1.40.0",
     "langchain~=0.3.26",
     "langchain-community~=0.3.26",
@@ -51,6 +55,7 @@ test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
+    "testcontainers[qdrant]>=4.0.0",
 ]
 deploy = [
     "pulumi>=3.100.0",
