@@ -7,9 +7,7 @@ This module tests the CLI commands for agentic RAG operations:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
-from pathlib import Path
-import sys
+from unittest.mock import Mock, patch
 
 try:
     from typer.testing import CliRunner
@@ -17,8 +15,6 @@ except ImportError:
     # Fallback if typer.testing is not available
     CliRunner = None
 
-from llmaven.agentic.ingestion import IngestionPipeline
-from llmaven.agentic.search import HybridSearcher
 from llmaven.agentic.search.models import SearchResult
 from llmaven.agentic.exceptions import AgenticRAGError
 
@@ -202,9 +198,7 @@ class TestSearchCommand:
 
     @patch("llmaven.agentic.search.HybridSearcher")
     @patch("rich.console.Console")
-    def test_search_calls_searcher_correctly(
-        self, mock_console_cls, mock_searcher_cls
-    ):
+    def test_search_calls_searcher_correctly(self, mock_console_cls, mock_searcher_cls):
         """Test that search calls HybridSearcher correctly."""
         from llmaven.cli import search
 
@@ -241,13 +235,13 @@ class TestSearchCommand:
             prefetch_top_k=30,
             final_top_k=10,
         )
-        mock_searcher_instance.search.assert_called_once_with(query="test query", limit=10)
+        mock_searcher_instance.search.assert_called_once_with(
+            query="test query", limit=10
+        )
 
     @patch("llmaven.agentic.search.HybridSearcher")
     @patch("rich.console.Console")
-    def test_search_handles_empty_results(
-        self, mock_console_cls, mock_searcher_cls
-    ):
+    def test_search_handles_empty_results(self, mock_console_cls, mock_searcher_cls):
         """Test that search handles empty results gracefully."""
         from llmaven.cli import search
 
@@ -265,9 +259,7 @@ class TestSearchCommand:
 
     @patch("llmaven.agentic.search.HybridSearcher")
     @patch("rich.console.Console")
-    def test_search_handles_agentic_error(
-        self, mock_console_cls, mock_searcher_cls
-    ):
+    def test_search_handles_agentic_error(self, mock_console_cls, mock_searcher_cls):
         """Test that search handles AgenticRAGError correctly."""
         from llmaven.cli import search
         import typer
@@ -293,9 +285,7 @@ class TestChatCommand:
 
     @patch("llmaven.agentic.agent.RAGAgent")
     @patch("rich.console.Console")
-    def test_chat_initializes_agent_correctly(
-        self, mock_console_cls, mock_agent_cls
-    ):
+    def test_chat_initializes_agent_correctly(self, mock_console_cls, mock_agent_cls):
         """Test that chat initializes RAGAgent correctly."""
         from llmaven.cli import chat
 
@@ -329,9 +319,7 @@ class TestChatCommand:
 
     @patch("llmaven.agentic.agent.RAGAgent")
     @patch("rich.console.Console")
-    def test_chat_handles_exit_command(
-        self, mock_console_cls, mock_agent_cls
-    ):
+    def test_chat_handles_exit_command(self, mock_console_cls, mock_agent_cls):
         """Test that chat handles exit command."""
         from llmaven.cli import chat
 
@@ -362,16 +350,12 @@ class TestChatCommand:
 
     @patch("llmaven.agentic.agent.RAGAgent")
     @patch("rich.console.Console")
-    def test_chat_handles_agentic_error(
-        self, mock_console_cls, mock_agent_cls
-    ):
+    def test_chat_handles_agentic_error(self, mock_console_cls, mock_agent_cls):
         """Test that chat handles AgenticRAGError correctly."""
         from llmaven.cli import chat
 
         mock_agent_instance = Mock()
-        mock_agent_instance.run_sync = Mock(
-            side_effect=AgenticRAGError("Agent failed")
-        )
+        mock_agent_instance.run_sync = Mock(side_effect=AgenticRAGError("Agent failed"))
         mock_agent_cls.return_value = mock_agent_instance
 
         mock_console = Mock()

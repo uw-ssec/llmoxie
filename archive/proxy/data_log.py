@@ -13,9 +13,7 @@ from typing import Optional, Dict, Any
 import fsspec  # type: ignore
 
 handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter(
-    '[DataLogger] %(levelname)s - %(message)s'
-))
+handler.setFormatter(logging.Formatter("[DataLogger] %(levelname)s - %(message)s"))
 
 logger = logging.getLogger(__name__)
 logger.addHandler(handler)
@@ -53,8 +51,7 @@ class DataLogger:
 
         # Create filesystem instance
         self.fs = fsspec.filesystem(
-            "az" if self.storage_type == "azure" else "file",
-            **self.storage_options
+            "az" if self.storage_type == "azure" else "file", **self.storage_options
         )
 
         # Ensure base directory/container exists
@@ -66,7 +63,9 @@ class DataLogger:
             # log at debug level so it can be inspected if needed.
             logger.debug("Could not create base path '%s': %s", self.base_path, e)
 
-    def _get_log_filename(self, model: Optional[str] = None, user_id: Optional[str] = None) -> str:
+    def _get_log_filename(
+        self, model: Optional[str] = None, user_id: Optional[str] = None
+    ) -> str:
         """
         Generate log filename based on user, model and date.
 
@@ -109,11 +108,11 @@ class DataLogger:
 
         filename = self._get_log_filename(model, user_id)
         full_path = self._get_full_path(filename)
-        log_line = json.dumps(log_entry) + '\n'
+        log_line = json.dumps(log_entry) + "\n"
 
         try:
             # Append to file (fsspec handles both local and Azure)
-            with self.fs.open(full_path, 'a', encoding='utf-8') as f:
+            with self.fs.open(full_path, "a", encoding="utf-8") as f:
                 f.write(log_line)
         except (OSError, IOError) as e:
             logger.error("Error logging to storage: %s", e)

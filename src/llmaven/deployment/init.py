@@ -177,13 +177,13 @@ def initialize_config(
     print()
     print("📖 Next Steps:")
     print()
-    print(f"1. Review and edit the configuration file:")
+    print("1. Review and edit the configuration file:")
     print(f"   vim {output_path}")
     print()
     print("2. Set required secrets (choose one method):")
     print()
     print("   Option A: Export as environment variables:")
-    print("   export LLMAVEN_SECRETS_LITELLM_MASTER_KEY=\"$(openssl rand -base64 32)\"")
+    print('   export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="$(openssl rand -base64 32)"')
     print('   export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-azure-openai-key"')
     print('   export LLMAVEN_SECRETS_ANTHROPIC_API_KEY="your-anthropic-key"')
     print()
@@ -195,11 +195,15 @@ def initialize_config(
     print()
     print("3. Validate the configuration:")
     print(f"   llmaven validate --config {output_path}")
-    print(f"   # Or with .env file: llmaven validate --config {output_path} --env-file .env.secrets")
+    print(
+        f"   # Or with .env file: llmaven validate --config {output_path} --env-file .env.secrets"
+    )
     print()
     print("4. Deploy infrastructure:")
     print(f"   llmaven deploy --config {output_path} --preview")
-    print(f"   # Or with .env file: llmaven deploy --config {output_path} --env-file .env.secrets --preview")
+    print(
+        f"   # Or with .env file: llmaven deploy --config {output_path} --env-file .env.secrets --preview"
+    )
     print()
     print("📚 Documentation:")
     print("   https://github.com/uw-ssec/llmaven/blob/main/DEPLOYMENT_PLAN.md")

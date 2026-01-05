@@ -149,6 +149,7 @@ def serve(
         # Calculate workers if not specified
         if workers is None:
             import multiprocessing
+
             workers = (multiprocessing.cpu_count() * 2) + 1
 
         typer.echo(
@@ -220,7 +221,6 @@ def ui(
         Launch without opening browser:
             llmaven ui --no-browser
     """
-    import os
     import subprocess
     from pathlib import Path
 
@@ -373,7 +373,7 @@ def validate(
             skip_secrets=skip_secrets,
             env_file_path=env_file_path,
         )
-    except ValidationError as e:
+    except ValidationError:
         sys.exit(1)
     except Exception as e:
         typer.echo(f"✗ Validation failed: {e}", err=True)
@@ -484,7 +484,7 @@ def destroy(
     config_path = Path(config) if config else Path("llmaven-config.yaml")
 
     if not auto_approve:
-        confirm = typer.confirm(
+        typer.confirm(
             "⚠️  This will destroy all infrastructure. Are you sure?",
             abort=True,
         )
@@ -689,7 +689,7 @@ def ingest(
                 raise typer.Exit(code=1)
             dir_paths_str.append(str(path))
 
-        console.print(f"[blue]→[/blue] Initializing ingestion pipeline...")
+        console.print("[blue]→[/blue] Initializing ingestion pipeline...")
 
         # Create ingestion pipeline
         pipeline = IngestionPipeline(
@@ -698,14 +698,14 @@ def ingest(
         )
 
         # Ingest documents
-        console.print(f"[blue]→[/blue] Ingesting documents from {len(dir_paths_str)} director{'y' if len(dir_paths_str) == 1 else 'ies'}...")
+        console.print(
+            f"[blue]→[/blue] Ingesting documents from {len(dir_paths_str)} director{'y' if len(dir_paths_str) == 1 else 'ies'}..."
+        )
 
         # Ingest all directories at once (ingest() accepts list of directory strings)
         pipeline.ingest(directories=dir_paths_str, force=force)
 
-        console.print(
-            f"\n[green]✓[/green] Ingestion complete!"
-        )
+        console.print("\n[green]✓[/green] Ingestion complete!")
 
     except AgenticRAGError as e:
         console_err.print(f"[red]✗[/red] Ingestion failed: {e}")
@@ -765,7 +765,6 @@ def search(
     """
     import sys
     from rich.console import Console
-    from rich.table import Table
 
     from llmaven.agentic.search import HybridSearcher
     from llmaven.agentic.exceptions import AgenticRAGError
@@ -792,14 +791,20 @@ def search(
             return
 
         # Display results
-        console.print(f"\n[green]✓[/green] Found {len(results)} result{'s' if len(results) != 1 else ''}:\n")
+        console.print(
+            f"\n[green]✓[/green] Found {len(results)} result{'s' if len(results) != 1 else ''}:\n"
+        )
 
         for i, result in enumerate(results, 1):
-            console.print(f"[bold cyan]Result {i}[/bold cyan] (score: {result.score:.4f})")
+            console.print(
+                f"[bold cyan]Result {i}[/bold cyan] (score: {result.score:.4f})"
+            )
             console.print(f"[dim]Source:[/dim] {result.file_path}")
             if result.heading_hierarchy:
                 console.print(f"[dim]Section:[/dim] {result.heading_hierarchy}")
-            console.print(f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}\n")
+            console.print(
+                f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}\n"
+            )
 
     except AgenticRAGError as e:
         console_err.print(f"[red]✗[/red] Search failed: {e}")
@@ -950,12 +955,14 @@ def chat(
                 response = agent.run_sync(query=query, message_history=message_history)
 
                 # Display answer
-                console.print(f"\n[bold green]Assistant:[/bold green]")
+                console.print("\n[bold green]Assistant:[/bold green]")
                 console.print(Markdown(response.answer))
 
                 # Display citations
                 if response.citations:
-                    console.print(f"\n[dim]Citations ({len(response.citations)}):[/dim]")
+                    console.print(
+                        f"\n[dim]Citations ({len(response.citations)}):[/dim]"
+                    )
                     for i, citation in enumerate(response.citations, 1):
                         console.print(
                             f"  [{i}] {citation.source_file} "
@@ -963,11 +970,15 @@ def chat(
                         )
                         console.print(f"      {citation.quote[:100]}...")
 
-                console.print(f"\n[dim]Confidence: {response.confidence:.2f} | Sources: {response.sources_used}[/dim]")
+                console.print(
+                    f"\n[dim]Confidence: {response.confidence:.2f} | Sources: {response.sources_used}[/dim]"
+                )
 
                 # Update message history
                 message_history.append({"role": "user", "content": query})
-                message_history.append({"role": "assistant", "content": response.answer})
+                message_history.append(
+                    {"role": "assistant", "content": response.answer}
+                )
 
             except Exception as e:
                 console_err.print(f"[red]✗[/red] Error: {e}")

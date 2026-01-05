@@ -37,7 +37,7 @@ class WebServiceConfig(BaseSettings):
 
     # CORS configuration
     cors_origins: List[str] = [
-        "*" # Allow everything
+        "*"  # Allow everything
     ]
     cors_allow_credentials: bool = True
     cors_allow_methods: List[str] = ["*"]

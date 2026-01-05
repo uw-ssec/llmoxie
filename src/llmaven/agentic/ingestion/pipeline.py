@@ -22,16 +22,24 @@ os.environ["DISABLE_TQDM"] = "1"
 # Use huggingface_hub's built-in API to disable progress bars
 try:
     from huggingface_hub.utils import disable_progress_bars
+
     disable_progress_bars()
 except ImportError:
     try:
         from huggingface_hub import disable_progress_bars
+
         disable_progress_bars()
     except ImportError:
         pass
 
 from fastembed import TextEmbedding, SparseTextEmbedding, LateInteractionTextEmbedding
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+)
 
 from llmaven.agentic.settings import config
 from llmaven.agentic.vector_store.qdrant_manager import QdrantManager
@@ -89,8 +97,11 @@ class IngestionPipeline:
         # Print a clear header message explaining what's happening
         # This appears BEFORE any HuggingFace Hub progress bars
         from rich.console import Console
+
         console = Console()
-        console.print("\n[yellow]📦 Loading embedding models (HuggingFace model files will be fetched if not cached)...[/yellow]")
+        console.print(
+            "\n[yellow]📦 Loading embedding models (HuggingFace model files will be fetched if not cached)...[/yellow]"
+        )
 
         try:
             # Load models - HuggingFace Hub may show "Fetching X files" progress bars
@@ -105,7 +116,9 @@ class IngestionPipeline:
 
             if self._colbert_model is None:
                 console.print(f"  [dim]• ColBERT model: {config.colbert_model}[/dim]")
-                self._colbert_model = LateInteractionTextEmbedding(model_name=config.colbert_model)
+                self._colbert_model = LateInteractionTextEmbedding(
+                    model_name=config.colbert_model
+                )
 
             console.print("[green]✅ Embedding models ready[/green]\n")
             self._models_initialized = True
@@ -138,7 +151,10 @@ class IngestionPipeline:
 
             # Recursively find supported files
             for file_path in dir_path.rglob("*"):
-                if file_path.is_file() and file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS:
+                if (
+                    file_path.is_file()
+                    and file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
+                ):
                     try:
                         # Read file content
                         if file_path.suffix.lower() == ".pdf":
@@ -146,13 +162,17 @@ class IngestionPipeline:
                             content = file_path.read_bytes()
                         else:
                             # Text files: read as string
-                            content = file_path.read_text(encoding="utf-8", errors="ignore")
+                            content = file_path.read_text(
+                                encoding="utf-8", errors="ignore"
+                            )
 
-                        documents.append({
-                            "file_path": str(file_path),
-                            "content": content,
-                        })
-                    except Exception as e:
+                        documents.append(
+                            {
+                                "file_path": str(file_path),
+                                "content": content,
+                            }
+                        )
+                    except Exception:
                         # Continue processing other files if one fails
                         continue
 
@@ -217,7 +237,11 @@ class IngestionPipeline:
 
         else:
             # Text-based files: use content directly
-            parsed["text"] = content if isinstance(content, str) else content.decode("utf-8", errors="ignore")
+            parsed["text"] = (
+                content
+                if isinstance(content, str)
+                else content.decode("utf-8", errors="ignore")
+            )
 
         return parsed
 
@@ -254,33 +278,39 @@ class IngestionPipeline:
                 # Create chunk when we have enough content (~500 chars)
                 chunk_text = ". ".join(current_chunk)
                 if len(chunk_text) > 500:
-                    chunks.append({
-                        "text": chunk_text,
-                        "file_path": file_path,
-                        "chunk_index": len(chunks),
-                        "heading_hierarchy": document.get("heading_hierarchy"),
-                    })
+                    chunks.append(
+                        {
+                            "text": chunk_text,
+                            "file_path": file_path,
+                            "chunk_index": len(chunks),
+                            "heading_hierarchy": document.get("heading_hierarchy"),
+                        }
+                    )
                     current_chunk = []
 
             # Add remaining content as final chunk
             if current_chunk:
                 chunk_text = ". ".join(current_chunk)
                 if chunk_text.strip():
-                    chunks.append({
-                        "text": chunk_text,
-                        "file_path": file_path,
-                        "chunk_index": len(chunks),
-                        "heading_hierarchy": document.get("heading_hierarchy"),
-                    })
+                    chunks.append(
+                        {
+                            "text": chunk_text,
+                            "file_path": file_path,
+                            "chunk_index": len(chunks),
+                            "heading_hierarchy": document.get("heading_hierarchy"),
+                        }
+                    )
 
         # If no chunks created (very short document), create one chunk
         if not chunks and text.strip():
-            chunks.append({
-                "text": text,
-                "file_path": file_path,
-                "chunk_index": 0,
-                "heading_hierarchy": document.get("heading_hierarchy"),
-            })
+            chunks.append(
+                {
+                    "text": text,
+                    "file_path": file_path,
+                    "chunk_index": 0,
+                    "heading_hierarchy": document.get("heading_hierarchy"),
+                }
+            )
 
         return chunks
 
@@ -336,7 +366,9 @@ class IngestionPipeline:
         except Exception as e:
             raise EmbeddingError(f"Failed to generate embeddings: {e}") from e
 
-    def upsert(self, embedded_chunks: list[dict[str, Any]], force: bool = False) -> None:
+    def upsert(
+        self, embedded_chunks: list[dict[str, Any]], force: bool = False
+    ) -> None:
         """Upsert embedded chunks to Qdrant.
 
         Converts embedded chunks to PointStruct objects and upserts them.
@@ -400,15 +432,20 @@ class IngestionPipeline:
             TaskProgressColumn(),
         ) as progress:
             # Load documents
-            task_load = progress.add_task("[cyan]Loading documents from directories...", total=None)
+            task_load = progress.add_task(
+                "[cyan]Loading documents from directories...", total=None
+            )
             documents = self.load(directories)
-            progress.update(task_load, description=f"[cyan]Found {len(documents)} document(s) to process")
+            progress.update(
+                task_load,
+                description=f"[cyan]Found {len(documents)} document(s) to process",
+            )
             progress.remove_task(task_load)
 
             # Process documents in batches
             total_chunks = 0
             for batch_start in range(0, len(documents), self.batch_size):
-                batch = documents[batch_start:batch_start + self.batch_size]
+                batch = documents[batch_start : batch_start + self.batch_size]
                 task_batch = progress.add_task(
                     f"Processing batch {batch_start // self.batch_size + 1}...",
                     total=len(batch),
@@ -423,19 +460,21 @@ class IngestionPipeline:
                         chunks = self.chunk(parsed)
                         all_chunks.extend(chunks)
                         progress.advance(task_batch)
-                    except Exception as e:
+                    except Exception:
                         # Continue processing other documents
                         continue
 
                 # Embed chunks (models should already be initialized)
-                task_embed = progress.add_task("[magenta]Embedding chunks...", total=len(all_chunks))
+                task_embed = progress.add_task(
+                    "[magenta]Embedding chunks...", total=len(all_chunks)
+                )
                 embedded_chunks = []
                 for chunk in all_chunks:
                     try:
                         embedded = self.embed(chunk)
                         embedded_chunks.append(embedded)
                         progress.advance(task_embed)
-                    except Exception as e:
+                    except Exception:
                         # Continue processing other chunks
                         continue
 
@@ -446,4 +485,7 @@ class IngestionPipeline:
                     progress.update(task_upsert, completed=1)
                     total_chunks += len(embedded_chunks)
 
-            progress.add_task(f"✅ Ingested {total_chunks} chunks from {len(documents)} documents", completed=1)
+            progress.add_task(
+                f"✅ Ingested {total_chunks} chunks from {len(documents)} documents",
+                completed=1,
+            )

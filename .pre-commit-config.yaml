@@ -25,6 +25,13 @@ repos:
         types_or: [yaml, markdown, html, css, scss, javascript, json]
         args: [--prose-wrap=always]
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.13.3"
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--show-fixes"]
+      - id: ruff-format
+
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.1"
     hooks:

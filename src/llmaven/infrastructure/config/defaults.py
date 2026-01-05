@@ -70,7 +70,6 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             min_replicas=1,
             max_replicas=2,
             env_vars={"MLFLOW_HOST": "0.0.0.0"},
-
         ),
         "litellm": LiteLLMConfig(
             enabled=True,
@@ -82,7 +81,6 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             max_replicas=2,
             config_file="docker/config.yaml",
             env_vars={"LITELLM_HOST": "0.0.0.0"},
-
         ),
         "llmaven_api": LLMavenAPIConfig(
             enabled=False,
@@ -93,7 +91,6 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             min_replicas=1,
             max_replicas=3,
             env_vars={},
-
         ),
         "tags": {
             "Environment": environment,

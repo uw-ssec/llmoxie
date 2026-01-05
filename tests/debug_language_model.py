@@ -4,15 +4,21 @@ from llmaven.core.generator.language_model import LanguageModel
 
 # Enable Hugging Face logs
 import transformers
+
 transformers.utils.logging.set_verbosity_info()  # Ensures logs appear
 
 # Set logging level
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 def test_language_model():
     logging.info("🚀 Starting LanguageModel Debugging...")
 
-    model_name = "allenai/OLMo-2-1124-7B-Instruct"  # Change this to your actual model name
+    model_name = (
+        "allenai/OLMo-2-1124-7B-Instruct"  # Change this to your actual model name
+    )
     cache_path = os.path.join(os.path.dirname(__file__), "../models")
     model_path = os.path.join(cache_path, model_name.replace("/", "_"))
 
@@ -54,6 +60,7 @@ def test_language_model():
     except Exception as e:
         logging.error(f"❌ Error during inference: {e}")
         return
+
 
 if __name__ == "__main__":
     test_language_model()

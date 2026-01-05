@@ -5,13 +5,9 @@ point upsertion, search operations, and error handling.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from qdrant_client import QdrantClient
+from unittest.mock import MagicMock, patch
 from qdrant_client.models import (
-    VectorParams,
     Distance,
-    SparseVectorParams,
-    MultiVectorConfig,
     MultiVectorComparator,
     PointStruct,
     ScoredPoint,
@@ -29,29 +25,41 @@ class TestQdrantManagerInitialization:
 
     def test_init_with_default_config(self):
         """Test initialization with default config."""
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient") as mock_client:
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient"
+        ) as mock_client:
             manager = QdrantManager()
             assert manager.qdrant_url == "http://localhost:6333"
             assert manager.qdrant_api_key is None
-            mock_client.assert_called_once_with(url="http://localhost:6333", api_key=None)
+            mock_client.assert_called_once_with(
+                url="http://localhost:6333", api_key=None
+            )
 
     def test_init_with_custom_url(self):
         """Test initialization with custom Qdrant URL."""
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient") as mock_client:
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient"
+        ) as mock_client:
             manager = QdrantManager(qdrant_url="http://custom:6333")
             assert manager.qdrant_url == "http://custom:6333"
             mock_client.assert_called_once_with(url="http://custom:6333", api_key=None)
 
     def test_init_with_api_key(self):
         """Test initialization with API key."""
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient") as mock_client:
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient"
+        ) as mock_client:
             manager = QdrantManager(qdrant_api_key="test-key")
             assert manager.qdrant_api_key == "test-key"
-            mock_client.assert_called_once_with(url="http://localhost:6333", api_key="test-key")
+            mock_client.assert_called_once_with(
+                url="http://localhost:6333", api_key="test-key"
+            )
 
     def test_init_connection_error(self):
         """Test that connection errors are caught and wrapped."""
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient") as mock_client:
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient"
+        ) as mock_client:
             mock_client.side_effect = Exception("Connection failed")
             with pytest.raises(QdrantConnectionError):
                 QdrantManager()
@@ -66,7 +74,10 @@ class TestQdrantManagerEnsureCollection:
         mock_client.get_collection.return_value = None
         mock_client.collection_exists.return_value = False
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             manager.ensure_collection("test-collection")
 
@@ -83,7 +94,10 @@ class TestQdrantManagerEnsureCollection:
             assert vectors_config["dense"].distance == Distance.COSINE
             assert vectors_config["colbert"].size == 128
             assert vectors_config["colbert"].distance == Distance.COSINE
-            assert vectors_config["colbert"].multivector_config.comparator == MultiVectorComparator.MAX_SIM
+            assert (
+                vectors_config["colbert"].multivector_config.comparator
+                == MultiVectorComparator.MAX_SIM
+            )
 
             # Verify sparse vectors config
             sparse_config = call_kwargs["sparse_vectors_config"]
@@ -94,7 +108,10 @@ class TestQdrantManagerEnsureCollection:
         mock_client = MagicMock()
         mock_client.collection_exists.return_value = True
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             manager.ensure_collection("existing-collection")
 
@@ -106,7 +123,10 @@ class TestQdrantManagerEnsureCollection:
         mock_client = MagicMock()
         mock_client.collection_exists.return_value = True
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             manager.ensure_collection("test-collection", force=True)
 
@@ -124,7 +144,10 @@ class TestQdrantManagerUpsertPoints:
         mock_client = MagicMock()
         mock_client.upsert.return_value = None  # Success
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             points = [
                 PointStruct(
@@ -148,7 +171,10 @@ class TestQdrantManagerUpsertPoints:
         """Test batch upsertion of multiple points."""
         mock_client = MagicMock()
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             points = [
                 PointStruct(
@@ -172,7 +198,10 @@ class TestQdrantManagerUpsertPoints:
         mock_client = MagicMock()
         mock_client.upsert.side_effect = Exception("Collection not found")
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             points = [PointStruct(id=1, vector={"dense": [0.1] * 384}, payload={})]
 
@@ -208,12 +237,15 @@ class TestQdrantManagerSearch:
         ]
 
         mock_client.query_points.side_effect = [
-            mock_dense_response,   # Dense query
+            mock_dense_response,  # Dense query
             mock_sparse_response,  # Sparse query
             mock_rerank_response,  # ColBERT rerank query
         ]
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             query_vectors = {
                 "dense": [0.1] * 384,
@@ -243,18 +275,23 @@ class TestQdrantManagerSearch:
         ]
 
         mock_client.query_points.side_effect = [
-            mock_dense_response,   # Dense query
+            mock_dense_response,  # Dense query
             mock_sparse_response,  # Sparse query
         ]
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             query_vectors = {
                 "dense": [0.1] * 384,
                 "sparse": {"indices": [1], "values": [0.5]},
             }
 
-            results = manager.search("test-collection", query_vectors, limit=5, enable_rerank=False)
+            results = manager.search(
+                "test-collection", query_vectors, limit=5, enable_rerank=False
+            )
 
             assert len(results) <= 5
 
@@ -267,7 +304,10 @@ class TestQdrantManagerValidation:
         mock_client = MagicMock()
         mock_client.collection_exists.return_value = True
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             assert manager.validate_collection_exists("test-collection") is True
 
@@ -276,7 +316,10 @@ class TestQdrantManagerValidation:
         mock_client = MagicMock()
         mock_client.collection_exists.return_value = False
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             assert manager.validate_collection_exists("nonexistent") is False
 
@@ -284,7 +327,10 @@ class TestQdrantManagerValidation:
         """Test delete_collection with confirmation."""
         mock_client = MagicMock()
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
             manager.delete_collection("test-collection", confirm=True)
 
@@ -294,7 +340,10 @@ class TestQdrantManagerValidation:
         """Test delete_collection raises error without confirmation."""
         mock_client = MagicMock()
 
-        with patch("llmaven.agentic.vector_store.qdrant_manager.QdrantClient", return_value=mock_client):
+        with patch(
+            "llmaven.agentic.vector_store.qdrant_manager.QdrantClient",
+            return_value=mock_client,
+        ):
             manager = QdrantManager()
 
             with pytest.raises(ValueError, match="explicit confirmation"):

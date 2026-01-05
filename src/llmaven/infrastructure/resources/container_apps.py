@@ -190,7 +190,8 @@ def create_container_app_with_key_vault_secrets(
         for secret_name in key_vault_secret_refs.values():
             # Fallback: construct URI from key_vault_uri (legacy behavior)
             secret_uri = key_vault_uri.apply(
-                lambda vault_uri, sn=secret_name: f"{vault_uri.rstrip('/')}/secrets/{sn}"
+                lambda vault_uri,
+                sn=secret_name: f"{vault_uri.rstrip('/')}/secrets/{sn}"
             )
 
             # Use managed identity resource ID if provided, otherwise use system-assigned identity
@@ -198,9 +199,7 @@ def create_container_app_with_key_vault_secrets(
 
             secrets_list.append(
                 azure_native.app.SecretArgs(
-                    name=secret_name,
-                    key_vault_url=secret_uri,
-                    identity=identity_ref
+                    name=secret_name, key_vault_url=secret_uri, identity=identity_ref
                 )
             )
 
@@ -208,7 +207,9 @@ def create_container_app_with_key_vault_secrets(
     if inline_secrets:
         for secret_name, secret_value in inline_secrets.items():
             # Check if secret already exists in list
-            existing_names = [s.name if hasattr(s, 'name') else None for s in secrets_list]
+            existing_names = [
+                s.name if hasattr(s, "name") else None for s in secrets_list
+            ]
             if secret_name not in existing_names:
                 secrets_list.append(
                     azure_native.app.SecretArgs(
@@ -216,8 +217,6 @@ def create_container_app_with_key_vault_secrets(
                         value=secret_value,
                     )
                 )
-
-
 
     # Ingress configuration
     ingress_config = None

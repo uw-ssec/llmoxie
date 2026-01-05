@@ -15,7 +15,7 @@ from ssec_tutorials import download_olmo_model
 
 warnings.filterwarnings("ignore")
 
-import panel as pn
+import panel as pn  # noqa: E402
 
 
 def get_chain(callback_handlers: list[BaseCallbackHandler], input_prompt_template: str):

@@ -81,3 +81,6 @@ path = "src/llmaven/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["tests/"]
+
+[tool.ruff]
+exclude = ["pixi.lock", "*.ipynb"]

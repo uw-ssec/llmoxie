@@ -85,7 +85,9 @@ def create_postgres_server(
         # Backup configuration
         backup=azure_native.dbforpostgresql.BackupArgs(
             backup_retention_days=db_config.backup_retention_days,
-            geo_redundant_backup="Enabled" if db_config.geo_redundant_backup else "Disabled",
+            geo_redundant_backup="Enabled"
+            if db_config.geo_redundant_backup
+            else "Disabled",
         ),
         # High availability configuration
         high_availability=azure_native.dbforpostgresql.HighAvailabilityArgs(

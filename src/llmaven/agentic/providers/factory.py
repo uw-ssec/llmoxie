@@ -80,7 +80,9 @@ def _create_ollama_model() -> OpenAIChatModel:
         timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min total, 10 sec connect
     )
 
-    provider = OllamaProvider(base_url=base_url, api_key=api_key, http_client=http_client)
+    provider = OllamaProvider(
+        base_url=base_url, api_key=api_key, http_client=http_client
+    )
     return OpenAIChatModel(config.llm_model, provider=provider)
 
 
@@ -111,6 +113,7 @@ def _create_litellm_model() -> OpenAIChatModel:
 
     # Create HTTP client with timeout configuration
     import httpx
+
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min total, 10 sec connect
     )

@@ -6,9 +6,8 @@ Creates:
 - User keys table in Azure Table Storage
 """
 
-
-import pulumi # type: ignore
-import pulumi_azure_native as azure_native # type: ignore
+import pulumi  # type: ignore
+import pulumi_azure_native as azure_native  # type: ignore
 
 # Configuration
 config = pulumi.Config()
@@ -71,14 +70,20 @@ primary_key = storage_keys.apply(lambda keys: keys.keys[0].value)
 pulumi.export("resourceGroupName", resource_group.name)
 pulumi.export("storageAccountName", storage_account.name)
 pulumi.export("storageAccountKey", primary_key)
-pulumi.export("tableStorageEndpoint", storage_account.primary_endpoints.apply(lambda e: e.table))
-pulumi.export("blobStorageEndpoint", storage_account.primary_endpoints.apply(lambda e: e.blob))
+pulumi.export(
+    "tableStorageEndpoint", storage_account.primary_endpoints.apply(lambda e: e.table)
+)
+pulumi.export(
+    "blobStorageEndpoint", storage_account.primary_endpoints.apply(lambda e: e.blob)
+)
 
 # Export environment variable format
-pulumi.export("envVars", pulumi.Output.all(
-    storage_account.name,
-    primary_key
-).apply(lambda args: f"""
+pulumi.export(
+    "envVars",
+    pulumi.Output.all(storage_account.name, primary_key).apply(
+        lambda args: f"""
 export AZURE_STORAGE_ACCOUNT_NAME={args[0]}
 export AZURE_STORAGE_ACCOUNT_KEY={args[1]}
-""".strip()))
+""".strip()
+    ),
+)

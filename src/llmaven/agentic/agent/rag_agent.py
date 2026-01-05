@@ -14,8 +14,7 @@ from pydantic_ai import Agent, RunContext
 from llmaven.agentic.settings import config
 from llmaven.agentic.providers import create_llm_model
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
-from llmaven.agentic.search.models import SearchResult
-from llmaven.agentic.agent.models import RAGResponse, Citation
+from llmaven.agentic.agent.models import RAGResponse
 from llmaven.agentic.exceptions import AgenticRAGError, ProviderConfigurationError
 
 logger = logging.getLogger(__name__)
@@ -88,7 +87,9 @@ class RAGAgent:
         # Create LLM model using provider factory
         try:
             llm = create_llm_model()
-            logger.info(f"Initializing RAG Agent with provider: {config.llm_provider}, model: {config.llm_model}")
+            logger.info(
+                f"Initializing RAG Agent with provider: {config.llm_provider}, model: {config.llm_model}"
+            )
 
             # Create the agent with structured output
             # Note: pydantic-ai uses 'output_type' not 'result_type'
@@ -146,7 +147,9 @@ Your responses should be accurate, well-structured, and backed by citations.
             Returns:
                 List of search results with text, source, score, etc.
             """
-            logger.info(f"Tool called: search_knowledge_base(query='{query[:50]}...', limit={limit})")
+            logger.info(
+                f"Tool called: search_knowledge_base(query='{query[:50]}...', limit={limit})"
+            )
 
             try:
                 # Execute hybrid search
@@ -201,6 +204,7 @@ Your responses should be accurate, well-structured, and backed by citations.
             # Run the agent with timeout wrapper
             try:
                 import asyncio
+
                 try:
                     # Add timeout wrapper (300 seconds = 5 minutes)
                     result = await asyncio.wait_for(
@@ -209,11 +213,11 @@ Your responses should be accurate, well-structured, and backed by citations.
                             deps=deps,
                             message_history=message_history,
                         ),
-                        timeout=300.0
+                        timeout=300.0,
                     )
                 except asyncio.TimeoutError:
                     raise AgenticRAGError("LLM generation timed out after 300 seconds")
-            except Exception as run_error:
+            except Exception:
                 raise
 
             # pydantic-ai Agent.run() returns AgentRunResult with .output attribute, not .data
@@ -230,7 +234,7 @@ Your responses should be accurate, well-structured, and backed by citations.
                     f"confidence={confidence_str}"
                 )
                 return output
-            except Exception as output_error:
+            except Exception:
                 raise
 
         except Exception as e:
@@ -254,12 +258,12 @@ Your responses should be accurate, well-structured, and backed by citations.
             RAGResponse with answer, citations, and confidence
         """
         import asyncio
-        import threading
         from concurrent.futures import ThreadPoolExecutor
 
         # Check if event loop is already running
         try:
             asyncio.get_running_loop()
+
             # Loop is running - use a thread with a new event loop
             def run_in_thread():
                 """Run the async function in a new event loop in a separate thread."""

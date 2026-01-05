@@ -1,7 +1,5 @@
 import streamlit as st
 import requests
-import json
-import time
 from langchain.document_loaders import PyMuPDFLoader
 from llmaven.frontend.config import config, expand_query, format_prompt
 
@@ -20,7 +18,10 @@ for message in st.session_state.messages:
                 st.markdown(f"- {chunk}")
 
 # File uploader for documents
-uploaded_files = st.file_uploader("Attach documents (PDFs)", type=["pdf"], accept_multiple_files=True)
+uploaded_files = st.file_uploader(
+    "Attach documents (PDFs)", type=["pdf"], accept_multiple_files=True
+)
+
 
 # Function to process uploaded PDFs
 def process_uploaded_files(uploaded_files):
@@ -33,12 +34,12 @@ def process_uploaded_files(uploaded_files):
         pages = loader.load()
 
         for page in pages:
-            documents.append({
-                "page_content": page.page_content,
-                "metadata": page.metadata
-            })
+            documents.append(
+                {"page_content": page.page_content, "metadata": page.metadata}
+            )
 
     return documents
+
 
 # Process PDFs only if uploaded
 documents = process_uploaded_files(uploaded_files) if uploaded_files else []
@@ -56,10 +57,16 @@ if query := st.chat_input("Your question:"):
                 "query": expand_query(query),
                 "existing_collection": config.existing_collection,
                 "existing_qdrant_path": config.existing_qdrant_path,
-                "embedding_model": config.embedding_model
+                "embedding_model": config.embedding_model,
             }
-            retrieve_response = requests.post(f"{config.api_base_url}/retrieve/", json=retrieve_payload)
-            retrieved_docs = retrieve_response.json().get("docs", []) if retrieve_response.status_code == 200 else []
+            retrieve_response = requests.post(
+                f"{config.api_base_url}/retrieve/", json=retrieve_payload
+            )
+            retrieved_docs = (
+                retrieve_response.json().get("docs", [])
+                if retrieve_response.status_code == 200
+                else []
+            )
         except Exception as e:
             retrieved_docs = []
             st.error(f"❌ Retrieval API failed: {str(e)}")
@@ -77,10 +84,16 @@ if query := st.chat_input("Your question:"):
         try:
             generate_payload = {
                 "prompt": format_prompt(retrieved_text, query),
-                "generation_model": config.generation_model
+                "generation_model": config.generation_model,
             }
-            generate_response = requests.post(f"{config.api_base_url}/generate/", json=generate_payload)
-            generated_answer = generate_response.json().get("answer", "") if generate_response.status_code == 200 else "⚠️ Failed to generate response."
+            generate_response = requests.post(
+                f"{config.api_base_url}/generate/", json=generate_payload
+            )
+            generated_answer = (
+                generate_response.json().get("answer", "")
+                if generate_response.status_code == 200
+                else "⚠️ Failed to generate response."
+            )
         except Exception as e:
             generated_answer = "⚠️ Failed to generate response."
             st.error(f"❌ Generation API failed: {str(e)}")
@@ -89,7 +102,7 @@ if query := st.chat_input("Your question:"):
     assistant_message = {
         "role": "assistant",
         "content": generated_answer,
-        "chunks": [doc["page_content"][:500] for doc in retrieved_docs]
+        "chunks": [doc["page_content"][:500] for doc in retrieved_docs],
     }
     st.session_state.messages.append(assistant_message)
 

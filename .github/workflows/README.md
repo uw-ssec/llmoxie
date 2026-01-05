@@ -18,23 +18,26 @@ request.
 
 **Jobs**:
 
-#### 1. `test-linux` - Linux Tests with Qdrant
+#### 1. `test-linux` - Linux Tests with Testcontainers
 
 - **Platform**: Ubuntu Latest
-- **Services**: Qdrant vector database (localhost:6333)
+- **Testing Strategy**: Uses testcontainers-python for Qdrant integration tests
 - **Tests**:
   - Core tests (legacy RAG system)
   - Agentic tests (new Agentic RAG system, excluding CLI integration tests)
   - API endpoint tests
 - **Environment**: pixi-managed Python 3.12 with llmaven environment
+- **Docker**: Required for testcontainers (automatically available on GitHub
+  Actions)
 
-#### 2. `test-macos` - macOS Unit Tests
+#### 2. `test-macos` - macOS Tests (Currently Disabled)
 
-- **Platform**: macOS Latest
-- **Tests**: Agentic unit tests only (no Qdrant integration)
-- **Reason**: GitHub Actions service containers are only available on Linux
-  runners
-- **Environment**: pixi-managed Python 3.12 with llmaven environment
+- **Platform**: macOS Latest (arm64)
+- **Status**: Temporarily disabled (commented out in workflow)
+- **Reason**: Docker support on macOS arm64 GitHub runners is not yet stable
+- **Workaround**: Tests use testcontainers-python which works on both platforms
+  when Docker is available
+- **Reference**: https://github.com/docker/actions-toolkit/issues/317
 
 #### 3. `pre-commit` - Code Quality Checks
 
@@ -110,7 +113,7 @@ services.
 # Install dependencies
 pixi install -e llmaven
 
-# Run all tests
+# Run all tests (testcontainers will start Qdrant automatically)
 pixi run -e llmaven pytest tests/ -v
 
 # Run only agentic tests
@@ -120,13 +123,38 @@ pixi run -e llmaven pytest tests/agentic/ -v
 pixi run -e llmaven pre-commit run --all-files
 ```
 
-### Running Tests with Qdrant
+### Testcontainers Setup
+
+Tests use testcontainers-python to automatically start Qdrant containers:
+
+```python
+# tests/agentic/conftest.py provides fixtures
+def test_with_qdrant(qdrant_url):
+    from qdrant_client import QdrantClient
+
+    # qdrant_url is automatically provided by testcontainer
+    client = QdrantClient(url=qdrant_url)
+    # ... test code
+```
+
+**Requirements**:
+
+- Docker must be installed and running
+- Docker daemon must be accessible (default: `/var/run/docker.sock`)
+- No manual container management needed - testcontainers handles it
+
+### Manual Qdrant Setup (Alternative)
+
+If you prefer to manage Qdrant manually:
 
 ```bash
 # Start Qdrant
 docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest
 
-# Run integration tests
+# Set environment variable to use local Qdrant
+export AGENTIC_QDRANT_URL=http://localhost:6333
+
+# Run tests (will use your local Qdrant instead of testcontainers)
 pixi run -e llmaven pytest tests/agentic/ -v
 ```
 
@@ -141,10 +169,20 @@ pixi run -e llmaven pytest tests/agentic/ -v
 - Ensure pixi version matches `PIXI_VERSION` in workflow
 - Check that `pixi.toml` and `pixi.lock` are up to date
 
-**2. Tests fail on macOS but pass on Linux**
+**2. Testcontainers fails to start**
 
-- Check if tests require Qdrant (service containers not available on macOS)
-- Run tests locally with mocked Qdrant client
+- Ensure Docker is installed and running: `docker info`
+- Check Docker socket permissions: `ls -la /var/run/docker.sock`
+- On macOS: Ensure Docker Desktop is running
+- On Linux: Ensure your user is in the `docker` group:
+  `sudo usermod -aG docker $USER`
+- Set `DOCKER_HOST` environment variable if using remote Docker daemon
+
+**3. Tests fail on macOS but pass on Linux**
+
+- macOS tests are currently disabled in CI due to Docker arm64 runner issues
+- Run tests locally with Docker Desktop installed
+- Testcontainers should work on macOS when Docker is properly configured
 
 **3. Pre-commit hooks fail**
 

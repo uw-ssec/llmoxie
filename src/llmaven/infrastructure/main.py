@@ -10,7 +10,9 @@ orchestrates the creation of Azure resources including:
 - Container Apps for MLflow and LiteLLM
 - Log Analytics for monitoring
 """
+
 from pathlib import Path
+
 
 def create_pulumi_program(config_path: Path):
     """Create an inline Pulumi program for infrastructure deployment.
@@ -24,6 +26,7 @@ def create_pulumi_program(config_path: Path):
     Returns:
         A callable Pulumi program function that can be executed by Pulumi
     """
+
     def llmaven_infra():
         """Main Pulumi program that deploys all LLMaven infrastructure resources.
 
@@ -321,19 +324,26 @@ def create_pulumi_program(config_path: Path):
                 env_vars=config.mlflow.env_vars,
                 key_vault=key_vault,
                 key_vault_secret_refs=config.mlflow.key_vault_secret_refs,
-                managed_identity_id=mlflow_managed_identity.id if mlflow_managed_identity else None,
+                managed_identity_id=mlflow_managed_identity.id
+                if mlflow_managed_identity
+                else None,
                 tags=config.tags,
             )
 
-            mlflow_fqdn = mlflow_app.configuration.apply(lambda c: c.ingress.fqdn if c and c.ingress else None)
+            mlflow_fqdn = mlflow_app.configuration.apply(
+                lambda c: c.ingress.fqdn if c and c.ingress else None
+            )
 
             # Create MLflow tracking URI secret
             secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
 
             # Export MLflow URL
-            pulumi.export("mlflow_url", mlflow_app.configuration.apply(
-                lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
-            ))
+            pulumi.export(
+                "mlflow_url",
+                mlflow_app.configuration.apply(
+                    lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
+                ),
+            )
 
         # 9.2. LiteLLM Container App
         if config.litellm and config.litellm.enabled:
@@ -354,15 +364,22 @@ def create_pulumi_program(config_path: Path):
                 env_vars=config.litellm.env_vars,
                 key_vault=key_vault,
                 key_vault_secret_refs=config.litellm.key_vault_secret_refs,
-                config_file=config.litellm.config_file if hasattr(config.litellm, 'config_file') else None,
-                managed_identity_id=litellm_managed_identity.id if litellm_managed_identity else None,
+                config_file=config.litellm.config_file
+                if hasattr(config.litellm, "config_file")
+                else None,
+                managed_identity_id=litellm_managed_identity.id
+                if litellm_managed_identity
+                else None,
                 tags=config.tags,
             )
 
             # Export LiteLLM URL
-            pulumi.export("litellm_url", litellm_app.configuration.apply(
-                lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
-            ))
+            pulumi.export(
+                "litellm_url",
+                litellm_app.configuration.apply(
+                    lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
+                ),
+            )
 
         # Export common outputs
         pulumi.export("resource_group_name", resource_group.name)
@@ -373,4 +390,5 @@ def create_pulumi_program(config_path: Path):
         pulumi.export("key_vault_name", key_vault.name)
 
         pulumi.log.info("✓ Infrastructure deployment complete")
+
     return llmaven_infra

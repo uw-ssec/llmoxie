@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
+
 class RetrieveRequest(BaseModel):
     documents: Optional[List[Dict[str, Any]]] = []
     query: str

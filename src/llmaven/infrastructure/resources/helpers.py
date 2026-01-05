@@ -237,7 +237,6 @@ def create_mlflow_app(
 
     # key_vault_secret_refs is passed as an argument
 
-
     # Create container app
     return create_container_app_with_key_vault_secrets(
         app_name=name,
@@ -332,7 +331,6 @@ def create_litellm_app(
 
     # key_vault_secret_refs is passed as an argument
 
-
     # Prepare volumes, volume mounts, and inline secrets if config file is provided
     volumes = None
     volume_mounts = None
@@ -341,7 +339,6 @@ def create_litellm_app(
 
     if config_file:
         import os
-        import pulumi
 
         # Resolve relative path from project root
         if not os.path.isabs(config_file):
@@ -354,9 +351,7 @@ def create_litellm_app(
                 config_content = f.read()
 
             # Add the config file content as an inline secret
-            inline_secrets = {
-                "config-yaml": config_content
-            }
+            inline_secrets = {"config-yaml": config_content}
 
             # Configure volume and volume mount that references the secret
             volumes = [

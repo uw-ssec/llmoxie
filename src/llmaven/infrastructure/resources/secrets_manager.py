@@ -15,10 +15,7 @@ import pulumi_random as random
 from pulumi import Output
 
 from ..config.schema import LLMavenConfig
-from ..utils.secrets import (
-    build_mlflow_tracking_uri,
-    build_postgres_connection_string
-)
+from ..utils.secrets import build_mlflow_tracking_uri, build_postgres_connection_string
 from .key_vault import (
     create_secret,
     get_llmaven_secrets_from_env,
@@ -108,7 +105,10 @@ class SecretsManager:
         """
         # Check if user provided a password via environment variable
         env_secrets = get_llmaven_secrets_from_env()
-        if "db-admin-password" in env_secrets or "postgresql-admin-password" in env_secrets:
+        if (
+            "db-admin-password" in env_secrets
+            or "postgresql-admin-password" in env_secrets
+        ):
             # User provided password - use it
             password_value = env_secrets.get("db-admin-password") or env_secrets.get(
                 "postgresql-admin-password"
@@ -178,9 +178,7 @@ class SecretsManager:
         for db_name in database_names:
             # Build connection string
             # Use default parameter to capture db_name value (avoid closure bug)
-            connection_string = Output.all(
-                postgres_server_fqdn, admin_password
-            ).apply(
+            connection_string = Output.all(postgres_server_fqdn, admin_password).apply(
                 lambda args, db=db_name: build_postgres_connection_string(
                     server_fqdn=args[0],
                     database_name=db,

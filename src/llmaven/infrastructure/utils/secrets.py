@@ -270,7 +270,7 @@ def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
     for key, value in os.environ.items():
         if key.startswith(prefix):
             # Remove prefix and convert to kebab-case
-            secret_name = key[len(prefix):].lower().replace("_", "-")
+            secret_name = key[len(prefix) :].lower().replace("_", "-")
             secrets[secret_name] = value
             pulumi.log.info(f"✓ Found secret: {secret_name} (from {key})")
 

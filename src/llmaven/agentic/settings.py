@@ -53,12 +53,16 @@ class AgenticConfig(BaseSettings):
     collection_name: str = "agentic-rag"
 
     # Embedding model configuration
-    dense_model: str = "sentence-transformers/all-MiniLM-L6-v2"  # 384-dim (fastembed supported)
+    dense_model: str = (
+        "sentence-transformers/all-MiniLM-L6-v2"  # 384-dim (fastembed supported)
+    )
     sparse_model: str = "Qdrant/bm25"
     colbert_model: str = "colbert-ir/colbertv2.0"
 
     # LLM provider configuration
-    llm_provider: Literal["openai", "ollama", "litellm", "azure", "huggingface"] = "openai"
+    llm_provider: Literal["openai", "ollama", "litellm", "azure", "huggingface"] = (
+        "openai"
+    )
     llm_model: str = "gpt-4o-mini"
 
     # LiteLLM-specific configuration
@@ -77,8 +81,12 @@ class AgenticConfig(BaseSettings):
 
     # Search configuration
     enable_rerank: bool = True
-    prefetch_top_k: int = Field(default=20, gt=0, description="Number of candidates from each prefetch method")
-    final_top_k: int = Field(default=5, gt=0, description="Final number of results to return")
+    prefetch_top_k: int = Field(
+        default=20, gt=0, description="Number of candidates from each prefetch method"
+    )
+    final_top_k: int = Field(
+        default=5, gt=0, description="Final number of results to return"
+    )
 
 
 # Global configuration instance

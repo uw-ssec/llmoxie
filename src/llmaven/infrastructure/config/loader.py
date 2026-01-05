@@ -59,7 +59,7 @@ def load_config(config_path: Union[str, Path]) -> LLMavenConfig:
             error_messages.append(f"  {field}: {message}")
 
         raise ConfigLoadError(
-            f"Configuration validation failed:\n" + "\n".join(error_messages)
+            "Configuration validation failed:\n" + "\n".join(error_messages)
         )
 
     return config
