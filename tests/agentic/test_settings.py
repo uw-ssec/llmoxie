@@ -264,17 +264,20 @@ class TestAgenticConfigGlobalInstance:
     def test_global_config_exists(self):
         """Test that global config instance exists."""
         from llmaven.agentic.settings import config
+
         assert isinstance(config, AgenticConfig)
 
     def test_global_config_has_defaults(self):
         """Test that global config has default values."""
         from llmaven.agentic.settings import config
+
         assert config.qdrant_url == "http://localhost:6333"
         assert config.collection_name == "agentic-rag"
 
     def test_global_config_importable(self):
         """Test that global config can be imported from package."""
         from llmaven.agentic import config
+
         assert isinstance(config, AgenticConfig)
 
 

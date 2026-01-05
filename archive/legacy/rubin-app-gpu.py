@@ -18,7 +18,7 @@ import panel as pn
 set_debug(True)
 set_verbose(True)
 
-from download_models import load_transformer_model
+from download_models import load_transformer_model  # noqa: E402
 
 warnings.filterwarnings("ignore")
 

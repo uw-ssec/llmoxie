@@ -1,4 +1,3 @@
-
 """
 FastAPI proxy service for OpenAI API.
 
@@ -47,6 +46,7 @@ key_store = None
 if AUTH_ENABLED:
     key_store = UserKeyStore()
 
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
@@ -73,33 +73,24 @@ async def verify_api_key(authorization: Optional[str] = Header(None)) -> Optiona
         return None
 
     if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing Authorization header"
-        )
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
 
     # Extract Bearer token
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
-            detail="Invalid Authorization header format. Expected: Bearer <token>"
+            detail="Invalid Authorization header format. Expected: Bearer <token>",
         )
 
     api_key = authorization[7:]  # Remove "Bearer " prefix
 
     # Validate API key
     if key_store is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Authentication is not configured"
-        )
+        raise HTTPException(status_code=500, detail="Authentication is not configured")
 
     user_info = key_store.validate_api_key(api_key)
     if not user_info:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key"
-        )
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
     return user_info
 
@@ -129,10 +120,10 @@ async def proxy_request(
     request_body = None
     if body:
         try:
-            request_body = json.loads(body.decode('utf-8'))
+            request_body = json.loads(body.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             # If JSON parsing or decoding fails, fall back to a safe string representation
-            request_body = body.decode('utf-8', errors='replace')
+            request_body = body.decode("utf-8", errors="replace")
 
     # Create log entry with optional user_id
     user_id = user_info.get("user_id") if user_info else None
@@ -191,7 +182,9 @@ async def proxy_request(
                         yield chunk
 
                     # After streaming completes, log the full exchange
-                    response_text = b''.join(collected_chunks).decode('utf-8', errors='replace')
+                    response_text = b"".join(collected_chunks).decode(
+                        "utf-8", errors="replace"
+                    )
                     data_log.add_response_to_entry(
                         log_entry=log_entry,
                         status_code=downstream_response.status_code,
@@ -213,10 +206,10 @@ async def proxy_request(
                 # Parse response body for logging
                 response_body = None
                 try:
-                    response_body = json.loads(content.decode('utf-8'))
+                    response_body = json.loads(content.decode("utf-8"))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     # If JSON parsing or decoding fails, fall back to a safe string representation
-                    response_body = content.decode('utf-8', errors='replace')
+                    response_body = content.decode("utf-8", errors="replace")
 
                 data_log.add_response_to_entry(
                     log_entry=log_entry,
@@ -237,14 +230,14 @@ async def proxy_request(
         except httpx.TimeoutException as exc:
             raise HTTPException(status_code=504, detail="Gateway timeout") from exc
         except httpx.RequestError as exc:
-            raise HTTPException(status_code=502, detail=f"Bad gateway: {str(exc)}") from exc
+            raise HTTPException(
+                status_code=502, detail=f"Bad gateway: {str(exc)}"
+            ) from exc
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_openai_v1(
-    request: Request,
-    path: str,
-    authorization: Optional[str] = Header(None)
+    request: Request, path: str, authorization: Optional[str] = Header(None)
 ):
     """
     Proxy all OpenAI API v1 endpoints.
@@ -259,7 +252,9 @@ async def proxy_openai_v1(
     # Verify API key if authentication is enabled
     user_info = await verify_api_key(authorization)
 
-    return await proxy_request(request, f"/v1/{path}", method=request.method, user_info=user_info)
+    return await proxy_request(
+        request, f"/v1/{path}", method=request.method, user_info=user_info
+    )
 
 
 @app.get("/health")

@@ -33,9 +33,15 @@ def check_azure_cli() -> Tuple[bool, str]:
             timeout=10,
         )
         if result.returncode != 0:
-            return False, "Azure CLI is not installed. Install it from: https://aka.ms/InstallAzureCLI"
+            return (
+                False,
+                "Azure CLI is not installed. Install it from: https://aka.ms/InstallAzureCLI",
+            )
     except FileNotFoundError:
-        return False, "Azure CLI is not installed. Install it from: https://aka.ms/InstallAzureCLI"
+        return (
+            False,
+            "Azure CLI is not installed. Install it from: https://aka.ms/InstallAzureCLI",
+        )
     except subprocess.TimeoutExpired:
         return False, "Azure CLI check timed out"
 
@@ -75,7 +81,10 @@ def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
             timeout=10,
         )
         if result.returncode != 0:
-            return False, f"Subscription {subscription_id} is not accessible or does not exist"
+            return (
+                False,
+                f"Subscription {subscription_id} is not accessible or does not exist",
+            )
         return True, f"Subscription {subscription_id} is accessible"
     except subprocess.TimeoutExpired:
         return False, "Subscription check timed out"
@@ -127,7 +136,10 @@ def check_required_providers(subscription_id: str) -> Tuple[bool, str]:
 
             state = result.stdout.strip()
             if state != "Registered":
-                return False, f"Provider {provider} is not registered (state: {state}). Register it with: az provider register --namespace {provider}"
+                return (
+                    False,
+                    f"Provider {provider} is not registered (state: {state}). Register it with: az provider register --namespace {provider}",
+                )
 
         return True, "All required resource providers are registered"
     except subprocess.TimeoutExpired:
@@ -175,7 +187,7 @@ def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
     for key, value in os.environ.items():
         if key.startswith(prefix):
             # Remove prefix and convert to kebab-case
-            secret_name = key[len(prefix):].lower().replace("_", "-")
+            secret_name = key[len(prefix) :].lower().replace("_", "-")
             secrets[secret_name] = value
 
     return secrets
@@ -206,7 +218,9 @@ def check_secrets(
     available_secrets = get_llmaven_secrets(env_file_path)
 
     if available_secrets:
-        messages.append(f"Found {len(available_secrets)} LLMAVEN_SECRETS_* environment variables:")
+        messages.append(
+            f"Found {len(available_secrets)} LLMAVEN_SECRETS_* environment variables:"
+        )
         for secret_name in sorted(available_secrets.keys()):
             messages.append(f"  ✓ {secret_name}")
     else:
@@ -214,7 +228,11 @@ def check_secrets(
 
     # Check required secrets for MLflow
     if config.mlflow and config.mlflow.enabled:
-        mlflow_secrets = list(config.mlflow.key_vault_secret_refs.values()) if config.mlflow.key_vault_secret_refs else []
+        mlflow_secrets = (
+            list(config.mlflow.key_vault_secret_refs.values())
+            if config.mlflow.key_vault_secret_refs
+            else []
+        )
         for secret_name in mlflow_secrets:
             # Skip auto-generated secrets
             if secret_name in [
@@ -226,20 +244,31 @@ def check_secrets(
                 continue
 
             if secret_name not in available_secrets:
-                env_var_name = f"LLMAVEN_SECRETS_{secret_name.upper().replace('-', '_')}"
+                env_var_name = (
+                    f"LLMAVEN_SECRETS_{secret_name.upper().replace('-', '_')}"
+                )
                 messages.append(f"  ✗ Missing: {secret_name} (set {env_var_name})")
                 all_secrets_found = False
 
     # Check required secrets for LiteLLM
     if config.litellm and config.litellm.enabled:
-        litellm_secrets = list(config.litellm.key_vault_secret_refs.values()) if config.litellm.key_vault_secret_refs else []
+        litellm_secrets = (
+            list(config.litellm.key_vault_secret_refs.values())
+            if config.litellm.key_vault_secret_refs
+            else []
+        )
         for secret_name in litellm_secrets:
             # Skip auto-generated secrets
-            if secret_name in ["db-connection-string-litellm-db", "mlflow-tracking-uri"]:
+            if secret_name in [
+                "db-connection-string-litellm-db",
+                "mlflow-tracking-uri",
+            ]:
                 continue
 
             if secret_name not in available_secrets:
-                env_var_name = f"LLMAVEN_SECRETS_{secret_name.upper().replace('-', '_')}"
+                env_var_name = (
+                    f"LLMAVEN_SECRETS_{secret_name.upper().replace('-', '_')}"
+                )
                 messages.append(f"  ✗ Missing: {secret_name} (set {env_var_name})")
                 all_secrets_found = False
 
@@ -255,15 +284,23 @@ def check_secrets(
     for secret_name, secret_value in available_secrets.items():
         for pattern in placeholder_patterns:
             if re.search(pattern, secret_value, re.IGNORECASE):
-                messages.append(f"  ⚠️  Warning: {secret_name} looks like a placeholder value")
+                messages.append(
+                    f"  ⚠️  Warning: {secret_name} looks like a placeholder value"
+                )
                 break
 
     if not all_secrets_found:
         messages.append("")
         messages.append("Set missing secrets as environment variables:")
-        messages.append('  export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="$(openssl rand -base64 32)"')
-        messages.append('  export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-azure-openai-key"')
-        messages.append('  export LLMAVEN_SECRETS_ANTHROPIC_API_KEY="your-anthropic-key"')
+        messages.append(
+            '  export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="$(openssl rand -base64 32)"'
+        )
+        messages.append(
+            '  export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-azure-openai-key"'
+        )
+        messages.append(
+            '  export LLMAVEN_SECRETS_ANTHROPIC_API_KEY="your-anthropic-key"'
+        )
 
     return all_secrets_found, messages
 
@@ -282,9 +319,9 @@ def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[st
 
     # Patterns that might indicate hardcoded secrets
     secret_patterns = [
-        (r'sk-[a-zA-Z0-9]{32,}', "OpenAI/Anthropic API key"),
-        (r'[a-zA-Z0-9]{32,}', "Generic API key (32+ chars)"),
-        (r'postgres://[^:]+:[^@]+@', "Database connection string with password"),
+        (r"sk-[a-zA-Z0-9]{32,}", "OpenAI/Anthropic API key"),
+        (r"[a-zA-Z0-9]{32,}", "Generic API key (32+ chars)"),
+        (r"postgres://[^:]+:[^@]+@", "Database connection string with password"),
         (r'password:\s*["\'][^"\']{8,}["\']', "Password field"),
     ]
 
@@ -295,7 +332,9 @@ def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[st
         for pattern, description in secret_patterns:
             matches = re.findall(pattern, content, re.IGNORECASE)
             if matches:
-                messages.append(f"  ⚠️  Potential hardcoded secret detected: {description}")
+                messages.append(
+                    f"  ⚠️  Potential hardcoded secret detected: {description}"
+                )
                 has_hardcoded_secrets = True
 
         if not has_hardcoded_secrets:
@@ -397,13 +436,15 @@ def validate_config(
         print("   ✓ All required fields present")
         print("   ✓ Data types are correct")
     except ConfigLoadError as e:
-        print(f"   ✗ Configuration validation failed:")
+        print("   ✗ Configuration validation failed:")
         print(f"     {e}")
         errors.append(str(e))
     print()
 
     if errors:
-        raise ValidationError("Configuration validation failed. Fix errors above and try again.")
+        raise ValidationError(
+            "Configuration validation failed. Fix errors above and try again."
+        )
 
     # 2. Check for hardcoded secrets
     print("2. Security Check")
@@ -463,10 +504,12 @@ def validate_config(
 
     if config.project.environment == "dev" and max_cost > 100:
         warnings.append(f"Development environment cost (${max_cost:.2f}) seems high")
-        print(f"   ⚠️  Development environment cost seems high")
+        print("   ⚠️  Development environment cost seems high")
     elif config.project.environment == "prod" and max_cost < 50:
-        warnings.append("Production environment cost seems low (may not have HA enabled)")
-        print(f"   ⚠️  Production environment cost seems low (consider HA settings)")
+        warnings.append(
+            "Production environment cost seems low (may not have HA enabled)"
+        )
+        print("   ⚠️  Production environment cost seems low (consider HA settings)")
 
     print()
 
@@ -475,7 +518,9 @@ def validate_config(
         print("6. Production Environment Checks")
 
         if not config.database.high_availability:
-            warnings.append("Production environment should enable high availability for database")
+            warnings.append(
+                "Production environment should enable high availability for database"
+            )
             print("   ⚠️  High availability not enabled for database")
 
         if not config.security.enable_private_endpoints:
@@ -483,7 +528,9 @@ def validate_config(
             print("   ⚠️  Private endpoints not enabled")
 
         if config.database.geo_redundant_backup is False:
-            warnings.append("Production environment should enable geo-redundant backups")
+            warnings.append(
+                "Production environment should enable geo-redundant backups"
+            )
             print("   ⚠️  Geo-redundant backup not enabled")
 
         print()

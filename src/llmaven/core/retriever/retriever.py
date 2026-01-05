@@ -4,8 +4,14 @@ from qdrant_client import QdrantClient
 from ..embeddings.embedding_model import get_embedding_model
 import shutil
 
+
 class Retriever:
-    def __init__(self, model_name: str = None, qdrant_path: str = None, collection_name: str = None):
+    def __init__(
+        self,
+        model_name: str = None,
+        qdrant_path: str = None,
+        collection_name: str = None,
+    ):
         """
         Initializes the Retriever class with a model, Qdrant path, and collection name.
 
@@ -21,7 +27,9 @@ class Retriever:
         self.collection_name = None
         self.db = None
 
-    def create_vector_store(self, documents: list, collection_name: str = 'temp_collection'):
+    def create_vector_store(
+        self, documents: list, collection_name: str = "temp_collection"
+    ):
         """
         Creates a Qdrant vector store from a list of documents.
 
@@ -39,13 +47,19 @@ class Retriever:
             try:
                 client = QdrantClient(path="data/vector_stores")
                 client.delete_collection(collection_name)
-                shutil.rmtree(Path("data/vector_stores") / collection_name, ignore_errors=True)
+                shutil.rmtree(
+                    Path("data/vector_stores") / collection_name, ignore_errors=True
+                )
                 print(f"Deleted existing collection '{collection_name}'.")
 
             except Exception as e:
-                print(f"Warning: Could not delete collection '{collection_name}'. Error: {str(e)}")
+                print(
+                    f"Warning: Could not delete collection '{collection_name}'. Error: {str(e)}"
+                )
 
-        print(f"Creating new Qdrant collection '{collection_name}' with {len(documents)} documents using '{self.model_name}'.")
+        print(
+            f"Creating new Qdrant collection '{collection_name}' with {len(documents)} documents using '{self.model_name}'."
+        )
 
         self.collection_name = collection_name
         self.qdrant_path = Path("data/vector_stores") / collection_name
@@ -76,7 +90,11 @@ class Retriever:
             self.collection_name = collection_name
 
         client = QdrantClient(path=str(self.qdrant_path))
-        self.db = Qdrant(client=client, collection_name=self.collection_name, embeddings=self.embedding)
+        self.db = Qdrant(
+            client=client,
+            collection_name=self.collection_name,
+            embeddings=self.embedding,
+        )
         return self.db
 
     def retrieve_docs(self, query: str):
@@ -90,7 +108,9 @@ class Retriever:
             list: List of retrieved document objects.
         """
         if self.db is None:
-            raise ValueError("Vector store is not initialized. Call create_vector_store() or get_vector_store() first.")
+            raise ValueError(
+                "Vector store is not initialized. Call create_vector_store() or get_vector_store() first."
+            )
 
         retriever = self.db.as_retriever(
             search_type="mmr",

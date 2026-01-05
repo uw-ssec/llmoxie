@@ -280,9 +280,7 @@ class TestAgenticChatEndpoint:
     async def test_chat_handles_agentic_error(self, mock_agent_cls):
         """Test that chat handles AgenticRAGError correctly."""
         mock_agent_instance = Mock()
-        mock_agent_instance.run = AsyncMock(
-            side_effect=AgenticRAGError("Agent failed")
-        )
+        mock_agent_instance.run = AsyncMock(side_effect=AgenticRAGError("Agent failed"))
         mock_agent_cls.return_value = mock_agent_instance
 
         payload = {"query": "test question"}

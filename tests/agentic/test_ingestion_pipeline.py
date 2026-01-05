@@ -6,13 +6,11 @@ chunking, embedding, and upsertion to Qdrant.
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import tempfile
-import shutil
 
 from llmaven.agentic.ingestion.pipeline import IngestionPipeline
 from llmaven.agentic.exceptions import IngestionError, EmbeddingError
-from llmaven.agentic.vector_store.qdrant_manager import QdrantManager
 
 
 class TestIngestionPipelineInitialization:
@@ -21,7 +19,10 @@ class TestIngestionPipelineInitialization:
     def test_init_with_default_config(self):
         """Test initialization with default config."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
             assert pipeline.qdrant_manager is not None
             assert pipeline.collection_name == "agentic-rag"
@@ -29,7 +30,10 @@ class TestIngestionPipelineInitialization:
     def test_init_with_custom_collection(self):
         """Test initialization with custom collection name."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline(collection_name="custom-collection")
             assert pipeline.collection_name == "custom-collection"
 
@@ -48,7 +52,10 @@ class TestIngestionPipelineLoad:
             (test_dir / "ignore.py").write_text("Python file")  # Should be ignored
 
             mock_qdrant_manager = MagicMock()
-            with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+            with patch(
+                "llmaven.agentic.ingestion.pipeline.QdrantManager",
+                return_value=mock_qdrant_manager,
+            ):
                 pipeline = IngestionPipeline()
                 documents = pipeline.load([str(test_dir)])
 
@@ -60,14 +67,20 @@ class TestIngestionPipelineLoad:
 
     def test_load_from_multiple_directories(self):
         """Test loading from multiple directories."""
-        with tempfile.TemporaryDirectory() as tmpdir1, tempfile.TemporaryDirectory() as tmpdir2:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir1,
+            tempfile.TemporaryDirectory() as tmpdir2,
+        ):
             test_dir1 = Path(tmpdir1)
             test_dir2 = Path(tmpdir2)
             (test_dir1 / "doc1.txt").write_text("Document 1")
             (test_dir2 / "doc2.txt").write_text("Document 2")
 
             mock_qdrant_manager = MagicMock()
-            with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+            with patch(
+                "llmaven.agentic.ingestion.pipeline.QdrantManager",
+                return_value=mock_qdrant_manager,
+            ):
                 pipeline = IngestionPipeline()
                 documents = pipeline.load([str(test_dir1), str(test_dir2)])
 
@@ -76,7 +89,10 @@ class TestIngestionPipelineLoad:
     def test_load_nonexistent_directory(self):
         """Test loading from nonexistent directory raises error."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
             with pytest.raises(IngestionError):
                 pipeline.load(["/nonexistent/path"])
@@ -88,7 +104,10 @@ class TestIngestionPipelineParse:
     def test_parse_text_file(self):
         """Test parsing a plain text file."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             doc = {
@@ -103,7 +122,10 @@ class TestIngestionPipelineParse:
     def test_parse_markdown_file(self):
         """Test parsing a markdown file."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             doc = {
@@ -130,7 +152,10 @@ class TestIngestionPipelineParse:
         }
         mock_converter_instance.convert.return_value = mock_doc
 
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             doc = {
@@ -148,9 +173,13 @@ class TestIngestionPipelineParse:
         mock_qdrant_manager = MagicMock()
         mock_converter.side_effect = Exception("Docling failed")
 
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             # Mock fitz import by patching sys.modules before the import happens
             import sys
+
             mock_fitz = MagicMock()
             mock_doc = MagicMock()
             mock_page = MagicMock()
@@ -184,7 +213,10 @@ class TestIngestionPipelineChunk:
     def test_chunk_simple_text(self):
         """Test chunking simple text."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             doc = {
@@ -213,7 +245,10 @@ class TestIngestionPipelineChunk:
         }
         mock_converter_instance.convert.return_value = mock_doc
 
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             doc = {
@@ -235,7 +270,9 @@ class TestIngestionPipelineEmbed:
     @patch("llmaven.agentic.ingestion.pipeline.TextEmbedding")
     @patch("llmaven.agentic.ingestion.pipeline.SparseTextEmbedding")
     @patch("llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding")
-    def test_embed_generates_all_three_vectors(self, mock_colbert, mock_sparse, mock_dense):
+    def test_embed_generates_all_three_vectors(
+        self, mock_colbert, mock_sparse, mock_dense
+    ):
         """Test that embedding generates dense, sparse, and ColBERT vectors."""
         # Mock embedding models
         mock_dense_instance = MagicMock()
@@ -251,7 +288,10 @@ class TestIngestionPipelineEmbed:
         mock_colbert.return_value = mock_colbert_instance
 
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             chunk = {
@@ -270,8 +310,13 @@ class TestIngestionPipelineEmbed:
     def test_embed_error_handling(self):
         """Test that embedding errors are caught and wrapped."""
         mock_qdrant_manager = MagicMock()
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
-            with patch("llmaven.agentic.ingestion.pipeline.TextEmbedding") as mock_dense:
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
+            with patch(
+                "llmaven.agentic.ingestion.pipeline.TextEmbedding"
+            ) as mock_dense:
                 mock_dense.side_effect = Exception("Embedding failed")
 
                 pipeline = IngestionPipeline()
@@ -288,7 +333,10 @@ class TestIngestionPipelineUpsert:
         """Test upserting embedded chunks to Qdrant."""
         mock_qdrant_manager = MagicMock()
 
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
             pipeline = IngestionPipeline()
 
             embedded_chunks = [
@@ -313,7 +361,9 @@ class TestIngestionPipelineUpsert:
             pipeline.upsert(embedded_chunks)
 
             # Verify ensure_collection was called
-            mock_qdrant_manager.ensure_collection.assert_called_once_with("agentic-rag", force=False)
+            mock_qdrant_manager.ensure_collection.assert_called_once_with(
+                "agentic-rag", force=False
+            )
             # Verify upsert_points was called
             mock_qdrant_manager.upsert_points.assert_called_once()
             points = mock_qdrant_manager.upsert_points.call_args[0][1]
@@ -330,21 +380,34 @@ class TestIngestionPipelineFullPipeline:
             (test_dir / "doc1.txt").write_text("Test document content here.")
 
             mock_qdrant_manager = MagicMock()
-            with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
-                with patch("llmaven.agentic.ingestion.pipeline.TextEmbedding") as mock_dense:
-                    with patch("llmaven.agentic.ingestion.pipeline.SparseTextEmbedding") as mock_sparse:
-                        with patch("llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding") as mock_colbert:
+            with patch(
+                "llmaven.agentic.ingestion.pipeline.QdrantManager",
+                return_value=mock_qdrant_manager,
+            ):
+                with patch(
+                    "llmaven.agentic.ingestion.pipeline.TextEmbedding"
+                ) as mock_dense:
+                    with patch(
+                        "llmaven.agentic.ingestion.pipeline.SparseTextEmbedding"
+                    ) as mock_sparse:
+                        with patch(
+                            "llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding"
+                        ) as mock_colbert:
                             # Mock embeddings
                             mock_dense_instance = MagicMock()
                             mock_dense_instance.embed.return_value = [[0.1] * 384]
                             mock_dense.return_value = mock_dense_instance
 
                             mock_sparse_instance = MagicMock()
-                            mock_sparse_instance.embed.return_value = [{"indices": [1], "values": [0.5]}]
+                            mock_sparse_instance.embed.return_value = [
+                                {"indices": [1], "values": [0.5]}
+                            ]
                             mock_sparse.return_value = mock_sparse_instance
 
                             mock_colbert_instance = MagicMock()
-                            mock_colbert_instance.embed.return_value = [[[0.1] * 128] * 10]
+                            mock_colbert_instance.embed.return_value = [
+                                [[0.1] * 128] * 10
+                            ]
                             mock_colbert.return_value = mock_colbert_instance
 
                             pipeline = IngestionPipeline()
@@ -365,17 +428,28 @@ class TestIngestionPipelineFullPipeline:
             for i in range(150)  # More than default batch size
         ]
 
-        with patch("llmaven.agentic.ingestion.pipeline.QdrantManager", return_value=mock_qdrant_manager):
-            with patch("llmaven.agentic.ingestion.pipeline.TextEmbedding") as mock_dense:
-                with patch("llmaven.agentic.ingestion.pipeline.SparseTextEmbedding") as mock_sparse:
-                    with patch("llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding") as mock_colbert:
+        with patch(
+            "llmaven.agentic.ingestion.pipeline.QdrantManager",
+            return_value=mock_qdrant_manager,
+        ):
+            with patch(
+                "llmaven.agentic.ingestion.pipeline.TextEmbedding"
+            ) as mock_dense:
+                with patch(
+                    "llmaven.agentic.ingestion.pipeline.SparseTextEmbedding"
+                ) as mock_sparse:
+                    with patch(
+                        "llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding"
+                    ) as mock_colbert:
                         # Mock embeddings
                         mock_dense_instance = MagicMock()
                         mock_dense_instance.embed.return_value = [[0.1] * 384]
                         mock_dense.return_value = mock_dense_instance
 
                         mock_sparse_instance = MagicMock()
-                        mock_sparse_instance.embed.return_value = [{"indices": [1], "values": [0.5]}]
+                        mock_sparse_instance.embed.return_value = [
+                            {"indices": [1], "values": [0.5]}
+                        ]
                         mock_sparse.return_value = mock_sparse_instance
 
                         mock_colbert_instance = MagicMock()

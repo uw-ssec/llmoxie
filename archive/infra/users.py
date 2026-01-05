@@ -14,7 +14,11 @@ from typing import Optional
 import typer
 from azure.data.tables import TableServiceClient
 from azure.core.credentials import AzureNamedKeyCredential
-from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError, HttpResponseError
+from azure.core.exceptions import (
+    ResourceExistsError,
+    ResourceNotFoundError,
+    HttpResponseError,
+)
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
@@ -40,7 +44,7 @@ def get_table_client():
         console.print(
             "[red]✗ Error:[/red] AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY "
             "must be set in environment or .env file",
-            style="red"
+            style="red",
         )
         console.print("\n[yellow]See infra/README.md for setup instructions[/yellow]")
         raise typer.Exit(1)
@@ -48,10 +52,7 @@ def get_table_client():
     account_url = f"https://{account_name}.table.core.windows.net"
     credential = AzureNamedKeyCredential(account_name, account_key)
 
-    table_service = TableServiceClient(
-        endpoint=account_url,
-        credential=credential
-    )
+    table_service = TableServiceClient(endpoint=account_url, credential=credential)
 
     return table_service.get_table_client(TABLE_NAME)
 
@@ -59,7 +60,9 @@ def get_table_client():
 @app.command()
 def add(
     user_name: str = typer.Argument(..., help="User's full name"),
-    user_id: Optional[str] = typer.Option(None, "--user-id", "-u", help="Custom user ID (default: auto-generated GUID)")
+    user_id: Optional[str] = typer.Option(
+        None, "--user-id", "-u", help="Custom user ID (default: auto-generated GUID)"
+    ),
 ):
     """
     Add a new user to the authentication system.
@@ -90,18 +93,22 @@ def add(
         try:
             table_client.create_entity(entity=entity)
         except ResourceExistsError:
-            console.print(f"[red]✗ Error:[/red] User with ID {user_id} already exists", style="red")
+            console.print(
+                f"[red]✗ Error:[/red] User with ID {user_id} already exists",
+                style="red",
+            )
             raise typer.Exit(1)
         except HttpResponseError as e:
             if "TableNotFound" in str(e):
                 console.print(
-                    f"\n[red]✗ Error:[/red] Table '{TABLE_NAME}' not found",
-                    style="red"
+                    f"\n[red]✗ Error:[/red] Table '{TABLE_NAME}' not found", style="red"
                 )
                 console.print("\n[yellow]To create the table, run:[/yellow]")
                 console.print("  pixi run setup-proxy")
             else:
-                console.print(f"[red]✗ Azure Table Storage error:[/red] {e}", style="red")
+                console.print(
+                    f"[red]✗ Azure Table Storage error:[/red] {e}", style="red"
+                )
             raise typer.Exit(1)
 
         # Display results
@@ -112,7 +119,9 @@ def add(
         console.print(f"[cyan]User ID:[/cyan]    {user_id}")
         console.print(f"[cyan]Created:[/cyan]    {created_at}")
         console.print("\n[yellow]" + "-" * 70 + "[/yellow]")
-        console.print("[yellow bold]API KEY (save this - it won't be shown again):[/yellow bold]")
+        console.print(
+            "[yellow bold]API KEY (save this - it won't be shown again):[/yellow bold]"
+        )
         console.print("[yellow]" + "-" * 70 + "[/yellow]")
         console.print(f"[green bold]{api_key}[/green bold]")
         console.print("[yellow]" + "-" * 70 + "[/yellow]")
@@ -134,7 +143,9 @@ def add(
 
 @app.command(name="list")
 def list_users(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full details including API keys"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show full details including API keys"
+    ),
 ):
     """
     List all users in the authentication system.
@@ -148,10 +159,14 @@ def list_users(
             users = list(entities)
         except HttpResponseError as e:
             if "TableNotFound" in str(e):
-                console.print(f"[red]✗ Error:[/red] Table '{TABLE_NAME}' not found", style="red")
+                console.print(
+                    f"[red]✗ Error:[/red] Table '{TABLE_NAME}' not found", style="red"
+                )
                 console.print("\n[yellow]Run 'pixi run setup-proxy' first[/yellow]")
             else:
-                console.print(f"[red]✗ Azure Table Storage error:[/red] {e}", style="red")
+                console.print(
+                    f"[red]✗ Azure Table Storage error:[/red] {e}", style="red"
+                )
             raise typer.Exit(1)
 
         if not users:
@@ -203,7 +218,9 @@ def delete(
             user = table_client.get_entity("user", user_id)
             user_name = user.get("user_name", "Unknown")
         except ResourceNotFoundError:
-            console.print(f"[red]✗ Error:[/red] User with ID '{user_id}' not found", style="red")
+            console.print(
+                f"[red]✗ Error:[/red] User with ID '{user_id}' not found", style="red"
+            )
             raise typer.Exit(1)
         except HttpResponseError as e:
             console.print(f"[red]✗ Azure Table Storage error:[/red] {e}", style="red")
@@ -211,7 +228,7 @@ def delete(
 
         # Confirm deletion
         if not force:
-            console.print(f"\n[yellow]About to delete:[/yellow]")
+            console.print("\n[yellow]About to delete:[/yellow]")
             console.print(f"  User Name: {user_name}")
             console.print(f"  User ID: {user_id}")
 
@@ -223,7 +240,9 @@ def delete(
         # Delete user
         try:
             table_client.delete_entity("user", user_id)
-            console.print(f"\n[green]✓ User '{user_name}' (ID: {user_id}) deleted successfully[/green]\n")
+            console.print(
+                f"\n[green]✓ User '{user_name}' (ID: {user_id}) deleted successfully[/green]\n"
+            )
         except HttpResponseError as e:
             console.print(f"[red]✗ Error deleting user:[/red] {e}", style="red")
             raise typer.Exit(1)

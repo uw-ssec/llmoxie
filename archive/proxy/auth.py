@@ -59,7 +59,7 @@ class UserKeyStore:
         logger.info(
             "UserKeyStore initialized with %d keys from table '%s'",
             len(self.key_cache),
-            TABLE_NAME
+            TABLE_NAME,
         )
 
     def _refresh_cache(self) -> None:
@@ -91,7 +91,7 @@ class UserKeyStore:
             logger.warning(
                 "Table '%s' not found. Creating empty cache. "
                 "Please create the table manually.",
-                self.table_name
+                self.table_name,
             )
             self.key_cache = {}
             self.last_refresh = datetime.utcnow()

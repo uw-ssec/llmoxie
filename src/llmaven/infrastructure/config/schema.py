@@ -72,7 +72,9 @@ class DatabaseConfig(BaseModel):
     geo_redundant_backup: bool = Field(
         default=False, description="Enable geo-redundant backup"
     )
-    high_availability: bool = Field(default=False, description="Enable high availability")
+    high_availability: bool = Field(
+        default=False, description="Enable high availability"
+    )
     postgresql_version: str = Field(default="16", description="PostgreSQL version")
     databases: List[str] = Field(
         default=["llmaven", "mlflow_db", "litellm_db"], description="Database names"
@@ -140,9 +142,7 @@ class MonitoringConfig(BaseModel):
     enable_application_insights: bool = Field(
         default=True, description="Enable Application Insights"
     )
-    enable_log_analytics: bool = Field(
-        default=True, description="Enable Log Analytics"
-    )
+    enable_log_analytics: bool = Field(default=True, description="Enable Log Analytics")
     daily_data_cap_gb: Optional[float] = Field(
         default=None, description="Daily data cap in GB (null for unlimited)"
     )
@@ -245,9 +245,7 @@ class KeyVaultConfig(BaseModel):
 class NetworkSecurityConfig(BaseModel):
     """Network security configuration."""
 
-    allow_azure_services: bool = Field(
-        default=True, description="Allow Azure services"
-    )
+    allow_azure_services: bool = Field(default=True, description="Allow Azure services")
     allowed_ip_ranges: List[str] = Field(
         default_factory=list, description="Allowed IP ranges for access control"
     )
@@ -257,7 +255,8 @@ class SecurityConfig(BaseModel):
     """Security configuration."""
 
     enable_private_endpoints: bool = Field(
-        default=False, description="Enable private endpoints (recommended for production)"
+        default=False,
+        description="Enable private endpoints (recommended for production)",
     )
     key_vault: KeyVaultConfig = Field(
         default_factory=KeyVaultConfig, description="Key Vault configuration"

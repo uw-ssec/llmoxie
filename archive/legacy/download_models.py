@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from urllib.request import urlretrieve
-from transformers import AutoModelForCausalLM, AutoTokenizer,  BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
 # Set the base directory for Rubin-RAG
-BASE_DIR = Path(__file__).resolve().parent.parent  # Adjust based on your script location
+BASE_DIR = (
+    Path(__file__).resolve().parent.parent
+)  # Adjust based on your script location
 MODEL_DIR = BASE_DIR / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)  # Create the directory if it doesn't exist
 
@@ -16,14 +17,16 @@ OLMO_MODEL_FILE = "OLMo-7B-Instruct-Q4_K_M.gguf"
 OLMO_2_MODEL_FILE = "olmo-2-1124-7B-instruct-Q4_K_M.gguf"
 
 # Transformer model names
-TRANSFORMER_MODEL_NAME = "allenai/OLMo-2-1124-7B-Instruct"  # Adjust if using another model
-TRANSFORMER_MODEL_DIR = MODEL_DIR / TRANSFORMER_MODEL_NAME.replace("/", "_")  # Cache in local directory
+TRANSFORMER_MODEL_NAME = (
+    "allenai/OLMo-2-1124-7B-Instruct"  # Adjust if using another model
+)
+TRANSFORMER_MODEL_DIR = MODEL_DIR / TRANSFORMER_MODEL_NAME.replace(
+    "/", "_"
+)  # Cache in local directory
+
 
 def download_model(
-    model_name: str,
-    model_file: str,
-    source: str,
-    force: bool = False
+    model_name: str, model_file: str, source: str, force: bool = False
 ) -> Path:
     """
     Generalized function to download a model and store it in the model directory.
@@ -77,10 +80,11 @@ def download_olmo_2_model(force: bool = False) -> Path:
     url = f"https://huggingface.co/allenai/OLMo-2-1124-7B-Instruct-GGUF/resolve/main/{OLMO_2_MODEL_FILE}"
     return download_model("OLMO 2", OLMO_2_MODEL_FILE, url, force)
 
+
 def load_transformer_model(
     model_name: str = TRANSFORMER_MODEL_NAME,
     force: bool = False,
-    quantization: str = "8bit"  # Options: "8bit" or "4bit"
+    quantization: str = "8bit",  # Options: "8bit" or "4bit"
 ):
     """
     Loads a transformer-based model with `bitsandbytes` quantization and caches it.
@@ -101,9 +105,13 @@ def load_transformer_model(
     """
 
     if TRANSFORMER_MODEL_DIR.exists() and not force:
-        print(f"Transformer model {model_name} is already cached at {TRANSFORMER_MODEL_DIR}")
+        print(
+            f"Transformer model {model_name} is already cached at {TRANSFORMER_MODEL_DIR}"
+        )
     else:
-        print(f"Downloading transformer model {model_name} to {TRANSFORMER_MODEL_DIR}...")
+        print(
+            f"Downloading transformer model {model_name} to {TRANSFORMER_MODEL_DIR}..."
+        )
 
     # Define the quantization config
     if quantization == "8bit":
@@ -121,8 +129,10 @@ def load_transformer_model(
         model_name,
         cache_dir=str(MODEL_DIR),
         device_map="auto",
-        quantization_config=quantization_config
+        quantization_config=quantization_config,
     )
 
-    print(f"Transformer model {model_name} loaded successfully with {quantization} quantization.")
+    print(
+        f"Transformer model {model_name} loaded successfully with {quantization} quantization."
+    )
     return model, tokenizer

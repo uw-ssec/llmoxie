@@ -39,9 +39,9 @@ def create_storage_account(
     # Format: {project}{environment}{region}st (max 24 chars)
     # Add region suffix to ensure global uniqueness
     region_suffix = location[:4].replace("-", "").lower()  # e.g., "westus2" -> "west"
-    storage_account_name = f"{project_name}{environment}{region_suffix}st".lower().replace(
-        "-", ""
-    )[:24]
+    storage_account_name = (
+        f"{project_name}{environment}{region_suffix}st".lower().replace("-", "")[:24]
+    )
 
     # Create Storage Account
     storage_account = azure_native.storage.StorageAccount(
@@ -52,7 +52,9 @@ def create_storage_account(
         tags=tags,
         # SKU configuration
         sku=azure_native.storage.SkuArgs(
-            name=_get_sku_name(storage_config.account_tier, storage_config.account_replication),
+            name=_get_sku_name(
+                storage_config.account_tier, storage_config.account_replication
+            ),
         ),
         kind=azure_native.storage.Kind.STORAGE_V2,
         # Enable hierarchical namespace for ADLS Gen2
@@ -126,9 +128,7 @@ def create_blob_containers(
         )
         containers.append(container)
 
-        pulumi.export(
-            f"blob_container_{container_name}_{environment}", container.name
-        )
+        pulumi.export(f"blob_container_{container_name}_{environment}", container.name)
 
     return containers
 
@@ -277,9 +277,7 @@ def create_lifecycle_management_policy(
         ),
     )
 
-    pulumi.export(
-        f"storage_lifecycle_policy_{environment}", lifecycle_policy.name
-    )
+    pulumi.export(f"storage_lifecycle_policy_{environment}", lifecycle_policy.name)
 
     return lifecycle_policy
 

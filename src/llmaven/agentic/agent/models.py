@@ -24,9 +24,7 @@ class Citation(BaseModel):
     relevance_score: float = Field(
         ..., description="Relevance score (0.0-1.0)", ge=0.0, le=1.0
     )
-    heading_hierarchy: str | None = Field(
-        None, description="Heading hierarchy context"
-    )
+    heading_hierarchy: str | None = Field(None, description="Heading hierarchy context")
 
     model_config = ConfigDict(
         json_schema_extra={

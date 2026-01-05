@@ -78,7 +78,7 @@ def create_key_vault(
     """
     project_name = config.project.name
     environment = config.project.environment
-    kv_config = config.security.key_vault
+    kv_config = config.security.key_vault  # noqa: F841
 
     # Key Vault name (must be globally unique, 3-24 chars, alphanumeric and hyphens)
     # Format: kv-{project}-{env}-{region_suffix} (e.g., kv-llmaven-dev-wu2)
@@ -117,7 +117,7 @@ def create_key_vault(
                         azure_native.keyvault.KeyPermissions.VERIFY,
                         azure_native.keyvault.KeyPermissions.BACKUP,
                         azure_native.keyvault.KeyPermissions.RESTORE,
-                    ]
+                    ],
                 ),
             )
         )
@@ -345,7 +345,6 @@ def create_secrets_from_environment(
     )
 
     return secrets
-
 
 
 def grant_key_vault_access(

@@ -20,10 +20,12 @@ os.environ["DISABLE_TQDM"] = "1"
 # Disable progress bars via API
 try:
     from huggingface_hub.utils import disable_progress_bars
+
     disable_progress_bars()
 except ImportError:
     try:
         from huggingface_hub import disable_progress_bars
+
         disable_progress_bars()
     except ImportError:
         pass
@@ -73,7 +75,9 @@ class HybridSearcher:
         """
         self.collection_name = collection_name or config.collection_name
         self.qdrant_manager = qdrant_manager or QdrantManager()
-        self.enable_rerank = enable_rerank if enable_rerank is not None else config.enable_rerank
+        self.enable_rerank = (
+            enable_rerank if enable_rerank is not None else config.enable_rerank
+        )
         self.prefetch_top_k = prefetch_top_k or config.prefetch_top_k
         self.final_top_k = final_top_k or config.final_top_k
 
@@ -106,7 +110,9 @@ class HybridSearcher:
 
             if self._colbert_model is None and self.enable_rerank:
                 logger.debug(f"Loading ColBERT model: {config.colbert_model}")
-                self._colbert_model = LateInteractionTextEmbedding(model_name=config.colbert_model)
+                self._colbert_model = LateInteractionTextEmbedding(
+                    model_name=config.colbert_model
+                )
 
             logger.info("Embedding models loaded successfully")
             self._models_initialized = True
@@ -222,7 +228,9 @@ class HybridSearcher:
             )
 
             # Convert ScoredPoints to SearchResult objects
-            logger.debug(f"Converting {len(scored_points)} results to SearchResult objects")
+            logger.debug(
+                f"Converting {len(scored_points)} results to SearchResult objects"
+            )
             results = []
             for point in scored_points:
                 payload = point.payload or {}

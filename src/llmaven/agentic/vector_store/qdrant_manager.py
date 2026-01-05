@@ -230,14 +230,15 @@ class QdrantManager:
                     collection_name=collection_name,
                     query=query_vectors["colbert"],
                     query_filter=None,
-                    limit=min(len(deduplicated) * 2, 100),  # Query more to get prefetch candidates
+                    limit=min(
+                        len(deduplicated) * 2, 100
+                    ),  # Query more to get prefetch candidates
                     using="colbert",
                 )
 
                 # Filter to only include prefetch candidates and return top-K
                 reranked_filtered = [
-                    point for point in rerank_results.points
-                    if point.id in prefetch_ids
+                    point for point in rerank_results.points if point.id in prefetch_ids
                 ]
                 return reranked_filtered[:limit]
 

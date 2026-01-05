@@ -82,7 +82,9 @@ def deploy_infrastructure(
     print()
     try:
         # Note: skip secrets during validation for now
-        validate_config(config_path, strict=False, skip_secrets=False, env_file_path=env_file_path)
+        validate_config(
+            config_path, strict=False, skip_secrets=False, env_file_path=env_file_path
+        )
     except ValidationError as e:
         print()
         print("❌ Configuration validation failed. Fix errors and try again.")
@@ -94,6 +96,7 @@ def deploy_infrastructure(
 
     # Get stack name from config
     from ..infrastructure.config.loader import load_config
+
     config = load_config(config_path)
 
     # Handle Pulumi passphrase setting
@@ -102,7 +105,10 @@ def deploy_infrastructure(
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
     else:
         # Passphrase required - check if it's set
-        if "PULUMI_CONFIG_PASSPHRASE" not in os.environ or not os.environ["PULUMI_CONFIG_PASSPHRASE"]:
+        if (
+            "PULUMI_CONFIG_PASSPHRASE" not in os.environ
+            or not os.environ["PULUMI_CONFIG_PASSPHRASE"]
+        ):
             raise DeploymentError(
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set. Either set the environment variable or "
@@ -148,9 +154,15 @@ def deploy_infrastructure(
             print()
             print("✓ Preview completed")
             print()
-            print(f"Resources to create: {preview_result.change_summary.get('create', 0)}")
-            print(f"Resources to update: {preview_result.change_summary.get('update', 0)}")
-            print(f"Resources to delete: {preview_result.change_summary.get('delete', 0)}")
+            print(
+                f"Resources to create: {preview_result.change_summary.get('create', 0)}"
+            )
+            print(
+                f"Resources to update: {preview_result.change_summary.get('update', 0)}"
+            )
+            print(
+                f"Resources to delete: {preview_result.change_summary.get('delete', 0)}"
+            )
             print()
             print("To deploy, run:")
             print(f"  llmaven deploy --config {config_path}")
@@ -191,7 +203,9 @@ def deploy_infrastructure(
                 print()
 
             print("Next steps:")
-            print(f"  1. Check deployment status: llmaven status --config {config_path}")
+            print(
+                f"  1. Check deployment status: llmaven status --config {config_path}"
+            )
             print("  2. View resources in Azure Portal")
             print("  3. Access your services via the URLs shown above")
             print()
@@ -219,13 +233,17 @@ def destroy_infrastructure(config_path: Path) -> None:
 
     # Get stack name
     from ..infrastructure.config.loader import load_config
+
     config = load_config(config_path)
 
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
     else:
-        if "PULUMI_CONFIG_PASSPHRASE" not in os.environ or not os.environ["PULUMI_CONFIG_PASSPHRASE"]:
+        if (
+            "PULUMI_CONFIG_PASSPHRASE" not in os.environ
+            or not os.environ["PULUMI_CONFIG_PASSPHRASE"]
+        ):
             raise DeploymentError(
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
@@ -247,7 +265,7 @@ def destroy_infrastructure(config_path: Path) -> None:
 
         # Run destroy
         print("Running Pulumi destroy...")
-        destroy_result = stack.destroy(
+        stack.destroy(
             on_output=lambda msg: print(msg),
         )
 
@@ -291,13 +309,17 @@ def refresh_infrastructure(
 
     # Get stack name
     from ..infrastructure.config.loader import load_config
+
     config = load_config(config_path)
 
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
     else:
-        if "PULUMI_CONFIG_PASSPHRASE" not in os.environ or not os.environ["PULUMI_CONFIG_PASSPHRASE"]:
+        if (
+            "PULUMI_CONFIG_PASSPHRASE" not in os.environ
+            or not os.environ["PULUMI_CONFIG_PASSPHRASE"]
+        ):
             raise DeploymentError(
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
@@ -357,10 +379,10 @@ def refresh_infrastructure(
         print()
 
         # Show summary if available
-        if hasattr(refresh_result, 'summary') and refresh_result.summary:
+        if hasattr(refresh_result, "summary") and refresh_result.summary:
             summary = refresh_result.summary
             print("Refresh Summary:")
-            if hasattr(summary, 'resource_changes') and summary.resource_changes:
+            if hasattr(summary, "resource_changes") and summary.resource_changes:
                 for action, count in summary.resource_changes.items():
                     print(f"  {action}: {count}")
             print()
@@ -397,13 +419,17 @@ def cancel_stack_operation(config_path: Path) -> None:
 
     # Get stack name
     from ..infrastructure.config.loader import load_config
+
     config = load_config(config_path)
 
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
     else:
-        if "PULUMI_CONFIG_PASSPHRASE" not in os.environ or not os.environ["PULUMI_CONFIG_PASSPHRASE"]:
+        if (
+            "PULUMI_CONFIG_PASSPHRASE" not in os.environ
+            or not os.environ["PULUMI_CONFIG_PASSPHRASE"]
+        ):
             raise DeploymentError(
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
@@ -445,7 +471,10 @@ def cancel_stack_operation(config_path: Path) -> None:
             print()
         except Exception as e:
             # Check if there's actually no operation in progress
-            if "no update in progress" in str(e).lower() or "not found" in str(e).lower():
+            if (
+                "no update in progress" in str(e).lower()
+                or "not found" in str(e).lower()
+            ):
                 print("ℹ️  No operation currently in progress on this stack.")
                 print()
             else:
@@ -476,13 +505,17 @@ def show_deployment_status(config_path: Path) -> None:
 
     # Get stack name
     from ..infrastructure.config.loader import load_config
+
     config = load_config(config_path)
 
     # Handle Pulumi passphrase setting
     if not config.project.enable_passphrase:
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
     else:
-        if "PULUMI_CONFIG_PASSPHRASE" not in os.environ or not os.environ["PULUMI_CONFIG_PASSPHRASE"]:
+        if (
+            "PULUMI_CONFIG_PASSPHRASE" not in os.environ
+            or not os.environ["PULUMI_CONFIG_PASSPHRASE"]
+        ):
             raise DeploymentError(
                 "Passphrase protection is enabled in config but PULUMI_CONFIG_PASSPHRASE "
                 "environment variable is not set."
@@ -528,13 +561,13 @@ def show_deployment_status(config_path: Path) -> None:
             if info:
                 print("Stack Information:")
                 # Access available attributes from UpdateSummary
-                if hasattr(info, 'result') and info.result:
+                if hasattr(info, "result") and info.result:
                     print(f"  Last update result: {info.result}")
-                if hasattr(info, 'start_time') and info.start_time:
+                if hasattr(info, "start_time") and info.start_time:
                     print(f"  Start time: {info.start_time}")
-                if hasattr(info, 'end_time') and info.end_time:
+                if hasattr(info, "end_time") and info.end_time:
                     print(f"  End time: {info.end_time}")
-                if hasattr(info, 'resource_changes') and info.resource_changes:
+                if hasattr(info, "resource_changes") and info.resource_changes:
                     print(f"  Resource changes: {info.resource_changes}")
                 print()
         except Exception as e:

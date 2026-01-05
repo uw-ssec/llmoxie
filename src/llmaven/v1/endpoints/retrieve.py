@@ -14,7 +14,7 @@ async def retrieve(request: RetrieveRequest):
             request.query,
             request.existing_collection,
             request.existing_qdrant_path,
-            request.embedding_model
+            request.embedding_model,
         )
         return result
     except Exception as e:

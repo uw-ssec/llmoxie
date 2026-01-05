@@ -5,7 +5,7 @@ generation, prefetch logic, combination strategy, reranking, and error handling.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, patch
 import numpy as np
 
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
@@ -130,7 +130,9 @@ class TestHybridSearcherQueryEmbedding:
         mock_dense_cls.return_value = mock_dense
 
         mock_sparse = Mock()
-        mock_sparse.embed.return_value = [MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])]
+        mock_sparse.embed.return_value = [
+            MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])
+        ]
         mock_sparse_cls.return_value = mock_sparse
 
         mock_colbert = Mock()
@@ -164,7 +166,9 @@ class TestHybridSearcherQueryEmbedding:
         mock_dense_cls.return_value = mock_dense
 
         mock_sparse = Mock()
-        mock_sparse.embed.return_value = [MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])]
+        mock_sparse.embed.return_value = [
+            MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])
+        ]
         mock_sparse_cls.return_value = mock_sparse
 
         # Execute
@@ -215,7 +219,9 @@ class TestHybridSearcherSearch:
         mock_dense_cls.return_value = mock_dense
 
         mock_sparse = Mock()
-        mock_sparse.embed.return_value = [MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])]
+        mock_sparse.embed.return_value = [
+            MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])
+        ]
         mock_sparse_cls.return_value = mock_sparse
 
         mock_colbert = Mock()
@@ -288,7 +294,9 @@ class TestHybridSearcherSearch:
         mock_dense_cls.return_value = mock_dense
 
         mock_sparse = Mock()
-        mock_sparse.embed.return_value = [MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])]
+        mock_sparse.embed.return_value = [
+            MockSparseEmbedding([0, 5, 10], [0.5, 0.3, 0.2])
+        ]
         mock_sparse_cls.return_value = mock_sparse
 
         # Setup QdrantManager mock

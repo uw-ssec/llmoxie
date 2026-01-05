@@ -105,7 +105,9 @@ class TestExceptionCatching:
                 # Should catch all derived exceptions
                 pass
             except Exception:
-                pytest.fail(f"Exception {type(exc).__name__} should be caught by AgenticRAGError")
+                pytest.fail(
+                    f"Exception {type(exc).__name__} should be caught by AgenticRAGError"
+                )
 
     def test_catch_specific_exception_only_catches_that_type(self):
         """Test that catching specific exception only catches that type."""
@@ -115,7 +117,9 @@ class TestExceptionCatching:
                 raise IngestionError("test")
             except QdrantConnectionError:
                 # Should not catch IngestionError
-                pytest.fail("Should not catch IngestionError with QdrantConnectionError handler")
+                pytest.fail(
+                    "Should not catch IngestionError with QdrantConnectionError handler"
+                )
             except IngestionError:
                 # Re-raise as QdrantConnectionError to test the handler
                 raise QdrantConnectionError("test")
@@ -158,6 +162,7 @@ class TestExceptionImportability:
     def test_base_exception_importable_from_package(self):
         """Test that base exception is importable from package."""
         from llmaven.agentic import AgenticRAGError
+
         assert AgenticRAGError is not None
         assert issubclass(AgenticRAGError, Exception)
 
@@ -171,6 +176,7 @@ class TestExceptionImportability:
             EmbeddingError,
             SearchError,
         )
+
         assert all(
             exc is not None
             for exc in [
@@ -198,6 +204,7 @@ class TestExceptionUsagePatterns:
 
     def test_raise_and_catch_in_function(self):
         """Test raising and catching exceptions in a function."""
+
         def process_document():
             raise IngestionError("Failed to process document")
 
@@ -214,6 +221,7 @@ class TestExceptionUsagePatterns:
 
     def test_multiple_exception_types(self):
         """Test handling multiple exception types."""
+
         def operation_that_might_fail(operation_type: str):
             if operation_type == "ingestion":
                 raise IngestionError("Ingestion failed")
