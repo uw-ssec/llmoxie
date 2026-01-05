@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
@@ -91,13 +91,13 @@ jobs:
 
   #     steps:
   #       - name: Checkout repository
-  #         uses: actions/checkout@v4
+  #         uses: actions/checkout@v6
 
   #       - name: Set up Docker
   #         uses: docker/setup-docker-action@v4
 
   #       - name: Setup pixi
-  #         uses: prefix-dev/setup-pixi@v0.8.1
+  #         uses: prefix-dev/setup-pixi@v0.9.3
   #         with:
   #           pixi-version: ${{ env.PIXI_VERSION }}
   #           cache: true
@@ -162,10 +162,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
