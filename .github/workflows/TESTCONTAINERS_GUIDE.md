@@ -1,10 +1,13 @@
 # Testcontainers Guide for LLMaven
 
-This guide explains how LLMaven uses testcontainers-python for running integration tests with Qdrant.
+This guide explains how LLMaven uses testcontainers-python for running
+integration tests with Qdrant.
 
 ## Overview
 
-Instead of using GitHub Actions service containers (which only work on Linux), LLMaven uses **testcontainers-python** to programmatically manage Qdrant containers. This approach:
+Instead of using GitHub Actions service containers (which only work on Linux),
+LLMaven uses **testcontainers-python** to programmatically manage Qdrant
+containers. This approach:
 
 - ✅ Works on both Linux and macOS (when Docker is available)
 - ✅ Provides dynamic port allocation (no port conflicts)
@@ -16,7 +19,8 @@ Instead of using GitHub Actions service containers (which only work on Linux), L
 
 ### 1. Pytest Fixtures (`tests/agentic/conftest.py`)
 
-The project provides session-scoped fixtures that start Qdrant containers once and share them across all tests:
+The project provides session-scoped fixtures that start Qdrant containers once
+and share them across all tests:
 
 ```python
 @pytest.fixture(scope="session")
@@ -59,7 +63,8 @@ def test_qdrant_collection(qdrant_url):
 
 - **Session Start**: First test requests `qdrant_container` → container starts
 - **During Tests**: All tests share the same container (via `session` scope)
-- **Session End**: After all tests complete → container automatically stops and removes
+- **Session End**: After all tests complete → container automatically stops and
+  removes
 
 ### 4. CI Integration
 
@@ -87,14 +92,17 @@ jobs:
 Testcontainers requires Docker to be installed and running:
 
 **Linux (GitHub Actions)**:
+
 - ✅ Docker is pre-installed on ubuntu-latest runners
 - ✅ Docker daemon is already running
 
 **macOS (GitHub Actions)**:
+
 - ⚠️ Currently disabled in CI due to Docker arm64 runner instability
 - 🔗 See: https://github.com/docker/actions-toolkit/issues/317
 
 **Local Development**:
+
 - Install Docker Desktop (macOS/Windows) or Docker Engine (Linux)
 - Ensure Docker daemon is running: `docker info`
 - Ensure your user has Docker permissions:
@@ -118,6 +126,7 @@ testcontainers = ">=4.8.0,<4.9"
 ### Default Behavior
 
 By default, testcontainers:
+
 - Uses `qdrant/qdrant:latest` image
 - Allocates random available ports (e.g., 6333 → 49152)
 - Starts container on-demand when fixture is requested
@@ -148,14 +157,14 @@ Testcontainers respects these environment variables:
 
 ## Advantages vs Service Containers
 
-| Feature | GitHub Service Containers | Testcontainers |
-|---------|--------------------------|----------------|
-| **Platform Support** | Linux only | Linux + macOS (with Docker) |
-| **Port Management** | Manual (6333:6333) | Automatic (dynamic ports) |
-| **Local Testing** | Manual `docker run` | Automatic via pytest |
-| **Cleanup** | Manual or job end | Automatic after tests |
-| **Configuration** | YAML workflow | Python code (more flexible) |
-| **Isolation** | One per job | One per test session |
+| Feature              | GitHub Service Containers | Testcontainers              |
+| -------------------- | ------------------------- | --------------------------- |
+| **Platform Support** | Linux only                | Linux + macOS (with Docker) |
+| **Port Management**  | Manual (6333:6333)        | Automatic (dynamic ports)   |
+| **Local Testing**    | Manual `docker run`       | Automatic via pytest        |
+| **Cleanup**          | Manual or job end         | Automatic after tests       |
+| **Configuration**    | YAML workflow             | Python code (more flexible) |
+| **Isolation**        | One per job               | One per test session        |
 
 ## Troubleshooting
 
@@ -164,6 +173,7 @@ Testcontainers respects these environment variables:
 **Error**: `Cannot connect to the Docker daemon`
 
 **Solution**:
+
 ```bash
 # Check Docker status
 docker info
@@ -175,9 +185,11 @@ docker info
 
 ### Permission Denied
 
-**Error**: `Permission denied while trying to connect to the Docker daemon socket`
+**Error**:
+`Permission denied while trying to connect to the Docker daemon socket`
 
 **Solution**:
+
 ```bash
 # Linux only
 sudo usermod -aG docker $USER
@@ -189,6 +201,7 @@ sudo usermod -aG docker $USER
 **Error**: Orphaned containers after tests
 
 **Solution**:
+
 ```bash
 # List testcontainers (prefix: testcontainers-)
 docker ps -a | grep testcontainers
@@ -202,6 +215,7 @@ docker rm -f $(docker ps -aq --filter "name=testcontainers")
 **Error**: `Bind for 0.0.0.0:6333 failed: port is already allocated`
 
 **Solution**:
+
 - Testcontainers uses dynamic ports, so this shouldn't happen
 - If you see this, check for manual Qdrant containers:
   ```bash
@@ -283,6 +297,7 @@ def test_container_ready(qdrant_container):
 If you're migrating existing tests from GitHub service containers:
 
 **Before (GitHub service containers)**:
+
 ```yaml
 # .github/workflows/ci.yml
 services:
@@ -299,6 +314,7 @@ def test_qdrant():
 ```
 
 **After (testcontainers)**:
+
 ```yaml
 # .github/workflows/ci.yml
 # No services section needed!
@@ -321,6 +337,7 @@ def test_qdrant(qdrant_url):
 ```
 
 **Benefits**:
+
 - ✅ Works locally without manual `docker run`
 - ✅ Works on both Linux and macOS CI runners
 - ✅ No port conflicts
