@@ -11,6 +11,8 @@ from typing import Optional
 
 import typer
 
+from llmaven.infrastructure.extract.litellm import LiteLLMLogExtractor
+
 app = typer.Typer(
     name="llmaven",
     help="LLMaven - CLI for Scientific Discovery",
@@ -582,6 +584,204 @@ def refresh(
     except Exception as e:
         typer.echo(f"✗ Refresh failed: {e}", err=True)
         sys.exit(1)
+
+
+@infra_app.command()
+def extract(
+    source: str = typer.Option(
+        ...,
+        "--source",
+        "-s",
+        help="Data source (litellm, mlflow, etc.)",
+    ),
+    from_date: str = typer.Option(
+        ...,
+        "--from",
+        help="Start date (YYYY-MM-DD, UTC, inclusive)",
+    ),
+    to_date: str = typer.Option(
+        ...,
+        "--to",
+        help="End date (YYYY-MM-DD, UTC, inclusive)",
+    ),
+    output_path: str = typer.Option(
+        ...,
+        "--out",
+        help="Output zip file path",
+    ),
+    db_host: str = typer.Option(
+        "localhost",
+        "--db-host",
+        envvar="LITELLM_DB_HOST",
+        help="PostgreSQL host",
+    ),
+    db_port: int = typer.Option(
+        5432,
+        "--db-port",
+        envvar="LITELLM_DB_PORT",
+        help="PostgreSQL port",
+    ),
+    db_name: str = typer.Option(
+        "litellm_db",
+        "--db-name",
+        envvar="LITELLM_DB_NAME",
+        help="PostgreSQL database name",
+    ),
+    db_user: str = typer.Option(
+        "postgres",
+        "--db-user",
+        envvar="LITELLM_DB_USER",
+        help="PostgreSQL username",
+    ),
+    db_password: str = typer.Option(
+        "",
+        "--db-password",
+        envvar="LITELLM_DB_PASSWORD",
+        prompt=True,
+        hide_input=True,
+        help="PostgreSQL password",
+    ),
+) -> None:
+    """Extract logs from infrastructure services into partitioned JSONL zip file.
+
+    Supports multiple data sources (litellm, mlflow, etc.). Each day's logs
+    are written to a separate .jsonl file within the zip.
+
+    **Timezone**: All dates are interpreted as UTC. The date range is inclusive:
+    logs from 00:00:00 UTC on --from through 23:59:59 UTC on --to are included.
+
+    **Environment Variables**:
+        - LITELLM_DB_HOST: PostgreSQL host (default: localhost)
+        - LITELLM_DB_PORT: PostgreSQL port (default: 5432)
+        - LITELLM_DB_NAME: Database name (default: litellm_db)
+        - LITELLM_DB_USER: Username (default: postgres)
+        - LITELLM_DB_PASSWORD: Password (required if not in env var)
+
+    Examples:
+        Extract LiteLLM logs (default source):
+            llmaven infra extract --from 2026-01-01 --to 2026-01-04 --out logs.zip
+
+        Extract with custom database:
+            llmaven infra extract \\
+              --source litellm \\
+              --from 2026-01-01 \\
+              --to 2026-01-04 \\
+              --out logs.zip \\
+              --db-host prod.postgres.azure.com \\
+              --db-user admin@prod
+
+        Use environment variables:
+            export LITELLM_DB_HOST=localhost
+            export LITELLM_DB_PASSWORD=secret
+            llmaven infra extract --from 2026-01-01 --to 2026-01-04 --out logs.zip
+    """
+    from datetime import datetime
+    from pathlib import Path
+
+    from rich.console import Console
+
+    from llmaven.infrastructure.extract.exceptions import ExtractionError
+
+    console = Console()
+    console_err = Console(file=sys.stderr)
+
+    # ============================================================================
+    # VALIDATION PHASE (fail fast before any expensive operations)
+    # ============================================================================
+
+    # Validate dates
+    try:
+        start = datetime.strptime(from_date, "%Y-%m-%d")
+        end = datetime.strptime(to_date, "%Y-%m-%d")
+    except ValueError as e:
+        console_err.print(
+            f"[red]✗[/red] Invalid date format: {e}. Use YYYY-MM-DD (e.g., 2026-01-01)."
+        )
+        raise typer.Exit(code=1)
+
+    # Validate date range
+    if start > end:
+        console_err.print(
+            "[red]✗[/red] --from date must be before or equal to --to date"
+        )
+        raise typer.Exit(code=1)
+
+    # Validate source parameter
+    if source != "litellm":
+        console_err.print(
+            f"[red]✗[/red] Unknown source: {source}\n  Supported sources: litellm"
+        )
+        raise typer.Exit(code=1)
+
+    # Validate output path is writable
+    output_file = Path(output_path)
+    try:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        # Test write permission
+        if output_file.exists():
+            output_file.stat()  # Check if readable
+    except PermissionError:
+        console_err.print(
+            f"[red]✗[/red] Permission denied: cannot write to {output_file.parent}"
+        )
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console_err.print(f"[red]✗[/red] Invalid output path: {e}")
+        raise typer.Exit(code=1)
+
+    # ============================================================================
+    # FILE OVERWRITE CHECK
+    # ============================================================================
+
+    if output_file.exists():
+        console.print(f"[yellow]![/yellow] Output file already exists: {output_path}")
+        if not typer.confirm("Overwrite?"):
+            console.print("[yellow]![/yellow] Extraction cancelled.")
+            raise typer.Exit(code=0)
+
+    # ============================================================================
+    # EXTRACTION PHASE (route to appropriate extractor i.e. only litellm for now)
+    # ============================================================================
+
+    console.print(
+        f"[blue]→[/blue] Extracting LiteLLM logs from {from_date} to {to_date} (UTC)..."
+    )
+
+    extractor = LiteLLMLogExtractor(
+        host=db_host,
+        port=db_port,
+        database=db_name,
+        user=db_user,
+        password=db_password,
+    )
+
+    try:
+        # Connect to database
+        extractor.connect_to_postgres()
+        console.print("[green]✓[/green] Connected to PostgreSQL")
+
+        # Extract logs to zip
+        extractor.extract_to_zip(start, end, output_file)
+
+        console.print(
+            f"[green]✓[/green] Extraction complete! Data written to: {output_path}"
+        )
+
+        # Show zip file info
+        try:
+            file_size_mb = output_file.stat().st_size / (1024 * 1024)
+            console.print(f"[cyan]Zip file size: {file_size_mb:.2f} MB[/cyan]")
+        except Exception:
+            pass  # Non-fatal if we can't get file stats
+
+    except ExtractionError as e:
+        console_err.print(f"[red]✗[/red] Extraction failed: {e}")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
+        raise typer.Exit(code=1)
+    finally:
+        extractor.disconnect_from_postgres()
 
 
 @infra_app.command()

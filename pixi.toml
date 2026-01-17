@@ -54,6 +54,7 @@ azure-data-tables = ">=12.7.0,<13"
 python-dotenv = ">=1.1.1,<2"
 typer = ">=0.20.0,<0.21"
 rich = ">=14.2.0,<15"
+psycopg2 = ">=2.9,<3"
 
 [feature.infra.pypi-dependencies]
 pulumi = ">=3.203.0, <4"
@@ -91,6 +92,7 @@ proxy = { features = [
 
 [feature.llmaven.pypi-dependencies]
 llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
+psycopg2-binary = ">=2.9,<3"
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
