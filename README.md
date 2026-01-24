@@ -268,7 +268,7 @@ The UI will open automatically in your browser at http://localhost:8501
 3. **View Results**: See retrieved document chunks and AI-generated answers
 4. **Chat History**: All interactions are stored in the session
 
-### Option 2: Azure Infrastructure Deployment
+### Option 3: Azure Infrastructure Deployment
 
 LLMaven provides a comprehensive infrastructure deployment system for production
 workloads.
