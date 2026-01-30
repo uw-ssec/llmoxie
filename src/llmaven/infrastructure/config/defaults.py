@@ -41,10 +41,12 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             environment=environment,
             location="eastus",
             enable_passphrase=False,
+            pulumi_state_store=None,
         ),
         "azure": AzureConfig(
             subscription_id="",  # User must provide
             tenant_id=None,
+            resource_group=None,
         ),
         "networking": NetworkingConfig(
             vnet_address_space="10.0.0.0/16",
