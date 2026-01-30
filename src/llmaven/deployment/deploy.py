@@ -165,7 +165,7 @@ def deploy_infrastructure(
             )
             print()
             print("To deploy, run:")
-            print(f"  llmaven deploy --config {config_path}")
+            print(f"  llmaven infra deploy --config {config_path}")
         else:
             # Confirm deployment
             if not auto_approve:
