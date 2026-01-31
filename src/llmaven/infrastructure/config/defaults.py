@@ -239,11 +239,13 @@ project:
   environment: {environment}  # dev, staging, prod
   location: eastus  # Azure region
   enable_passphrase: false  # Set to true to require PULUMI_CONFIG_PASSPHRASE
+  pulumi_state_store: null  # Azure Storage account for Pulumi states (auto-generated during deployment)
 
 # Azure Subscription
 azure:
   subscription_id: ""  # Azure subscription ID (required)
   tenant_id: null  # Azure AD tenant ID (optional, auto-detected)
+  resource_group: null  # Resource group name (auto-generated during deployment)
 
 # Networking Configuration
 networking:

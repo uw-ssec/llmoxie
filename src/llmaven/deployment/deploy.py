@@ -12,7 +12,7 @@ from pathlib import Path
 from pulumi import automation as auto
 
 from .validate import ValidationError, validate_config
-from ..infrastructure.config.loader import load_config, save_config
+from ..infrastructure.config.loader import load_config, update_config_fields
 from ..infrastructure.main import create_pulumi_program
 
 CONTAINER_NAME = "pulumi-state"
@@ -199,10 +199,14 @@ def create_pulumi_backend_storage(config_path: Path) -> None:
         print()
         print("   ✓ Pulumi backend storage configured.")
 
-        # Save backend info to config
-        config.azure.resource_group = rg_name
-        config.project.pulumi_state_store = storage_account
-        save_config(config, config_path)
+        # Update config file with backend info
+        update_config_fields(
+            config_path,
+            {
+                "azure.resource_group": rg_name,
+                "project.pulumi_state_store": storage_account,
+            },
+        )
     except DeploymentError as e:
         print(f"   ⚠️ Error during Pulumi backend setup: {e}")
         raise
