@@ -200,7 +200,9 @@ def update_config_fields(
 
     unapplied_updates = set(updates.keys()) - applied_updates
     if unapplied_updates:
-        raise ConfigLoadError(f"Configuration fields not found: {', '.join(sorted(unapplied_updates))}")
+        raise ConfigLoadError(
+            f"Configuration fields not found: {', '.join(sorted(unapplied_updates))}"
+        )
 
     try:
         with open(config_path, "w") as f:

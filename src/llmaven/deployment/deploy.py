@@ -57,9 +57,12 @@ def _get_storage_key(rg_name: str, storage_account: str) -> str | None:
                 "storage",
                 "account",
                 "show",
-                "--name", storage_account,
-                "--resource-group", rg_name,
-                "--output", "json",
+                "--name",
+                storage_account,
+                "--resource-group",
+                rg_name,
+                "--output",
+                "json",
             ],
             check=False,
         )
@@ -72,9 +75,12 @@ def _get_storage_key(rg_name: str, storage_account: str) -> str | None:
                     "account",
                     "keys",
                     "list",
-                    "--account-name", storage_account,
-                    "--resource-group", rg_name,
-                    "--output", "json",
+                    "--account-name",
+                    storage_account,
+                    "--resource-group",
+                    rg_name,
+                    "--output",
+                    "json",
                 ]
             )
             keys = json.loads(keys_result.stdout)
@@ -145,9 +151,13 @@ def create_pulumi_backend_storage(config_path: Path) -> None:
                 [
                     "group",
                     "create",
-                    "--name", rg_name,
-                    "--location", location,
-                    "--tags", "purpose=pulumi-state", f"project={project_name}",
+                    "--name",
+                    rg_name,
+                    "--location",
+                    location,
+                    "--tags",
+                    "purpose=pulumi-state",
+                    f"project={project_name}",
                 ]
             )
             print(f"   ✓ Resource group created: {rg_name}")
@@ -158,12 +168,19 @@ def create_pulumi_backend_storage(config_path: Path) -> None:
                     "storage",
                     "account",
                     "create",
-                    "--name", storage_account,
-                    "--resource-group", rg_name,
-                    "--location", location,
-                    "--sku", "Standard_LRS",
-                    "--kind", "StorageV2",
-                    "--tags", "purpose=pulumi-state-store", f"project={project_name}",
+                    "--name",
+                    storage_account,
+                    "--resource-group",
+                    rg_name,
+                    "--location",
+                    location,
+                    "--sku",
+                    "Standard_LRS",
+                    "--kind",
+                    "StorageV2",
+                    "--tags",
+                    "purpose=pulumi-state-store",
+                    f"project={project_name}",
                 ]
             )
             print(f"   ✓ Storage account created: {storage_account}")
@@ -175,9 +192,12 @@ def create_pulumi_backend_storage(config_path: Path) -> None:
                     "account",
                     "keys",
                     "list",
-                    "--account-name", storage_account,
-                    "--resource-group", rg_name,
-                    "--output", "json",
+                    "--account-name",
+                    storage_account,
+                    "--resource-group",
+                    rg_name,
+                    "--output",
+                    "json",
                 ]
             )
             keys = json.loads(result.stdout)
@@ -189,9 +209,12 @@ def create_pulumi_backend_storage(config_path: Path) -> None:
                     "storage",
                     "container",
                     "create",
-                    "--name", CONTAINER_NAME,
-                    "--account-name", storage_account,
-                    "--account-key", storage_key,
+                    "--name",
+                    CONTAINER_NAME,
+                    "--account-name",
+                    storage_account,
+                    "--account-key",
+                    storage_key,
                 ]
             )
             print(f"   ✓ Blob container created: {CONTAINER_NAME}")
@@ -228,12 +251,7 @@ def delete_resource_group(config_path: str) -> None:
 
     print(f"   Deleting resource group: {rg_name}")
     try:
-        _run_az_command(
-            ["group",
-             "delete",
-             "--name", rg_name,
-             "--yes"]
-        )
+        _run_az_command(["group", "delete", "--name", rg_name, "--yes"])
         print(f"   ✓ Resource group deleted: {rg_name}")
     except DeploymentError as e:
         print(f"   ⚠️ Failed to delete resource group ({rg_name}): {e.stderr}")
