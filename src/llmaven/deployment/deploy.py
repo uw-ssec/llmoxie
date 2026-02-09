@@ -81,7 +81,6 @@ def deploy_infrastructure(
     print("Step 1: Validating configuration...")
     print()
     try:
-        # Note: skip secrets during validation for now
         validate_config(
             config_path, strict=False, skip_secrets=False, env_file_path=env_file_path
         )
