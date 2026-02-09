@@ -132,8 +132,12 @@ def create_pulumi_backend_storage(config_path: Path) -> None:
     # Define resource names
     rg_name = f"rg-{project_name}-{location}"
     storage_account = _get_unique_name("pulumistate", 24)
-    assert 3 <= len(storage_account) <= 24, (
-        "Storage account name must be between 3 and 24 characters."
+    assert (
+        storage_account.isalnum()
+        and storage_account == storage_account.lower()
+        and 3 <= len(storage_account) <= 24
+    ), (
+        "Storage account names must only use lowercase letters and numbers, and be between 3 and 24 characters in length."
     )
 
     try:
