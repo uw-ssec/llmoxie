@@ -105,13 +105,26 @@ def _get_unique_name(base_name: str, max_len: int = 24) -> str:
     return (base_name + uuid.uuid4().hex)[:max_len]
 
 
-def create_pulumi_backend_storage(config_path: Path) -> None:
-    """Create Azure Blob Storage to use as a Pulumi backend for storing Pulumi states using Azure CLI.
+def initialize_azure_infra(config_path: Path) -> None:
+    """Initialize Azure infrastructure for Pulumi state management and deployments.
+
+    This function configures Azure resources used by Pulumi
+    for state management and subsequent infrastructure deployments by:
+    - Creating a resource group for Pulumi backend storage and all LLMaven resources
+    - Creating a storage account and a blob container for storing Pulumi states
+    - Updating the configuration file with the new resource group and storage account details
+
+    The resource group and backend storage are created
+    only if their details are not present in the configuration file and do not already exist in Azure.
 
     Args:
         config_path: Path to LLMaven configuration file
+
     Raises:
-        DeploymentError: If storage creation fails
+        DeploymentError: If Azure CLI commands fail or storage creation fails
+            Examples:
+                - Azure CLI not installed or not authenticated
+                - Storage account name already exists in Azure or does not meet naming requirements
     """
 
     config = load_config(config_path)
@@ -354,9 +367,9 @@ def deploy_infrastructure(
     print("=" * 70)
     print()
 
-    # Create Azure Blob Storage for Pulumi state backend
-    print("Step 2: Setting up Pulumi backend storage...")
-    create_pulumi_backend_storage(config_path)
+    # Initialize Azure infrastructure for Pulumi state management and subsequent deployments
+    print("Step 2: Initializing Azure infrastructure...")
+    initialize_azure_infra(config_path)
 
     print()
     print("=" * 70)
