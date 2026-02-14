@@ -9,138 +9,166 @@ avoiding event-loop / async / grpc side effects during unit tests.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
-import typer
+from typer.testing import CliRunner
+
+from llmaven.cli import app
 
 
-def _mock_console_pair(mock_console_cls):
-    console = Mock()
-    console_err = Mock()
-    mock_console_cls.side_effect = [console, console_err]
-    return console, console_err
-
-
-def _make_path_mock(
-    *,
-    exists: bool = False,
-    is_dir: bool = False,
-    mkdir_raises: Exception | None = None,
-):
-    p = Mock()
-    p.exists.return_value = exists
-    p.is_dir.return_value = is_dir
-
-    parent = Mock()
-    if mkdir_raises is not None:
-        parent.mkdir.side_effect = mkdir_raises
-    else:
-        parent.mkdir.return_value = None
-
-    p.parent = parent
-    p.__str__ = Mock(return_value="/tmp/out.zip")
-    return p
+@pytest.fixture()
+def runner() -> CliRunner:
+    return CliRunner()
 
 
 class TestInfraExtract:
-    @patch("rich.console.Console")
-    def test_rejects_invalid_date_format(self, mock_console_cls):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        with pytest.raises(typer.Exit):
-            extract(from_date="2026-99-01", to_date="2026-01-02")
-
-    @patch("rich.console.Console")
-    def test_rejects_inverted_date_range(self, mock_console_cls):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        with pytest.raises(typer.Exit):
-            extract(from_date="2026-01-03", to_date="2026-01-02")
-
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
-    def test_rejects_output_directory(self, mock_path_cls, mock_console_cls):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        mock_path_cls.return_value = _make_path_mock(exists=True, is_dir=True)
-
-        with pytest.raises(typer.Exit):
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
-    def test_mkdir_failure_exits(self, mock_path_cls, mock_console_cls):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        mock_path_cls.return_value = _make_path_mock(
-            exists=False, is_dir=False, mkdir_raises=PermissionError("denied")
+    def test_rejects_invalid_date_format(self, runner: CliRunner):
+        result = runner.invoke(
+            app,
+            ["infra", "extract", "--from", "2026-99-01", "--to", "2026-01-02"],
         )
 
-        with pytest.raises(typer.Exit):
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
+        assert result.exit_code == 1
+        assert "Invalid date format" in result.output
+
+    def test_rejects_inverted_date_range(self, runner: CliRunner):
+        result = runner.invoke(
+            app,
+            ["infra", "extract", "--from", "2026-01-03", "--to", "2026-01-02"],
+        )
+
+        assert result.exit_code == 1
+        assert "--from must be <= --to" in result.output
+
+    def test_rejects_output_directory(self, runner: CliRunner, tmp_path: Path):
+        out_dir = tmp_path / "output-dir"
+        out_dir.mkdir()
+
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(out_dir),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "Invalid value for '--out'" in result.output
+
+    def test_mkdir_failure_exits(self, runner: CliRunner, tmp_path: Path):
+        base_dir = tmp_path / "no-write"
+        base_dir.mkdir()
+        os.chmod(base_dir, 0o500)
+        output_file = base_dir / "nested" / "out.zip"
+
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "infra",
+                    "extract",
+                    "--from",
+                    "2026-01-01",
+                    "--to",
+                    "2026-01-01",
+                    "--out",
+                    str(output_file),
+                ],
             )
+        finally:
+            os.chmod(base_dir, 0o700)
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
-    @patch("llmaven.cli.typer.confirm", return_value=False)
-    def test_declines_overwrite(self, mock_confirm, mock_path_cls, mock_console_cls):
-        console, _ = _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
+        assert result.exit_code == 1
+        assert "Cannot create output directory" in result.output
 
-        mock_path_cls.return_value = _make_path_mock(exists=True, is_dir=False)
+    def test_declines_overwrite(self, runner: CliRunner, tmp_path: Path):
+        output_file = tmp_path / "out.zip"
+        output_file.write_text("already exists", encoding="utf-8")
 
-        with pytest.raises(typer.Exit) as e:
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-        assert e.value.exit_code == 0
-        console.print.assert_called()
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+            input="n\n",
+        )
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
+        assert result.exit_code == 0
+        assert "Extraction cancelled" in result.output
+
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"litellm-base-url": "http://x"},
     )
-    def test_missing_master_key(self, _mock_secrets, mock_path_cls, mock_console_cls):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
+    def test_missing_master_key(
+        self,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_file = tmp_path / "out.zip"
 
-        mock_path_cls.return_value = _make_path_mock(exists=False, is_dir=False)
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
 
-        with pytest.raises(typer.Exit) as e:
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-        assert e.value.exit_code == 1
+        assert result.exit_code == 1
+        assert "Missing: LLMAVEN_SECRETS_LITELLM_MASTER_KEY" in result.output
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
     @patch(
         "llmaven.cli._get_llmaven_secrets", return_value={"litellm-master-key": "mk"}
     )
-    def test_missing_base_url(self, _mock_secrets, mock_path_cls, mock_console_cls):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
+    def test_missing_base_url(
+        self,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_file = tmp_path / "out.zip"
 
-        mock_path_cls.return_value = _make_path_mock(exists=False, is_dir=False)
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
 
-        with pytest.raises(typer.Exit) as e:
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-        assert e.value.exit_code == 1
+        assert result.exit_code == 1
+        assert "Missing: LLMAVEN_SECRETS_LITELLM_BASE_URL" in result.output
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
@@ -152,13 +180,10 @@ class TestInfraExtract:
         mock_httpx_client_cls,
         mock_zip_cls,
         _mock_secrets,
-        mock_path_cls,
-        mock_console_cls,
+        runner: CliRunner,
+        tmp_path: Path,
     ):
-        console, _ = _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        mock_path_cls.return_value = _make_path_mock(exists=False, is_dir=False)
+        output_file = tmp_path / "out.zip"
 
         # httpx client mock
         resp1 = Mock()
@@ -183,9 +208,21 @@ class TestInfraExtract:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        extract(
-            from_date="2026-01-01", to_date="2026-01-02", output_file="/tmp/out.zip"
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-02",
+                "--out",
+                str(output_file),
+            ],
         )
+
+        assert result.exit_code == 0
 
         # Verify request calls (endpoint + headers + params)
         assert http_client.get.call_count == 2
@@ -200,19 +237,13 @@ class TestInfraExtract:
         assert zipf.writestr.call_count == 2
         name0, payload0 = zipf.writestr.call_args_list[0][0]
         assert name0 == "litellm_spend_logs_2026-01-01.jsonl"
-        assert '"request_id": "a"' in payload0  # basic content check
+        assert '"request_id": "a"' in payload0
         name1, payload1 = zipf.writestr.call_args_list[1][0]
         assert name1 == "litellm_spend_logs_2026-01-02.jsonl"
-        assert payload1 == ""  # empty day => empty file contents
+        assert payload1 == ""
 
-        # Total record summary should be printed
-        printed = " ".join(
-            str(c[0][0]) for c in console.print.call_args_list if c and c[0]
-        )
-        assert "1 total records" in printed
+        assert "1 total records" in result.output
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
@@ -224,13 +255,10 @@ class TestInfraExtract:
         mock_httpx_client_cls,
         mock_zip_cls,
         _mock_secrets,
-        mock_path_cls,
-        mock_console_cls,
+        runner: CliRunner,
+        tmp_path: Path,
     ):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        mock_path_cls.return_value = _make_path_mock(exists=False, is_dir=False)
+        output_file = tmp_path / "out.zip"
 
         resp = Mock()
         import httpx
@@ -244,14 +272,23 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        with pytest.raises(typer.Exit) as e:
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-        assert e.value.exit_code == 1
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
+        assert result.exit_code == 1
+        assert "LiteLLM /spend/logs failed for 2026-01-01" in result.output
+
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
@@ -263,13 +300,10 @@ class TestInfraExtract:
         mock_httpx_client_cls,
         mock_zip_cls,
         _mock_secrets,
-        mock_path_cls,
-        mock_console_cls,
+        runner: CliRunner,
+        tmp_path: Path,
     ):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        mock_path_cls.return_value = _make_path_mock(exists=False, is_dir=False)
+        output_file = tmp_path / "out.zip"
 
         resp = Mock()
         resp.raise_for_status.return_value = None
@@ -280,14 +314,23 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        with pytest.raises(typer.Exit) as e:
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-        assert e.value.exit_code == 1
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
 
-    @patch("rich.console.Console")
-    @patch("llmaven.cli.Path")
+        assert result.exit_code == 1
+        assert "Invalid JSON response for 2026-01-01" in result.output
+
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
@@ -299,13 +342,10 @@ class TestInfraExtract:
         mock_httpx_client_cls,
         mock_zip_cls,
         _mock_secrets,
-        mock_path_cls,
-        mock_console_cls,
+        runner: CliRunner,
+        tmp_path: Path,
     ):
-        _mock_console_pair(mock_console_cls)
-        from llmaven.cli import extract
-
-        mock_path_cls.return_value = _make_path_mock(exists=False, is_dir=False)
+        output_file = tmp_path / "out.zip"
 
         resp = Mock()
         resp.raise_for_status.return_value = None
@@ -316,8 +356,19 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        with pytest.raises(typer.Exit) as e:
-            extract(
-                from_date="2026-01-01", to_date="2026-01-01", output_file="/tmp/out.zip"
-            )
-        assert e.value.exit_code == 1
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "Invalid JSON response for 2026-01-01" in result.output
