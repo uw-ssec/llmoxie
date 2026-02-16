@@ -5,11 +5,16 @@ This module provides command-line interface functionality for the LLMaven projec
 
 from __future__ import annotations
 
+from pathlib import Path
 import sys
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, NoReturn, Optional
 
 import typer
+
+if TYPE_CHECKING:
+    from rich.console import Console
+    from datetime import date
 
 app = typer.Typer(
     name="llmaven",
@@ -582,6 +587,250 @@ def refresh(
     except Exception as e:
         typer.echo(f"✗ Refresh failed: {e}", err=True)
         sys.exit(1)
+
+
+def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
+    """Wrapper to keep secrets import local and easy to mock in tests."""
+    from llmaven.infrastructure.utils.secrets import get_llmaven_secrets
+
+    # TODO: Deduplicate the get_llmaven_secrets definition method across codebase (https://github.com/uw-ssec/llmaven/issues/89.
+    return get_llmaven_secrets(env_file)
+
+
+def _get_litellm_credentials(
+    env_file: Optional[Path],
+    console_err: "Console",
+) -> tuple[str, str]:
+    secrets = _get_llmaven_secrets(env_file)
+
+    # Secrets are normalized to kebab-case when loaded from LLMAVEN_SECRETS_*.
+    litellm_master_key = secrets.get("litellm-master-key")
+    if not litellm_master_key:
+        _fail_extract(console_err, "Missing: LLMAVEN_SECRETS_LITELLM_MASTER_KEY")
+
+    litellm_base_url = secrets.get("litellm-base-url")
+    if not litellm_base_url:
+        _fail_extract(console_err, "Missing: LLMAVEN_SECRETS_LITELLM_BASE_URL")
+
+    return litellm_base_url, litellm_master_key
+
+
+def _parse_utc_date(date_value: str, console_err: "Console") -> "date":
+    """Parse a YYYY-MM-DD date, exiting with a helpful message on failure."""
+    from datetime import datetime
+
+    try:
+        return datetime.strptime(date_value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        _fail_extract(
+            console_err,
+            f"Invalid date format for {date_value}: {exc}. Use YYYY-MM-DD.",
+        )
+
+
+def _fail_extract(console_err: "Console", message: str, code: int = 1) -> NoReturn:
+    console_err.print(f"[red]✗[/red] {message}")
+    raise typer.Exit(code=code)
+
+
+def _prepare_extract_output_file(
+    output_file: Optional[Path],
+    from_date: str,
+    to_date: str,
+    console: "Console",
+    console_err: "Console",
+) -> Path:
+    use_default_path = output_file is None
+    path = output_file or Path(f"llmaven_spend_logs_{from_date}_to_{to_date}.zip")
+
+    # Guard only for the default path (Typer can't validate a value that wasn't provided)
+    if use_default_path and path.exists() and path.is_dir():
+        _fail_extract(console_err, f"Default output path is a directory: {path}")
+
+    # If user provided --out, ensure parent exists (argument parsing doesn’t create directories)
+    if not use_default_path:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            _fail_extract(console_err, f"Cannot create output directory: {e}")
+
+    if path.exists() and not typer.confirm(f"Output path exists: {path}. Overwrite?"):
+        console.print("[yellow]![/yellow] Extraction cancelled.")
+        raise typer.Exit(code=0)
+
+    return path
+
+
+def _extract_litellm_logs(
+    start_date_obj: "date",
+    end_date_obj: "date",
+    output_file: Path,
+    env_file: Optional[Path],
+    console: "Console",
+    console_err: "Console",
+) -> None:
+    from datetime import timedelta
+    import json
+    import zipfile
+
+    import httpx
+
+    litellm_base_url, litellm_master_key = _get_litellm_credentials(
+        env_file, console_err
+    )
+
+    endpoint = f"{litellm_base_url.rstrip('/')}/spend/logs"
+    headers = {"Authorization": f"Bearer {litellm_master_key}"}
+
+    console.print(
+        f"[blue]→[/blue] Extracting LiteLLM logs "
+        f"{start_date_obj.isoformat()} → {end_date_obj.isoformat()} (inclusive UTC dates)"
+    )
+
+    total_records = 0
+
+    # TODO: Make zipfile output optional (https://github.com/uw-ssec/llmaven/issues/87).
+    with zipfile.ZipFile(
+        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as zipf:
+        # TODO: Add retry logic (https://github.com/uw-ssec/llmaven/issues/88).
+        with httpx.Client(timeout=30.0) as http_client:
+            current_date = start_date_obj
+            while current_date <= end_date_obj:
+                date_str = current_date.isoformat()
+                next_date_str = (current_date + timedelta(days=1)).isoformat()
+
+                params = {
+                    "start_date": date_str,
+                    "end_date": next_date_str,  # exclusive upper bound
+                    "summarize": "false",
+                }
+
+                try:
+                    resp = http_client.get(endpoint, params=params, headers=headers)
+                    resp.raise_for_status()
+                except httpx.HTTPError as exc:
+                    _fail_extract(
+                        console_err,
+                        f"LiteLLM /spend/logs failed for {date_str}: {exc}",
+                    )
+
+                try:
+                    data = resp.json()
+                except json.JSONDecodeError as exc:
+                    _fail_extract(
+                        console_err,
+                        f"Invalid JSON response for {date_str}: {exc}",
+                    )
+
+                if not isinstance(data, list):
+                    _fail_extract(
+                        console_err,
+                        f"Invalid JSON response for {date_str}: expected list",
+                    )
+
+                total_records += len(data)
+
+                jsonl_payload = "\n".join(
+                    json.dumps(item, ensure_ascii=False) for item in data
+                )
+
+                zipf.writestr(
+                    f"litellm_spend_logs_{date_str}.jsonl",
+                    (jsonl_payload + "\n") if jsonl_payload else "",
+                )
+
+                console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
+                current_date += timedelta(days=1)
+
+    console.print(
+        "[green]✓[/green] Extraction complete! "
+        f"{total_records} total records written to: {output_file}"
+    )
+
+
+@infra_app.command()
+def extract(
+    from_date: str = typer.Option(
+        ...,
+        "--from",
+        help="Start date (YYYY-MM-DD, interpreted as a UTC calendar date, inclusive)",
+    ),
+    to_date: str = typer.Option(
+        ...,
+        "--to",
+        help="End date (YYYY-MM-DD, interpreted as a UTC calendar date, inclusive)",
+    ),
+    output_file: Optional[Path] = typer.Option(
+        None,
+        "--out",
+        help="Output zip file path",
+        dir_okay=False,
+        file_okay=True,
+        writable=True,
+        resolve_path=True,
+        path_type=Path,
+    ),
+    # TODO: enforce env_file rules specified below in similar parameter definitions in this file (https://github.com/uw-ssec/llmaven/issues/90).
+    env_file: Optional[Path] = typer.Option(
+        None,
+        "--env-file",
+        "-e",
+        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+        exists=True,
+        dir_okay=False,
+        file_okay=True,
+        readable=True,
+        resolve_path=True,
+        path_type=Path,
+    ),
+) -> None:
+    """Extract LiteLLM /spend/logs into a partitioned JSONL zip.
+
+    Timezone:
+      - Input dates (--from_date/--to_date) are interpreted as UTC calendar dates.
+      - LiteLLM log timestamps (e.g., startTime) are in UTC ("Z").
+
+    Date semantics:
+      - LiteLLM /spend/logs (summarize=false) behaves as:
+            start_date <= t < end_date  (end_date is exclusive)
+      - Each requested UTC calendar date D is queried as [D, D+1).
+
+    Note:
+      - A future enhancement could add --tz to interpret --from/--to as calendar
+        dates in an arbitrary timezone, then fetch a UTC-date superset from LiteLLM
+        and filter records client-side by timestamp into the desired local ranges.
+    """
+    from rich.console import Console
+
+    console = Console()
+    console_err = Console(file=sys.stderr)
+
+    # Parse & validate dates
+
+    start_date_obj = _parse_utc_date(from_date, console_err)
+    end_date_obj = _parse_utc_date(to_date, console_err)
+
+    if start_date_obj > end_date_obj:
+        _fail_extract(console_err, "--from must be <= --to")
+
+    # Validate output file
+    output_file = _prepare_extract_output_file(
+        output_file,
+        from_date,
+        to_date,
+        console,
+        console_err,
+    )
+
+    _extract_litellm_logs(
+        start_date_obj,
+        end_date_obj,
+        output_file,
+        env_file,
+        console,
+        console_err,
+    )
 
 
 @infra_app.command()
