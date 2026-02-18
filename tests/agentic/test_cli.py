@@ -125,9 +125,7 @@ class TestIngestCommand:
 
     @patch("pathlib.Path")
     @patch("llmaven.agentic.ingestion.IngestionPipeline")
-    def test_ingest_calls_pipeline_correctly(
-        self, mock_pipeline_cls, mock_path_cls
-    ):
+    def test_ingest_calls_pipeline_correctly(self, mock_pipeline_cls, mock_path_cls):
         """Test that ingest calls IngestionPipeline correctly."""
         from llmaven.cli import ingest
 

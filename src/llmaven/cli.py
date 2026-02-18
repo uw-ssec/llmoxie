@@ -709,7 +709,9 @@ def _extract_litellm_logs(
                     _fail_extract(f"Invalid JSON response for {date_str}: {exc}")
 
                 if not isinstance(data, list):
-                    _fail_extract(f"Invalid JSON response for {date_str}: expected list")
+                    _fail_extract(
+                        f"Invalid JSON response for {date_str}: expected list"
+                    )
 
                 total_records += len(data)
 
@@ -888,7 +890,6 @@ def ingest(
         Use custom collection name:
             llmaven agentic ingest ./docs --collection my-collection
     """
-    import sys
     from pathlib import Path
     from llmaven.agentic.ingestion import IngestionPipeline
     from llmaven.agentic.exceptions import AgenticRAGError
@@ -980,7 +981,6 @@ def search(
         Search specific collection:
             llmaven agentic search "query" --collection my-collection
     """
-    import sys
     from llmaven.agentic.search import HybridSearcher
     from llmaven.agentic.exceptions import AgenticRAGError
 
@@ -1098,7 +1098,6 @@ def chat(
         Use Azure OpenAI:
             llmaven agentic chat --provider azure --azure-endpoint https://myresource.openai.azure.com --azure-deployment gpt-4o
     """
-    import sys
     from rich.markdown import Markdown
     from rich.panel import Panel
 
