@@ -86,9 +86,9 @@ class TestIngestCommand:
 
     @patch("pathlib.Path")
     @patch("llmaven.agentic.ingestion.IngestionPipeline")
-    @patch("rich.console.Console")
+    @patch("llmaven.cli.console_err")
     def test_ingest_validates_directory_exists(
-        self, mock_console_cls, mock_pipeline_cls, mock_path_cls
+        self, mock_console_err, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest validates directory exists."""
         from llmaven.cli import ingest
@@ -98,10 +98,6 @@ class TestIngestCommand:
         mock_path.exists.return_value = False
         mock_path_cls.return_value = mock_path
 
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
-
         with pytest.raises(typer.Exit):
             ingest(["nonexistent-dir"])
 
@@ -109,9 +105,9 @@ class TestIngestCommand:
 
     @patch("pathlib.Path")
     @patch("llmaven.agentic.ingestion.IngestionPipeline")
-    @patch("rich.console.Console")
+    @patch("llmaven.cli.console_err")
     def test_ingest_validates_directory_is_dir(
-        self, mock_console_cls, mock_pipeline_cls, mock_path_cls
+        self, mock_console_err, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest validates directory is actually a directory."""
         from llmaven.cli import ingest
@@ -122,10 +118,6 @@ class TestIngestCommand:
         mock_path.is_dir.return_value = False
         mock_path_cls.return_value = mock_path
 
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
-
         with pytest.raises(typer.Exit):
             ingest(["not-a-dir"])
 
@@ -133,9 +125,8 @@ class TestIngestCommand:
 
     @patch("pathlib.Path")
     @patch("llmaven.agentic.ingestion.IngestionPipeline")
-    @patch("rich.console.Console")
     def test_ingest_calls_pipeline_correctly(
-        self, mock_console_cls, mock_pipeline_cls, mock_path_cls
+        self, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest calls IngestionPipeline correctly."""
         from llmaven.cli import ingest
@@ -150,10 +141,6 @@ class TestIngestCommand:
         mock_pipeline_instance.ingest = Mock(return_value=None)
         mock_pipeline_cls.return_value = mock_pipeline_instance
 
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
-
         ingest(["/test/dir"], collection="test-collection", batch_size=50, force=True)
 
         mock_pipeline_cls.assert_called_once_with(
@@ -165,9 +152,9 @@ class TestIngestCommand:
 
     @patch("pathlib.Path")
     @patch("llmaven.agentic.ingestion.IngestionPipeline")
-    @patch("rich.console.Console")
+    @patch("llmaven.cli.console_err")
     def test_ingest_handles_agentic_error(
-        self, mock_console_cls, mock_pipeline_cls, mock_path_cls
+        self, mock_console_err, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest handles AgenticRAGError correctly."""
         from llmaven.cli import ingest
@@ -183,10 +170,6 @@ class TestIngestCommand:
         mock_pipeline_instance.ingest.side_effect = AgenticRAGError("Ingestion failed")
         mock_pipeline_cls.return_value = mock_pipeline_instance
 
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
-
         with pytest.raises(typer.Exit):
             ingest(["/test/dir"])
 
@@ -197,8 +180,7 @@ class TestSearchCommand:
     """Test search CLI command."""
 
     @patch("llmaven.agentic.search.HybridSearcher")
-    @patch("rich.console.Console")
-    def test_search_calls_searcher_correctly(self, mock_console_cls, mock_searcher_cls):
+    def test_search_calls_searcher_correctly(self, mock_searcher_cls):
         """Test that search calls HybridSearcher correctly."""
         from llmaven.cli import search
 
@@ -216,10 +198,6 @@ class TestSearchCommand:
             ]
         )
         mock_searcher_cls.return_value = mock_searcher_instance
-
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
 
         search(
             "test query",
@@ -240,8 +218,8 @@ class TestSearchCommand:
         )
 
     @patch("llmaven.agentic.search.HybridSearcher")
-    @patch("rich.console.Console")
-    def test_search_handles_empty_results(self, mock_console_cls, mock_searcher_cls):
+    @patch("llmaven.cli.console")
+    def test_search_handles_empty_results(self, mock_console, mock_searcher_cls):
         """Test that search handles empty results gracefully."""
         from llmaven.cli import search
 
@@ -249,17 +227,13 @@ class TestSearchCommand:
         mock_searcher_instance.search = Mock(return_value=[])
         mock_searcher_cls.return_value = mock_searcher_instance
 
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
-
         search("test query")
 
         mock_console.print.assert_called()
 
     @patch("llmaven.agentic.search.HybridSearcher")
-    @patch("rich.console.Console")
-    def test_search_handles_agentic_error(self, mock_console_cls, mock_searcher_cls):
+    @patch("llmaven.cli.console_err")
+    def test_search_handles_agentic_error(self, mock_console_err, mock_searcher_cls):
         """Test that search handles AgenticRAGError correctly."""
         from llmaven.cli import search
         import typer
@@ -269,10 +243,6 @@ class TestSearchCommand:
             side_effect=AgenticRAGError("Search failed")
         )
         mock_searcher_cls.return_value = mock_searcher_instance
-
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
 
         with pytest.raises(typer.Exit):
             search("test query")
@@ -284,8 +254,8 @@ class TestChatCommand:
     """Test chat CLI command."""
 
     @patch("llmaven.agentic.agent.RAGAgent")
-    @patch("rich.console.Console")
-    def test_chat_initializes_agent_correctly(self, mock_console_cls, mock_agent_cls):
+    @patch("llmaven.cli.console")
+    def test_chat_initializes_agent_correctly(self, mock_console, mock_agent_cls):
         """Test that chat initializes RAGAgent correctly."""
         from llmaven.cli import chat
 
@@ -300,11 +270,8 @@ class TestChatCommand:
         )
         mock_agent_cls.return_value = mock_agent_instance
 
-        mock_console = Mock()
-        mock_console_err = Mock()
         # Mock console.input to return "exit" immediately
         mock_console.input.side_effect = ["exit"]
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
 
         try:
             chat(collection="test-collection", provider="ollama", model="llama2")
@@ -318,8 +285,8 @@ class TestChatCommand:
         )
 
     @patch("llmaven.agentic.agent.RAGAgent")
-    @patch("rich.console.Console")
-    def test_chat_handles_exit_command(self, mock_console_cls, mock_agent_cls):
+    @patch("llmaven.cli.console")
+    def test_chat_handles_exit_command(self, mock_console, mock_agent_cls):
         """Test that chat handles exit command."""
         from llmaven.cli import chat
 
@@ -334,11 +301,8 @@ class TestChatCommand:
         )
         mock_agent_cls.return_value = mock_agent_instance
 
-        mock_console = Mock()
-        mock_console_err = Mock()
         # Mock console.input to return "exit" immediately
         mock_console.input.side_effect = ["exit"]
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
 
         try:
             chat()
@@ -349,8 +313,11 @@ class TestChatCommand:
         # (though the exact behavior depends on implementation)
 
     @patch("llmaven.agentic.agent.RAGAgent")
-    @patch("rich.console.Console")
-    def test_chat_handles_agentic_error(self, mock_console_cls, mock_agent_cls):
+    @patch("llmaven.cli.console")
+    @patch("llmaven.cli.console_err")
+    def test_chat_handles_agentic_error(
+        self, mock_console_err, mock_console, mock_agent_cls
+    ):
         """Test that chat handles AgenticRAGError correctly."""
         from llmaven.cli import chat
 
@@ -358,11 +325,8 @@ class TestChatCommand:
         mock_agent_instance.run_sync = Mock(side_effect=AgenticRAGError("Agent failed"))
         mock_agent_cls.return_value = mock_agent_instance
 
-        mock_console = Mock()
-        mock_console_err = Mock()
         # Mock console.input to trigger agent call then exit
         mock_console.input.side_effect = ["test query", "exit"]
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
 
         try:
             chat()
@@ -377,10 +341,7 @@ class TestCLIIntegration:
 
     @patch("pathlib.Path")
     @patch("llmaven.agentic.ingestion.IngestionPipeline")
-    @patch("rich.console.Console")
-    def test_ingest_multiple_directories(
-        self, mock_console_cls, mock_pipeline_cls, mock_path_cls
-    ):
+    def test_ingest_multiple_directories(self, mock_pipeline_cls, mock_path_cls):
         """Test that ingest handles multiple directories."""
         from llmaven.cli import ingest
 
@@ -400,10 +361,6 @@ class TestCLIIntegration:
         mock_pipeline_instance = Mock()
         mock_pipeline_instance.ingest = Mock(return_value=None)
         mock_pipeline_cls.return_value = mock_pipeline_instance
-
-        mock_console = Mock()
-        mock_console_err = Mock()
-        mock_console_cls.side_effect = [mock_console, mock_console_err]
 
         ingest(["/dir1", "/dir2"])
 
