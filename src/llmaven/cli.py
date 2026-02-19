@@ -11,10 +11,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, NoReturn, Optional
 
 import typer
+from rich.console import Console
 
 if TYPE_CHECKING:
-    from rich.console import Console
     from datetime import date
+
+console = Console()
+console_err = Console(stderr=True)
 
 app = typer.Typer(
     name="llmaven",
@@ -597,38 +600,32 @@ def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
     return get_llmaven_secrets(env_file)
 
 
-def _get_litellm_credentials(
-    env_file: Optional[Path],
-    console_err: "Console",
-) -> tuple[str, str]:
+def _get_litellm_credentials(env_file: Optional[Path]) -> tuple[str, str]:
     secrets = _get_llmaven_secrets(env_file)
 
     # Secrets are normalized to kebab-case when loaded from LLMAVEN_SECRETS_*.
     litellm_master_key = secrets.get("litellm-master-key")
     if not litellm_master_key:
-        _fail_extract(console_err, "Missing: LLMAVEN_SECRETS_LITELLM_MASTER_KEY")
+        _fail_extract("Missing: LLMAVEN_SECRETS_LITELLM_MASTER_KEY")
 
     litellm_base_url = secrets.get("litellm-base-url")
     if not litellm_base_url:
-        _fail_extract(console_err, "Missing: LLMAVEN_SECRETS_LITELLM_BASE_URL")
+        _fail_extract("Missing: LLMAVEN_SECRETS_LITELLM_BASE_URL")
 
     return litellm_base_url, litellm_master_key
 
 
-def _parse_utc_date(date_value: str, console_err: "Console") -> "date":
+def _parse_utc_date(date_value: str) -> "date":
     """Parse a YYYY-MM-DD date, exiting with a helpful message on failure."""
     from datetime import datetime
 
     try:
         return datetime.strptime(date_value, "%Y-%m-%d").date()
     except ValueError as exc:
-        _fail_extract(
-            console_err,
-            f"Invalid date format for {date_value}: {exc}. Use YYYY-MM-DD.",
-        )
+        _fail_extract(f"Invalid date format for {date_value}: {exc}. Use YYYY-MM-DD.")
 
 
-def _fail_extract(console_err: "Console", message: str, code: int = 1) -> NoReturn:
+def _fail_extract(message: str, code: int = 1) -> NoReturn:
     console_err.print(f"[red]✗[/red] {message}")
     raise typer.Exit(code=code)
 
@@ -637,22 +634,20 @@ def _prepare_extract_output_file(
     output_file: Optional[Path],
     from_date: str,
     to_date: str,
-    console: "Console",
-    console_err: "Console",
 ) -> Path:
     use_default_path = output_file is None
     path = output_file or Path(f"llmaven_spend_logs_{from_date}_to_{to_date}.zip")
 
     # Guard only for the default path (Typer can't validate a value that wasn't provided)
     if use_default_path and path.exists() and path.is_dir():
-        _fail_extract(console_err, f"Default output path is a directory: {path}")
+        _fail_extract(f"Default output path is a directory: {path}")
 
     # If user provided --out, ensure parent exists (argument parsing doesn’t create directories)
     if not use_default_path:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            _fail_extract(console_err, f"Cannot create output directory: {e}")
+            _fail_extract(f"Cannot create output directory: {e}")
 
     if path.exists() and not typer.confirm(f"Output path exists: {path}. Overwrite?"):
         console.print("[yellow]![/yellow] Extraction cancelled.")
@@ -666,8 +661,6 @@ def _extract_litellm_logs(
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
-    console: "Console",
-    console_err: "Console",
 ) -> None:
     from datetime import timedelta
     import json
@@ -675,9 +668,7 @@ def _extract_litellm_logs(
 
     import httpx
 
-    litellm_base_url, litellm_master_key = _get_litellm_credentials(
-        env_file, console_err
-    )
+    litellm_base_url, litellm_master_key = _get_litellm_credentials(env_file)
 
     endpoint = f"{litellm_base_url.rstrip('/')}/spend/logs"
     headers = {"Authorization": f"Bearer {litellm_master_key}"}
@@ -710,23 +701,16 @@ def _extract_litellm_logs(
                     resp = http_client.get(endpoint, params=params, headers=headers)
                     resp.raise_for_status()
                 except httpx.HTTPError as exc:
-                    _fail_extract(
-                        console_err,
-                        f"LiteLLM /spend/logs failed for {date_str}: {exc}",
-                    )
+                    _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
 
                 try:
                     data = resp.json()
                 except json.JSONDecodeError as exc:
-                    _fail_extract(
-                        console_err,
-                        f"Invalid JSON response for {date_str}: {exc}",
-                    )
+                    _fail_extract(f"Invalid JSON response for {date_str}: {exc}")
 
                 if not isinstance(data, list):
                     _fail_extract(
-                        console_err,
-                        f"Invalid JSON response for {date_str}: expected list",
+                        f"Invalid JSON response for {date_str}: expected list"
                     )
 
                 total_records += len(data)
@@ -801,26 +785,19 @@ def extract(
         dates in an arbitrary timezone, then fetch a UTC-date superset from LiteLLM
         and filter records client-side by timestamp into the desired local ranges.
     """
-    from rich.console import Console
-
-    console = Console()
-    console_err = Console(file=sys.stderr)
-
     # Parse & validate dates
 
-    start_date_obj = _parse_utc_date(from_date, console_err)
-    end_date_obj = _parse_utc_date(to_date, console_err)
+    start_date_obj = _parse_utc_date(from_date)
+    end_date_obj = _parse_utc_date(to_date)
 
     if start_date_obj > end_date_obj:
-        _fail_extract(console_err, "--from must be <= --to")
+        _fail_extract("--from must be <= --to")
 
     # Validate output file
     output_file = _prepare_extract_output_file(
         output_file,
         from_date,
         to_date,
-        console,
-        console_err,
     )
 
     _extract_litellm_logs(
@@ -828,8 +805,6 @@ def extract(
         end_date_obj,
         output_file,
         env_file,
-        console,
-        console_err,
     )
 
 
@@ -915,15 +890,9 @@ def ingest(
         Use custom collection name:
             llmaven agentic ingest ./docs --collection my-collection
     """
-    import sys
     from pathlib import Path
-    from rich.console import Console
-
     from llmaven.agentic.ingestion import IngestionPipeline
     from llmaven.agentic.exceptions import AgenticRAGError
-
-    console = Console()
-    console_err = Console(file=sys.stderr)
 
     try:
         # Validate directories exist
@@ -1012,14 +981,8 @@ def search(
         Search specific collection:
             llmaven agentic search "query" --collection my-collection
     """
-    import sys
-    from rich.console import Console
-
     from llmaven.agentic.search import HybridSearcher
     from llmaven.agentic.exceptions import AgenticRAGError
-
-    console = Console()
-    console_err = Console(file=sys.stderr)
 
     try:
         console.print(f"[blue]→[/blue] Searching for: [bold]{query}[/bold]")
@@ -1135,17 +1098,12 @@ def chat(
         Use Azure OpenAI:
             llmaven agentic chat --provider azure --azure-endpoint https://myresource.openai.azure.com --azure-deployment gpt-4o
     """
-    import sys
-    from rich.console import Console
     from rich.markdown import Markdown
     from rich.panel import Panel
 
     from llmaven.agentic.agent import RAGAgent
     from llmaven.agentic.exceptions import AgenticRAGError
     from llmaven.agentic.settings import config
-
-    console = Console()
-    console_err = Console(file=sys.stderr)
 
     try:
         console.print("[blue]→[/blue] Initializing RAG agent...")
