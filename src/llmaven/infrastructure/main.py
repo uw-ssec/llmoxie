@@ -54,7 +54,6 @@ def create_pulumi_program(config_path: Path):
             create_log_analytics_workspace,
             create_mlflow_app,
             create_postgres_server,
-            create_resource_group,
             create_storage_account,
             create_virtual_network,
         )
@@ -71,25 +70,18 @@ def create_pulumi_program(config_path: Path):
         project_name = config.project.name
         environment = config.project.environment
         location = config.project.location
+        resource_group = config.azure.resource_group
         stack_name = f"{project_name}-{environment}"
 
         pulumi.log.info(f"Deploying stack: {stack_name}")
         pulumi.log.info(f"Environment: {environment}")
         pulumi.log.info(f"Location: {location}")
 
-        # 1. Create Resource Group
-        pulumi.log.info("Creating resource group...")
-        resource_group = create_resource_group(
-            name=f"rg-{stack_name}",
-            location=location,
-            tags=config.tags,
-        )
-
-        # 2. Create Virtual Network
+        # 1. Create Virtual Network
         pulumi.log.info("Creating virtual network...")
         vnet = create_virtual_network(
             name=f"vnet-{stack_name}",
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             location=location,
             address_space=config.networking.vnet_address_space,
             tags=config.tags,
@@ -99,7 +91,7 @@ def create_pulumi_program(config_path: Path):
         pulumi.log.info("Setting up for container apps subnet...")
         container_apps_subnet = azure_native.network.Subnet(
             "container-apps-subnet",
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             virtual_network_name=vnet.name,
             subnet_name="container-apps-subnet",
             address_prefix=config.networking.container_apps_subnet,
@@ -108,7 +100,7 @@ def create_pulumi_program(config_path: Path):
         pulumi.log.info("Setting up for postgres subnet...")
         postgres_subnet = azure_native.network.Subnet(
             "postgres-subnet",
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             virtual_network_name=vnet.name,
             subnet_name="postgres-subnet",
             address_prefix=config.networking.postgres_subnet,
@@ -120,7 +112,7 @@ def create_pulumi_program(config_path: Path):
             ],
         )
 
-        # 3. Create Key Vault
+        # 2. Create Key Vault
         pulumi.log.info("Creating Key Vault...")
 
         # Get current Azure client configuration to retrieve deployer's object ID
@@ -128,7 +120,7 @@ def create_pulumi_program(config_path: Path):
         deployer_object_id = client_config.object_id
 
         key_vault = create_key_vault(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             location=location,
             tenant_id=config.azure.tenant_id,
             config=config,
@@ -136,26 +128,26 @@ def create_pulumi_program(config_path: Path):
             deployer_object_id=deployer_object_id,
         )
 
-        # 4. Create Secrets Manager
+        # 3. Create Secrets Manager
         pulumi.log.info("Initializing Secrets Manager...")
         secrets_manager = SecretsManager(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             vault_name=key_vault.name,
             config=config,
             environment=environment,
         )
 
-        # 4.1. Create user-provided secrets from environment variables
+        # 3.1. Create user-provided secrets from environment variables
         secrets_manager.create_user_provided_secrets()
 
-        # 4.2. Generate PostgreSQL admin password
+        # 3.2. Generate PostgreSQL admin password
         pulumi.log.info("Generating PostgreSQL admin password...")
         admin_password = secrets_manager.create_postgres_admin_password()
 
-        # 5. Create PostgreSQL Flexible Server
+        # 4. Create PostgreSQL Flexible Server
         pulumi.log.info("Creating PostgreSQL Flexible Server...")
         postgres_server = create_postgres_server(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             location=location,
             vnet_id=vnet.id,
             postgres_subnet_id=postgres_subnet.id,
@@ -164,17 +156,17 @@ def create_pulumi_program(config_path: Path):
             tags=config.tags,
         )
 
-        # 5.1. Create databases
+        # 4.1. Create databases
         pulumi.log.info("Creating PostgreSQL databases...")
         create_databases(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             server_name=postgres_server.name,
             database_names=config.database.databases,
             environment=environment,
             tags=config.tags,
         )
 
-        # 5.2. Create database connection strings
+        # 4.2. Create database connection strings
         pulumi.log.info("Creating database connection strings...")
         secrets_manager.create_database_connection_strings(
             postgres_server_fqdn=postgres_server.fully_qualified_domain_name,
@@ -183,10 +175,10 @@ def create_pulumi_program(config_path: Path):
             database_names=config.database.databases,
         )
 
-        # 6. Create Storage Account
+        # 5. Create Storage Account
         pulumi.log.info("Creating Storage Account...")
         storage_account = create_storage_account(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             location=location,
             config=config,
             tags=config.tags,
@@ -200,12 +192,12 @@ def create_pulumi_program(config_path: Path):
             blob_endpoint_url=storage_account_primary_endpoints.blob,
         )
 
-        # 6.1. Get storage account key and create connection string
+        # 5.1. Get storage account key and create connection string
         from llmaven.infrastructure.resources.storage import get_storage_account_key
 
         pulumi.log.info("Retrieving storage account key...")
         storage_account_key = get_storage_account_key(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             storage_account_name=storage_account.name,
         )
 
@@ -215,30 +207,30 @@ def create_pulumi_program(config_path: Path):
             storage_account_key=storage_account_key,
         )
 
-        # 6.2. Create blob containers for storage
+        # 5.2. Create blob containers for storage
         from llmaven.infrastructure.resources.storage import create_blob_containers
 
         pulumi.log.info("Creating blob containers...")
         create_blob_containers(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             storage_account_name=storage_account.name,
             container_names=config.storage.containers,
             environment=environment,
         )
 
-        # 6.3. Create MLflow artifact root URL
+        # 5.3. Create MLflow artifact root URL
         pulumi.log.info("Creating MLflow artifact root secret...")
         secrets_manager.create_mlflow_artifact_root_secret(
             storage_account_name=storage_account.name,
             container_name="mlflow",
         )
 
-        # 7. Create Log Analytics Workspace (for monitoring)
+        # 6. Create Log Analytics Workspace (for monitoring)
         if config.monitoring.enable_log_analytics:
             pulumi.log.info("Creating Log Analytics workspace...")
             log_analytics = create_log_analytics_workspace(
                 name=f"log-{stack_name}",
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 location=location,
                 retention_days=config.monitoring.retention_days,
                 tags=config.tags,
@@ -246,10 +238,10 @@ def create_pulumi_program(config_path: Path):
         else:
             log_analytics = None
 
-        # 8. Create Container Apps Environment
+        # 7. Create Container Apps Environment
         pulumi.log.info("Creating Container Apps environment...")
         container_env = create_container_apps_environment(
-            resource_group_name=resource_group.name,
+            resource_group_name=resource_group,
             location=location,
             container_apps_subnet_id=container_apps_subnet.id,
             log_analytics_workspace=log_analytics,
@@ -257,19 +249,19 @@ def create_pulumi_program(config_path: Path):
             tags=config.tags,
         )
 
-        # 8.1. Create User-Assigned Managed Identities for Key Vault access
+        # 7.1. Create User-Assigned Managed Identities for Key Vault access
         pulumi.log.info("Creating user-assigned managed identities...")
         from llmaven.infrastructure.resources import (
             create_user_assigned_managed_identity,
             grant_key_vault_access,
         )
 
-        # 8.1.1. Create managed identity for MLflow
+        # 7.1.1. Create managed identity for MLflow
         mlflow_managed_identity = None
         if config.mlflow and config.mlflow.enabled:
             mlflow_managed_identity = create_user_assigned_managed_identity(
                 name=f"{stack_name}-mlflow-identity",
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 location=location,
                 tags=config.tags,
             )
@@ -278,18 +270,18 @@ def create_pulumi_program(config_path: Path):
             grant_key_vault_access(
                 key_vault=key_vault,
                 principal_id=mlflow_managed_identity.principal_id,
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 tenant_id=config.azure.tenant_id,
                 permissions_level="read",
                 principal_name="mlflow-identity",
             )
 
-        # 8.1.2. Create managed identity for LiteLLM
+        # 7.1.2. Create managed identity for LiteLLM
         litellm_managed_identity = None
         if config.litellm and config.litellm.enabled:
             litellm_managed_identity = create_user_assigned_managed_identity(
                 name=f"{stack_name}-litellm-identity",
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 location=location,
                 tags=config.tags,
             )
@@ -298,21 +290,21 @@ def create_pulumi_program(config_path: Path):
             grant_key_vault_access(
                 key_vault=key_vault,
                 principal_id=litellm_managed_identity.principal_id,
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 tenant_id=config.azure.tenant_id,
                 permissions_level="read",
                 principal_name="litellm-identity",
             )
 
-        # 9. Deploy Container Apps
+        # 8. Deploy Container Apps
 
-        # 9.1. MLflow Container App
+        # 8.1. MLflow Container App
         if config.mlflow and config.mlflow.enabled:
             pulumi.log.info("Creating MLflow Container App...")
 
             mlflow_app = create_mlflow_app(
                 name=f"{stack_name}-mlflow",
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 location=location,
                 container_env_id=container_env.id,
                 image=config.mlflow.image,
@@ -345,13 +337,13 @@ def create_pulumi_program(config_path: Path):
                 ),
             )
 
-        # 9.2. LiteLLM Container App
+        # 8.2. LiteLLM Container App
         if config.litellm and config.litellm.enabled:
             pulumi.log.info("Creating LiteLLM Container App...")
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
-                resource_group_name=resource_group.name,
+                resource_group_name=resource_group,
                 location=location,
                 container_env_id=container_env.id,
                 container_env_name=container_env.name,
@@ -382,7 +374,7 @@ def create_pulumi_program(config_path: Path):
             )
 
         # Export common outputs
-        pulumi.export("resource_group_name", resource_group.name)
+        pulumi.export("resource_group_name", resource_group)
         pulumi.export("location", location)
         pulumi.export("environment", environment)
         pulumi.export("postgres_server_name", postgres_server.name)

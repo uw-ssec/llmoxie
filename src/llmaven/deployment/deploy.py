@@ -4,19 +4,276 @@ This module provides the implementation for the 'llmaven deploy' command.
 Uses Pulumi Automation API for programmatic infrastructure deployment.
 """
 
+import json
 import os
+import subprocess
 from pathlib import Path
 
 from pulumi import automation as auto
 
 from .validate import ValidationError, validate_config
+from ..infrastructure.config.loader import load_config, update_config_fields
 from ..infrastructure.main import create_pulumi_program
+
+CONTAINER_NAME = "pulumi-state"
+PULUMI_BACKEND_URL = f"azblob://{CONTAINER_NAME}?storage_account={{storage_account}}"
 
 
 class DeploymentError(Exception):
     """Exception raised when deployment fails."""
 
     pass
+
+
+def _run_az_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    """Run an Azure CLI command."""
+    try:
+        return subprocess.run(
+            ["az"] + args,
+            capture_output=True,
+            text=True,
+            check=check,
+        )
+    except subprocess.CalledProcessError as e:
+        raise DeploymentError(f"Azure CLI command failed: {e.stderr.strip()}")
+    except FileNotFoundError:
+        raise DeploymentError(
+            "Azure CLI is not installed. Install it from: https://aka.ms/InstallAzureCLI"
+        )
+
+
+def _get_storage_key(rg_name: str, storage_account: str) -> str | None:
+    """Get storage account key if storage exists.
+
+    Args:
+        rg_name: Resource group name
+        storage_account: Storage account name
+    Returns:
+        Storage account key if it exists, None otherwise
+    """
+    try:
+        result = _run_az_command(
+            [
+                "storage",
+                "account",
+                "show",
+                "--name",
+                storage_account,
+                "--resource-group",
+                rg_name,
+                "--output",
+                "json",
+            ],
+            check=False,
+        )
+
+        if result.returncode == 0:
+            # Get storage key
+            keys_result = _run_az_command(
+                [
+                    "storage",
+                    "account",
+                    "keys",
+                    "list",
+                    "--account-name",
+                    storage_account,
+                    "--resource-group",
+                    rg_name,
+                    "--output",
+                    "json",
+                ]
+            )
+            keys = json.loads(keys_result.stdout)
+            return keys[0]["value"]
+
+        return None
+    except Exception:
+        return None
+
+
+def _get_unique_name(base_name: str, max_len: int = 24) -> str:
+    """Generate a unique name by appending a UUID up to max length.
+
+    Args:
+        base_name: Base name to use
+        max_len: Maximum length of the final name
+    Returns:
+        Unique name string
+    """
+    import uuid
+
+    return (base_name + uuid.uuid4().hex)[:max_len]
+
+
+def initialize_azure_infra(config_path: Path) -> None:
+    """Initialize Azure infrastructure for Pulumi state management and deployments.
+
+    This function configures Azure resources used by Pulumi
+    for state management and subsequent infrastructure deployments by:
+    - Creating a resource group for Pulumi backend storage and all LLMaven resources
+    - Creating a storage account and a blob container for storing Pulumi states
+    - Updating the configuration file with the new resource group and storage account details
+
+    The resource group and backend storage are created
+    only if their details are not present in the configuration file and do not already exist in Azure.
+
+    Args:
+        config_path: Path to LLMaven configuration file
+
+    Raises:
+        DeploymentError: If Azure CLI commands fail or storage creation fails
+            Examples:
+                - Azure CLI not installed or not authenticated
+                - Storage account name already exists in Azure or does not meet naming requirements
+    """
+
+    config = load_config(config_path)
+
+    # Check if backend URL is already configured
+    if config.project.pulumi_state_store:
+        backend_url = PULUMI_BACKEND_URL.format(
+            storage_account=config.project.pulumi_state_store
+        )
+        print(f"   Using existing backend: {backend_url}")
+        return
+
+    # Extract configuration values
+    subscription_id = config.azure.subscription_id
+    project_name = config.project.name
+    location = config.project.location
+
+    # Define resource names
+    rg_name = f"rg-{project_name}-{location}"
+    storage_account = _get_unique_name("pulumistate", 24)
+    if not (
+        storage_account.isalnum()
+        and storage_account == storage_account.lower()
+        and 3 <= len(storage_account) <= 24
+    ):
+        raise DeploymentError(
+            "Storage account names must only use lowercase letters and numbers, and be between 3 and 24 characters in length."
+        )
+
+    try:
+        # Set subscription
+        _run_az_command(["account", "set", "--subscription", subscription_id])
+
+        # Check if storage already exists
+        storage_key = _get_storage_key(rg_name, storage_account)
+
+        if storage_key is not None:
+            print(f"   ✓ Storage account already exists: {storage_account}")
+        else:
+            # Create resource group
+            _run_az_command(
+                [
+                    "group",
+                    "create",
+                    "--name",
+                    rg_name,
+                    "--location",
+                    location,
+                    "--tags",
+                    "purpose=pulumi-state",
+                    f"project={project_name}",
+                ]
+            )
+            print(f"   ✓ Resource group created: {rg_name}")
+
+            # Create storage account
+            _run_az_command(
+                [
+                    "storage",
+                    "account",
+                    "create",
+                    "--name",
+                    storage_account,
+                    "--resource-group",
+                    rg_name,
+                    "--location",
+                    location,
+                    "--sku",
+                    "Standard_LRS",
+                    "--kind",
+                    "StorageV2",
+                    "--tags",
+                    "purpose=pulumi-state-store",
+                    f"project={project_name}",
+                ]
+            )
+            print(f"   ✓ Storage account created: {storage_account}")
+
+            # Get storage account key
+            result = _run_az_command(
+                [
+                    "storage",
+                    "account",
+                    "keys",
+                    "list",
+                    "--account-name",
+                    storage_account,
+                    "--resource-group",
+                    rg_name,
+                    "--output",
+                    "json",
+                ]
+            )
+            keys = json.loads(result.stdout)
+            storage_key = keys[0]["value"]
+
+            # Create blob container
+            _run_az_command(
+                [
+                    "storage",
+                    "container",
+                    "create",
+                    "--name",
+                    CONTAINER_NAME,
+                    "--account-name",
+                    storage_account,
+                    "--account-key",
+                    storage_key,
+                ]
+            )
+            print(f"   ✓ Blob container created: {CONTAINER_NAME}")
+
+        print()
+        print("   ✓ Pulumi backend storage configured.")
+
+        # Update config file with backend info
+        update_config_fields(
+            config_path,
+            {
+                "azure.resource_group": rg_name,
+                "project.pulumi_state_store": storage_account,
+            },
+        )
+    except DeploymentError as e:
+        print(f"   ⚠️ Error during Pulumi backend setup: {e}")
+        raise
+    except Exception as e:
+        print(f"   ⚠️ Unexpected error: {e}")
+        raise DeploymentError(f"   Failed to create Pulumi backend storage: {e}")
+
+
+def delete_resource_group(config_path: str) -> None:
+    """Delete Azure resource group using Azure CLI.
+
+    Args:
+        config_path: Path to LLMaven configuration file
+    Raises:
+        CalledProcessError: If deletion fails
+    """
+    config = load_config(config_path)
+    rg_name = config.azure.resource_group
+
+    print(f"   Deleting resource group: {rg_name}")
+    try:
+        _run_az_command(["group", "delete", "--name", rg_name, "--yes"])
+        print(f"   ✓ Resource group deleted: {rg_name}")
+    except DeploymentError as e:
+        print(f"   ⚠️ Failed to delete resource group ({rg_name}): {e.stderr}")
+        raise
 
 
 def get_stack(
@@ -40,6 +297,22 @@ def get_stack(
     try:
         # Create inline Pulumi program
         program = create_pulumi_program(config_path)
+
+        # Load configuration and set environment variables to use Azure Blob Storage as a Pulumi backend
+        config = load_config(config_path)
+        rg_name = config.azure.resource_group
+        storage_account = config.project.pulumi_state_store
+        if not rg_name or not storage_account:
+            raise DeploymentError("Pulumi backend is not configured properly.")
+
+        os.environ.setdefault(
+            "PULUMI_BACKEND_URL",
+            PULUMI_BACKEND_URL.format(storage_account=storage_account),
+        )
+        os.environ.setdefault("AZURE_STORAGE_ACCOUNT", storage_account)
+        os.environ.setdefault(
+            "AZURE_STORAGE_KEY", _get_storage_key(rg_name, storage_account)
+        )
 
         # Create or select stack with inline program
         try:
@@ -93,9 +366,15 @@ def deploy_infrastructure(
     print("=" * 70)
     print()
 
-    # Get stack name from config
-    from ..infrastructure.config.loader import load_config
+    # Initialize Azure infrastructure for Pulumi state management and subsequent deployments
+    print("Step 2: Initializing Azure infrastructure...")
+    initialize_azure_infra(config_path)
 
+    print()
+    print("=" * 70)
+    print()
+
+    # Load configuration from file
     config = load_config(config_path)
 
     # Handle Pulumi passphrase setting
@@ -117,7 +396,7 @@ def deploy_infrastructure(
     stack_name = f"{config.project.name}-{config.project.environment}"
     project_name = "llmaven"
 
-    print(f"Step 2: {'Previewing' if preview else 'Deploying'} infrastructure...")
+    print(f"Step 3: {'Previewing' if preview else 'Deploying'} infrastructure...")
     print(f"Stack: {stack_name}")
     print(f"Location: {config.project.location}")
     print()
