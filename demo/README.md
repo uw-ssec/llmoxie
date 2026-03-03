@@ -22,7 +22,8 @@ Choose one of the two setup paths below.
 1. Click **Code** > **Codespaces** > **New with options**
 2. Under **Dev container configuration**, select **"LLMaven Demo (NAIRR)"**
 3. Click **Create codespace**
-4. Wait for the `onCreate` script to complete (~1 minute). Tools are pre-installed in the Docker image:
+4. Wait for the `onCreate` script to complete (~1 minute). Tools are
+   pre-installed in the Docker image:
    - pixi dependencies (`llmaven` environment)
    - Pulumi CLI (for infrastructure demo)
    - Claude Code CLI (for RSE Plugins demo)
