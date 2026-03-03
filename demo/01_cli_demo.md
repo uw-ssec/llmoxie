@@ -180,9 +180,9 @@ rm -f demo/generated-config.yaml
 
 ## Troubleshooting
 
-| Issue                        | Solution                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `pixi: command not found`    | Install pixi: `curl -fsSL https://pixi.sh/install.sh \| bash`                 |
-| `llmaven: command not found` | Run `pixi install -e demo` to set up the environment                       |
+| Issue                        | Solution                                                                |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `pixi: command not found`    | Install pixi: `curl -fsSL https://pixi.sh/install.sh \| bash`           |
+| `llmaven: command not found` | Run `pixi install -e demo` to set up the environment                    |
 | Import errors                | Ensure you're using the `demo` pixi environment: `pixi run -e demo ...` |
-| Validation crashes           | Check that `demo/llmaven-config.yaml` exists and has valid YAML syntax        |
+| Validation crashes           | Check that `demo/llmaven-config.yaml` exists and has valid YAML syntax  |

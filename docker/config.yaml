@@ -86,5 +86,6 @@ general_settings:
 environment_variables:
   UI_LOGO_PATH: "https://rse-guidelines.readthedocs.io/en/latest/assets/images/logo.png"
   DOCS_TITLE: "UW SSEC AI Gateway"
-  DOCS_DESCRIPTION: "University of Washington Scientific Software Engineering Center AI Gateway powered by LiteLLM"
-
+  DOCS_DESCRIPTION:
+    "University of Washington Scientific Software Engineering Center AI Gateway
+    powered by LiteLLM"

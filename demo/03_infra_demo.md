@@ -182,7 +182,7 @@ same locally and in the cloud.
 | Issue                       | Solution                                                                            |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `az: command not found`     | Install Azure CLI: `curl -sL https://aka.ms/InstallAzureCLIDeb \| sudo bash`        |
-| `pulumi: command not found` | Run `pixi run -e demo install-pulumi`                                            |
+| `pulumi: command not found` | Run `pixi run -e demo install-pulumi`                                               |
 | Azure auth errors           | Run `az login` and select the correct subscription                                  |
 | Config validation failures  | Check `demo/llmaven-config.yaml` syntax. Use `--skip-secrets` to skip secret checks |
 | Preview hangs               | Pulumi may need to initialize state. Check network connectivity                     |

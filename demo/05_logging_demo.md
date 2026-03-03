@@ -192,6 +192,6 @@ output from [Section 1](01_cli_demo.md) for details.
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | MLflow not showing runs after test request | Verify `litellm_settings` callbacks are uncommented in `docker/config.yaml`. Restart LiteLLM: `docker compose restart litellm` |
 | LiteLLM logs showing API errors            | Check API keys in `docker/.env`. Ensure the model name in the request matches one in `config.yaml`                             |
-| MLflow UI not loading                      | Check `pixi run -e demo status` — MLflow may still be starting. Wait for health check to pass                               |
+| MLflow UI not loading                      | Check `pixi run -e demo status` — MLflow may still be starting. Wait for health check to pass                                  |
 | No data in MLflow                          | The test request in Part 2 is required to generate data. Without API keys, MLflow will be empty                                |
 | Logs too verbose                           | Filter to specific services: `docker compose logs -f litellm`                                                                  |

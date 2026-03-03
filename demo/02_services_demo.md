@@ -275,5 +275,5 @@ work the same locally and in the cloud.
 | Missing `.env`                   | Run `cp docker/.env.example docker/.env` and edit with your API keys                             |
 | Services failing to start        | Check `docker compose logs <service>` for errors. Common: missing env vars, PostgreSQL not ready |
 | `createbuckets` keeps restarting | MinIO may not be healthy yet. Wait 30 seconds and check again                                    |
-| MLflow not starting              | Ensure PostgreSQL and MinIO are healthy first (check `pixi run -e demo status`)               |
+| MLflow not starting              | Ensure PostgreSQL and MinIO are healthy first (check `pixi run -e demo status`)                  |
 | LiteLLM not starting             | Ensure PostgreSQL and MLflow are healthy. Check API key env vars in `docker/.env`                |
