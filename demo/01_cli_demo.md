@@ -1,13 +1,18 @@
 # Section 1: CLI Walkthrough
 
-**Timing:** ~10 minutes
-**Prerequisites:** pixi installed, `llmaven` environment available (`pixi install -e llmaven`)
+**Timing:** ~10 minutes **Prerequisites:** pixi installed, `llmaven` environment
+available (`pixi install -e llmaven`)
 
 ## Overview
 
-LLMaven provides a command-line interface built with [Typer](https://typer.tiangolo.com/) and [Rich](https://github.com/Textualize/rich) for managing infrastructure deployments. The CLI is the entry point defined in `pyproject.toml` (`llmaven = "llmaven.cli:main"`).
+LLMaven provides a command-line interface built with
+[Typer](https://typer.tiangolo.com/) and
+[Rich](https://github.com/Textualize/rich) for managing infrastructure
+deployments. The CLI is the entry point defined in `pyproject.toml`
+(`llmaven = "llmaven.cli:main"`).
 
-This section demonstrates the core CLI commands: version checking, help output, config generation, and config validation.
+This section demonstrates the core CLI commands: version checking, help output,
+config generation, and config validation.
 
 ---
 
@@ -18,11 +23,13 @@ pixi run -e llmaven llmaven version
 ```
 
 **Expected output:**
+
 ```
 LLMaven version 0.1.0
 ```
 
-> **Presenter note:** The version comes from `pyproject.toml`. The entry point at `pyproject.toml:71` maps the `llmaven` command to `llmaven.cli:main`.
+> **Presenter note:** The version comes from `pyproject.toml`. The entry point
+> at `pyproject.toml:71` maps the `llmaven` command to `llmaven.cli:main`.
 
 ---
 
@@ -33,6 +40,7 @@ pixi run -e llmaven llmaven --help
 ```
 
 **Expected output:**
+
 ```
 Usage: llmaven [OPTIONS] COMMAND [ARGS]...
 
@@ -49,7 +57,9 @@ Commands:
   version  Show LLMaven version
 ```
 
-> **Presenter note:** Point out the `infra` subgroup — that's the focus of this demo. The `serve`, `ui`, and `agentic` commands are for the application layer (out of scope today).
+> **Presenter note:** Point out the `infra` subgroup — that's the focus of this
+> demo. The `serve`, `ui`, and `agentic` commands are for the application layer
+> (out of scope today).
 
 ---
 
@@ -60,6 +70,7 @@ pixi run -e llmaven llmaven infra --help
 ```
 
 **Expected output:**
+
 ```
 Usage: llmaven infra [OPTIONS] COMMAND [ARGS]...
 
@@ -78,7 +89,9 @@ Commands:
   validate  Validate LLMaven configuration
 ```
 
-> **Presenter note:** We'll use `init`, `validate`, and `deploy --preview` today. The full lifecycle (deploy, status, refresh, destroy, cancel) supports day-2 operations.
+> **Presenter note:** We'll use `init`, `validate`, and `deploy --preview`
+> today. The full lifecycle (deploy, status, refresh, destroy, cancel) supports
+> day-2 operations.
 
 ---
 
@@ -89,6 +102,7 @@ pixi run -e llmaven llmaven infra init --environment dev --output demo/generated
 ```
 
 **Expected output:**
+
 ```
 Configuration generated successfully!
 Output: demo/generated-config.yaml
@@ -101,14 +115,19 @@ Next steps:
 ```
 
 > **Presenter note:** Walk through the generated YAML structure:
+>
 > - `project:` — name, environment, location, passphrase setting
-> - `azure:` — subscription_id, tenant_id (auto-detected from `az account show` if authenticated, otherwise placeholders)
+> - `azure:` — subscription_id, tenant_id (auto-detected from `az account show`
+>   if authenticated, otherwise placeholders)
 > - `networking:` — VNet address space, subnets for container apps and postgres
-> - `database:` — PostgreSQL SKU, storage, the same 3 databases as the Docker stack
-> - `storage:` — account tier, replication, ADLS Gen2, the same 2 containers as MinIO buckets
+> - `database:` — PostgreSQL SKU, storage, the same 3 databases as the Docker
+>   stack
+> - `storage:` — account tier, replication, ADLS Gen2, the same 2 containers as
+>   MinIO buckets
 > - `container_registry:` — GHCR (not ACR — saves cost!)
 > - `monitoring:` — Log Analytics, Application Insights
-> - `mlflow:` / `litellm:` — Container App configurations with Key Vault secret references
+> - `mlflow:` / `litellm:` — Container App configurations with Key Vault secret
+>   references
 
 ---
 
@@ -119,6 +138,7 @@ pixi run -e llmaven llmaven infra validate --config demo/llmaven-config.yaml --s
 ```
 
 **Expected output:**
+
 ```
 Validating configuration...
 
@@ -133,12 +153,18 @@ Validation complete.
 ```
 
 > **Presenter note:**
+>
 > - Explain the 6 validation checks and what each one does
-> - `--skip-secrets` skips checking for `LLMAVEN_SECRETS_*` environment variables — useful when you don't have secrets configured
-> - The cost estimate shows a breakdown by resource type (PostgreSQL, storage, container apps, monitoring)
-> - If Azure CLI is not authenticated, the Azure prerequisites check will fail with a warning — that's OK, explain what it would check (subscription access, provider registration, etc.)
+> - `--skip-secrets` skips checking for `LLMAVEN_SECRETS_*` environment
+>   variables — useful when you don't have secrets configured
+> - The cost estimate shows a breakdown by resource type (PostgreSQL, storage,
+>   container apps, monitoring)
+> - If Azure CLI is not authenticated, the Azure prerequisites check will fail
+>   with a warning — that's OK, explain what it would check (subscription
+>   access, provider registration, etc.)
 
-**Fallback:** If Azure CLI is not authenticated, some checks will show warnings. This is expected in a demo environment without Azure access.
+**Fallback:** If Azure CLI is not authenticated, some checks will show warnings.
+This is expected in a demo environment without Azure access.
 
 ---
 
@@ -154,9 +180,9 @@ rm -f demo/generated-config.yaml
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| `pixi: command not found` | Install pixi: `curl -fsSL https://pixi.sh/install.sh \| bash` |
-| `llmaven: command not found` | Run `pixi install -e llmaven` to set up the environment |
-| Import errors | Ensure you're using the `llmaven` pixi environment: `pixi run -e llmaven ...` |
-| Validation crashes | Check that `demo/llmaven-config.yaml` exists and has valid YAML syntax |
+| Issue                        | Solution                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| `pixi: command not found`    | Install pixi: `curl -fsSL https://pixi.sh/install.sh \| bash`                 |
+| `llmaven: command not found` | Run `pixi install -e llmaven` to set up the environment                       |
+| Import errors                | Ensure you're using the `llmaven` pixi environment: `pixi run -e llmaven ...` |
+| Validation crashes           | Check that `demo/llmaven-config.yaml` exists and has valid YAML syntax        |
