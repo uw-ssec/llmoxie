@@ -19,10 +19,10 @@ fi
 # Fallback: if pixi environment is missing (e.g., fork with different repo name),
 # run the full install. The pre-built image places .pixi at /workspaces/llmaven/.pixi
 # which won't match if the workspace folder has a different name.
-if [ ! -d ".pixi/envs/llmaven" ]; then
+if [ ! -d ".pixi/envs/demo" ]; then
     echo "Pixi environment not found — running full install (this may take a few minutes)..."
-    pixi install -e llmaven
-    pixi run -e llmaven install-pulumi
+    pixi install -e demo
+    pixi run -e demo install-pulumi
 fi
 
 # Verification
@@ -31,10 +31,10 @@ echo "=== Setup Complete ==="
 echo "Pixi: $(pixi --version)"
 echo "Node: $(node --version 2>/dev/null || echo 'not found')"
 echo "Claude Code: $(claude --version 2>/dev/null || echo 'not found')"
-echo "Pulumi: $(pixi run -e llmaven pulumi version 2>/dev/null || echo 'not found')"
+echo "Pulumi: $(pixi run -e demo pulumi version 2>/dev/null || echo 'not found')"
 echo ""
 echo "Next steps:"
 echo "  1. Set your ANTHROPIC_API_KEY for Claude Code: export ANTHROPIC_API_KEY=your-key"
 echo "  2. Edit docker/.env with your LLM provider API keys"
-echo "  3. Run 'pixi run -e llmaven up' to start Docker services"
+echo "  3. Run 'pixi run -e demo up' to start Docker services"
 echo "  4. Follow demo/README.md for the full walkthrough"

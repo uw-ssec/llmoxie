@@ -1,7 +1,7 @@
 # Section 1: CLI Walkthrough
 
 **Timing:** ~10 minutes **Prerequisites:** pixi installed, `llmaven` environment
-available (`pixi install -e llmaven`)
+available (`pixi install -e demo` or use the demo devcontainer)
 
 ## Overview
 
@@ -19,7 +19,7 @@ config generation, and config validation.
 ## Step 1: Check the version
 
 ```bash
-pixi run -e llmaven llmaven version
+pixi run -e demo llmaven version
 ```
 
 **Expected output:**
@@ -36,7 +36,7 @@ LLMaven version 0.1.0
 ## Step 2: Explore top-level commands
 
 ```bash
-pixi run -e llmaven llmaven --help
+pixi run -e demo llmaven --help
 ```
 
 **Expected output:**
@@ -66,7 +66,7 @@ Commands:
 ## Step 3: Explore infrastructure subcommands
 
 ```bash
-pixi run -e llmaven llmaven infra --help
+pixi run -e demo llmaven infra --help
 ```
 
 **Expected output:**
@@ -98,7 +98,7 @@ Commands:
 ## Step 4: Generate a configuration file
 
 ```bash
-pixi run -e llmaven llmaven infra init --environment dev --output demo/generated-config.yaml
+pixi run -e demo llmaven infra init --environment dev --output demo/generated-config.yaml
 ```
 
 **Expected output:**
@@ -134,7 +134,7 @@ Next steps:
 ## Step 5: Validate the configuration
 
 ```bash
-pixi run -e llmaven llmaven infra validate --config demo/llmaven-config.yaml --skip-secrets
+pixi run -e demo llmaven infra validate --config demo/llmaven-config.yaml --skip-secrets
 ```
 
 **Expected output:**
@@ -183,6 +183,6 @@ rm -f demo/generated-config.yaml
 | Issue                        | Solution                                                                      |
 | ---------------------------- | ----------------------------------------------------------------------------- |
 | `pixi: command not found`    | Install pixi: `curl -fsSL https://pixi.sh/install.sh \| bash`                 |
-| `llmaven: command not found` | Run `pixi install -e llmaven` to set up the environment                       |
-| Import errors                | Ensure you're using the `llmaven` pixi environment: `pixi run -e llmaven ...` |
+| `llmaven: command not found` | Run `pixi install -e demo` to set up the environment                       |
+| Import errors                | Ensure you're using the `demo` pixi environment: `pixi run -e demo ...` |
 | Validation crashes           | Check that `demo/llmaven-config.yaml` exists and has valid YAML syntax        |

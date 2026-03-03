@@ -24,7 +24,7 @@ Choose one of the two setup paths below.
 3. Click **Create codespace**
 4. Wait for the `onCreate` script to complete (~1 minute). Tools are
    pre-installed in the Docker image:
-   - pixi dependencies (`llmaven` environment)
+   - pixi dependencies (`demo` environment — lean, no ML packages)
    - Pulumi CLI (for infrastructure demo)
    - Claude Code CLI (for RSE Plugins demo)
    - Azure CLI (pre-installed via devcontainer feature)
@@ -36,7 +36,7 @@ Choose one of the two setup paths below.
    etc.)
 7. Start the Docker services:
    ```bash
-   pixi run -e llmaven up
+   pixi run -e demo up
    ```
 
 > **Note:** Port forwarding is automatic in Codespaces. When services start,
@@ -65,8 +65,8 @@ git clone https://github.com/uw-ssec/llmaven.git
 cd llmaven
 cp docker/.env.example docker/.env
 # Edit docker/.env with your API keys
-pixi install -e llmaven
-pixi run -e llmaven up
+pixi install -e demo
+pixi run -e demo up
 ```
 
 ---
@@ -94,11 +94,11 @@ Before starting the demo, verify everything is working:
 
 ```bash
 # Check pixi environment is available
-pixi run -e llmaven llmaven version
+pixi run -e demo llmaven version
 # Expected: LLMaven version 0.1.0
 
 # Check Docker services are running
-pixi run -e llmaven status
+pixi run -e demo status
 # Expected: All containers show "Up" and "healthy"
 
 # Quick health checks
@@ -108,7 +108,7 @@ curl -s http://localhost:6333/health              # Qdrant
 curl -s http://localhost:9000/minio/health/live   # MinIO
 ```
 
-If any service is not running, start them with `pixi run -e llmaven up` and wait
+If any service is not running, start them with `pixi run -e demo up` and wait
 ~60 seconds for all health checks to pass.
 
 ---
@@ -116,7 +116,7 @@ If any service is not running, start them with `pixi run -e llmaven up` and wait
 ## Tips for Presenting
 
 - **Split terminal:** Keep one terminal for demo commands (Sections 1-4) and
-  another running `pixi run -e llmaven logs` to show live service activity
+  another running `pixi run -e demo logs` to show live service activity
 - **Pre-test everything:** Run through the full demo at least once before
   presenting. If using Codespaces, launch a fresh Codespace the day before to
   verify setup

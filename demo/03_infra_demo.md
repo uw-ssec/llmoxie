@@ -1,7 +1,7 @@
 # Section 3: Infrastructure Deployment (Dry Run)
 
 **Timing:** ~15 minutes **Prerequisites:** Azure CLI installed and authenticated
-(`az login`), Pulumi installed (`pixi run -e llmaven install-pulumi`)
+(`az login`), Pulumi installed (`pixi run -e demo install-pulumi`)
 
 ## Overview
 
@@ -22,7 +22,7 @@ The code lives in `src/llmaven/deployment/` (CLI wrappers) and
 ## Part 1: Generate Config (~3 min)
 
 ```bash
-pixi run -e llmaven llmaven infra init --environment dev
+pixi run -e demo llmaven infra init --environment dev
 ```
 
 > **Presenter note:** Explain the three environments (`dev`, `staging`, `prod`)
@@ -54,7 +54,7 @@ Walk through the generated `llmaven-config.yaml` structure section by section:
 ## Part 2: Validate Config (~5 min)
 
 ```bash
-pixi run -e llmaven llmaven infra validate --config llmaven-config.yaml
+pixi run -e demo llmaven infra validate --config llmaven-config.yaml
 ```
 
 The validator runs 6 checks sequentially:
@@ -108,7 +108,7 @@ Validating configuration...
 ## Part 3: Deployment Preview (~5 min)
 
 ```bash
-pixi run -e llmaven llmaven infra deploy --preview --config llmaven-config.yaml
+pixi run -e demo llmaven infra deploy --preview --config llmaven-config.yaml
 ```
 
 > **Presenter note:** Explain that `--preview` runs Pulumi's `stack.preview()` —
@@ -182,7 +182,7 @@ same locally and in the cloud.
 | Issue                       | Solution                                                                            |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `az: command not found`     | Install Azure CLI: `curl -sL https://aka.ms/InstallAzureCLIDeb \| sudo bash`        |
-| `pulumi: command not found` | Run `pixi run -e llmaven install-pulumi`                                            |
+| `pulumi: command not found` | Run `pixi run -e demo install-pulumi`                                            |
 | Azure auth errors           | Run `az login` and select the correct subscription                                  |
 | Config validation failures  | Check `demo/llmaven-config.yaml` syntax. Use `--skip-secrets` to skip secret checks |
 | Preview hangs               | Pulumi may need to initialize state. Check network connectivity                     |

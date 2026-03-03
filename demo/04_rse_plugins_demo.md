@@ -164,7 +164,7 @@ As Claude Code works, point out:
 
 - **Plan-to-code comparison:** Validation checks each plan item against the
   implementation
-- **Test execution:** Runs `pixi run -e llmaven pytest tests/deployment/ -v` to
+- **Test execution:** Runs `pixi run -e demo pytest tests/deployment/ -v` to
   verify tests pass
 - **Gap identification:** Any missing tests or unaddressed edge cases are
   flagged

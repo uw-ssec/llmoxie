@@ -203,13 +203,13 @@ in this demo). Provides a dashboard at `/dashboard` and health endpoint at
 If not already running:
 
 ```bash
-pixi run -e llmaven up
+pixi run -e demo up
 ```
 
 Or check if already running:
 
 ```bash
-pixi run -e llmaven status
+pixi run -e demo status
 ```
 
 **Expected output (all healthy):**
@@ -247,7 +247,7 @@ Open each in a browser (or Codespaces will auto-forward):
 ### Live logs
 
 ```bash
-pixi run -e llmaven logs
+pixi run -e demo logs
 # or for specific services:
 # docker compose logs -f litellm
 # docker compose logs -f mlflow
@@ -275,5 +275,5 @@ work the same locally and in the cloud.
 | Missing `.env`                   | Run `cp docker/.env.example docker/.env` and edit with your API keys                             |
 | Services failing to start        | Check `docker compose logs <service>` for errors. Common: missing env vars, PostgreSQL not ready |
 | `createbuckets` keeps restarting | MinIO may not be healthy yet. Wait 30 seconds and check again                                    |
-| MLflow not starting              | Ensure PostgreSQL and MinIO are healthy first (check `pixi run -e llmaven status`)               |
+| MLflow not starting              | Ensure PostgreSQL and MinIO are healthy first (check `pixi run -e demo status`)               |
 | LiteLLM not starting             | Ensure PostgreSQL and MLflow are healthy. Check API key env vars in `docker/.env`                |

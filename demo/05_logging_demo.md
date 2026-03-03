@@ -18,7 +18,7 @@ interactions.
 ```
 ┌─────────────────────────┬─────────────────────────┐
 │  Terminal 1              │  Terminal 2              │
-│  Demo commands           │  pixi run -e llmaven     │
+│  Demo commands           │  pixi run -e demo     │
 │  (Sections 1-4)          │  logs                    │
 │                          │  (live service logs)     │
 └─────────────────────────┴─────────────────────────┘
@@ -31,7 +31,7 @@ interactions.
 ### View all logs
 
 ```bash
-pixi run -e llmaven logs
+pixi run -e demo logs
 # or from docker/ directory:
 # docker compose logs -f --tail=100
 ```
@@ -178,7 +178,7 @@ User request → LiteLLM Proxy → LLM Provider (Azure/Anthropic/Bedrock)
 The CLI itself provides detailed output during validation:
 
 ```bash
-pixi run -e llmaven llmaven infra validate --config demo/llmaven-config.yaml --skip-secrets
+pixi run -e demo llmaven infra validate --config demo/llmaven-config.yaml --skip-secrets
 ```
 
 Each validation check prints its status, timing, and any warnings — see the
@@ -192,6 +192,6 @@ output from [Section 1](01_cli_demo.md) for details.
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | MLflow not showing runs after test request | Verify `litellm_settings` callbacks are uncommented in `docker/config.yaml`. Restart LiteLLM: `docker compose restart litellm` |
 | LiteLLM logs showing API errors            | Check API keys in `docker/.env`. Ensure the model name in the request matches one in `config.yaml`                             |
-| MLflow UI not loading                      | Check `pixi run -e llmaven status` — MLflow may still be starting. Wait for health check to pass                               |
+| MLflow UI not loading                      | Check `pixi run -e demo status` — MLflow may still be starting. Wait for health check to pass                               |
 | No data in MLflow                          | The test request in Part 2 is required to generate data. Without API keys, MLflow will be empty                                |
 | Logs too verbose                           | Filter to specific services: `docker compose logs -f litellm`                                                                  |

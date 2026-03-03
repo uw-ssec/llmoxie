@@ -79,6 +79,7 @@ tenacity = "==8.5.0"
 
 [environments]
 llmaven = { features = ["docker", "llmaven", "pulumi", "pre-commit"], no-default-feature = true }
+demo = { features = ["docker", "demo", "pulumi", "pre-commit"], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -90,7 +91,7 @@ proxy = { features = [
 # === LLMaven API dependencies and tasks ===
 
 [feature.llmaven.pypi-dependencies]
-llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
+llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production", "ml"]}
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
@@ -108,7 +109,17 @@ outputs = ["**/bin/pulumi"]
 [feature.pulumi.dependencies]
 pip = ">=25.3,<26"
 
-# === LLMaven API dependencies and tasks
+# === Demo environment (lean, no ML dependencies) ===
+
+[feature.demo.pypi-dependencies]
+llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
+
+[feature.demo.dependencies]
+python = "3.12.*"
+azure-core = ">=1.36.0,<2"
+python-dotenv = ">=1.1.1,<2"
+
+# === End Demo environment ===
 
 
 # === Docker related dependencies and tasks ===

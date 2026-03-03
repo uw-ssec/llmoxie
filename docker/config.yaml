@@ -9,6 +9,48 @@ model_list:
       api_base: os.environ/AZURE_API_BASE
       api_key: os.environ/AZURE_API_KEY
       api_version: os.environ/AZURE_API_VERSION
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: azure/gpt-oss-120b
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: os.environ/AZURE_API_VERSION
+  # Note: Not currently working with LiteLLM
+  # for some reason it's thinking that provider is openai instead of azure
+  # - model_name: mistral-large-3
+  #   litellm_params:
+  #     model: azure/mistral-large-3
+  #     api_base: os.environ/AZURE_API_BASE
+  #     api_key: os.environ/AZURE_API_KEY
+  #     api_version: os.environ/AZURE_API_VERSION
+  - model_name: embed-v-4-0
+    litellm_params:
+      model: azure/embed-v-4-0
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: os.environ/AZURE_API_VERSION
+  - model_name: kimi-k2-thinking
+    litellm_params:
+      model: azure/kimi-k2-thinking
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: os.environ/AZURE_API_VERSION
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: anthropic/claude-opus-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: bedrock-claude-sonnet-4-5-20250929
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      api_key: os.environ/AWS_BEARER_TOKEN_BEDROCK
 
 # Logging Configuration - Push to mlflow
 litellm_settings:
@@ -40,3 +82,9 @@ general_settings:
   database_url: os.environ/DATABASE_URL
   store_prompts_in_spend_logs: true
   store_model_in_db: true
+
+environment_variables:
+  UI_LOGO_PATH: "https://rse-guidelines.readthedocs.io/en/latest/assets/images/logo.png"
+  DOCS_TITLE: "UW SSEC AI Gateway"
+  DOCS_DESCRIPTION: "University of Washington Scientific Software Engineering Center AI Gateway powered by LiteLLM"
+

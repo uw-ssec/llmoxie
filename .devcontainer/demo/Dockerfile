@@ -28,17 +28,17 @@ USER vscode
 
 # Pre-install pixi environment (the expensive step, now cached in image)
 # Clean up caches in the same layer to keep image small
-RUN pixi install -e llmaven \
+RUN pixi install -e demo \
     && pixi clean cache --yes \
     && rm -rf /home/vscode/.cache/rattler
 
 # Install Pulumi CLI and remove unused language runtimes (keep only Python)
-RUN pixi run -e llmaven install-pulumi \
-    && rm -f .pixi/envs/llmaven/bin/pulumi-language-dotnet \
-             .pixi/envs/llmaven/bin/pulumi-language-go \
-             .pixi/envs/llmaven/bin/pulumi-language-java \
-             .pixi/envs/llmaven/bin/pulumi-language-nodejs \
-             .pixi/envs/llmaven/bin/pulumi-language-yaml
+RUN pixi run -e demo install-pulumi \
+    && rm -f .pixi/envs/demo/bin/pulumi-language-dotnet \
+             .pixi/envs/demo/bin/pulumi-language-go \
+             .pixi/envs/demo/bin/pulumi-language-java \
+             .pixi/envs/demo/bin/pulumi-language-nodejs \
+             .pixi/envs/demo/bin/pulumi-language-yaml
 
 # Configure user environment
 ENV VSCODE_HOME=/home/vscode SHELL=/bin/bash
