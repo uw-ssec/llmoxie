@@ -585,8 +585,16 @@ class TestInfraExtractMLflow:
 
         mock_fetch_experiment_ids.return_value = ["1", "2"]
         mock_fetch_traces.side_effect = [
-            [DummyTrace(_make_trace_payload("tr-1", experiment_id="1", message="hello"))],
-            [DummyTrace(_make_trace_payload("tr-2", experiment_id="2", message="world"))],
+            [
+                DummyTrace(
+                    _make_trace_payload("tr-1", experiment_id="1", message="hello")
+                )
+            ],
+            [
+                DummyTrace(
+                    _make_trace_payload("tr-2", experiment_id="2", message="world")
+                )
+            ],
         ]
 
         zipf = Mock()
@@ -922,7 +930,9 @@ class TestInfraExtractMLflow:
         assert traces == []
         client.search_traces.assert_not_called()
 
-    def test_fetch_all_mlflow_traces_for_window_paginates_and_uses_expected_filter(self):
+    def test_fetch_all_mlflow_traces_for_window_paginates_and_uses_expected_filter(
+        self,
+    ):
         from llmaven.cli import _fetch_all_mlflow_traces_for_window
 
         trace1 = DummyTrace(_make_trace_payload("tr-a", experiment_id="11"))

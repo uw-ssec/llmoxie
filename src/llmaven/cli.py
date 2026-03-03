@@ -642,7 +642,9 @@ def _prepare_extract_output_file(
     to_date: str,
 ) -> Path:
     use_default_path = output_file is None
-    path = output_file or Path(f"llmaven_{source.value}_spend_logs_{from_date}_to_{to_date}.zip")
+    path = output_file or Path(
+        f"llmaven_{source.value}_spend_logs_{from_date}_to_{to_date}.zip"
+    )
 
     # Guard only for the default path (Typer can't validate a value that wasn't provided)
     if use_default_path and path.exists() and path.is_dir():
@@ -777,8 +779,7 @@ def _fetch_all_mlflow_traces_for_window(
         return []
 
     filter_string = (
-        f"trace.timestamp_ms >= {start_ms} "
-        f"AND trace.timestamp_ms < {end_ms}"
+        f"trace.timestamp_ms >= {start_ms} AND trace.timestamp_ms < {end_ms}"
     )
 
     all_traces = []
@@ -842,9 +843,7 @@ def _extract_mlflow_logs(
     except Exception as exc:
         _fail_extract(f"MLflow experiment search failed: {exc}")
 
-    console.print(
-        f"[blue]→[/blue] Found {len(experiment_ids)} MLflow experiment(s)"
-    )
+    console.print(f"[blue]→[/blue] Found {len(experiment_ids)} MLflow experiment(s)")
 
     total_records = 0
 
@@ -873,7 +872,9 @@ def _extract_mlflow_logs(
                     json.dumps(trace.to_dict(), ensure_ascii=False) for trace in traces
                 )
             except Exception as exc:
-                _fail_extract(f"Failed to JSON-serialize MLflow traces for {date_str}: {exc}")
+                _fail_extract(
+                    f"Failed to JSON-serialize MLflow traces for {date_str}: {exc}"
+                )
 
             zipf.writestr(
                 f"mlflow_spend_logs_{date_str}.jsonl",
