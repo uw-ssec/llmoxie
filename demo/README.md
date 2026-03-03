@@ -22,7 +22,7 @@ Choose one of the two setup paths below.
 1. Click **Code** > **Codespaces** > **New with options**
 2. Under **Dev container configuration**, select **"LLMaven Demo (NAIRR)"**
 3. Click **Create codespace**
-4. Wait for the `onCreate` script to complete (~3-5 minutes). This installs:
+4. Wait for the `onCreate` script to complete (~1 minute). Tools are pre-installed in the Docker image:
    - pixi dependencies (`llmaven` environment)
    - Pulumi CLI (for infrastructure demo)
    - Claude Code CLI (for RSE Plugins demo)
@@ -120,7 +120,8 @@ If any service is not running, start them with `pixi run -e llmaven up` and wait
   presenting. If using Codespaces, launch a fresh Codespace the day before to
   verify setup
 - **Use Codespaces:** Avoid "works on my machine" issues by presenting from a
-  Codespace. The demo devcontainer has everything pre-configured
+  Codespace. The demo devcontainer uses a pre-built Docker image with all tools
+  baked in for near-instant readiness
 - **Have fallbacks ready:** Sections 3 and 4 include pre-captured output for
   when Azure CLI or API access is unavailable
 - **Pace yourself:** The timing estimates include buffer. If a section runs

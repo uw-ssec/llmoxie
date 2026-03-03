@@ -1,14 +1,8 @@
 {
   "name": "LLMaven Demo (NAIRR)",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "../.."
-  },
+  "image": "ghcr.io/uw-ssec/llmaven-demo-devcontainer:latest",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "lts"
-    },
     "ghcr.io/devcontainers/features/azure-cli:1": {}
   },
   "customizations": {
