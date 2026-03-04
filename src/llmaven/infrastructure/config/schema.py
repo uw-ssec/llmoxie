@@ -20,6 +20,10 @@ class ProjectConfig(BaseModel):
         default=False,
         description="Enable Pulumi passphrase protection (requires PULUMI_CONFIG_PASSPHRASE)",
     )
+    pulumi_state_store: Optional[str] = Field(
+        default=None,
+        description="Azure Blob Storage account for Pulumi state storage (optional)",
+    )
 
     @field_validator("environment")
     @classmethod
@@ -39,6 +43,9 @@ class AzureConfig(BaseModel):
     )
     tenant_id: Optional[str] = Field(
         default=None, description="Azure AD tenant ID (optional, auto-detected)"
+    )
+    resource_group: Optional[str] = Field(
+        default=None, description="Resource group name (optional, auto-created)"
     )
 
 

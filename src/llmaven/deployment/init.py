@@ -194,15 +194,15 @@ def initialize_config(
     print("     LLMAVEN_SECRETS_ANTHROPIC_API_KEY=your-anthropic-key")
     print()
     print("3. Validate the configuration:")
-    print(f"   llmaven validate --config {output_path}")
+    print(f"   llmaven infra validate --config {output_path}")
     print(
-        f"   # Or with .env file: llmaven validate --config {output_path} --env-file .env.secrets"
+        f"   # Or with .env file: llmaven infra validate --config {output_path} --env-file .env.secrets"
     )
     print()
     print("4. Deploy infrastructure:")
-    print(f"   llmaven deploy --config {output_path} --preview")
+    print(f"   llmaven infra deploy --config {output_path} --preview")
     print(
-        f"   # Or with .env file: llmaven deploy --config {output_path} --env-file .env.secrets --preview"
+        f"   # Or with .env file: llmaven infra deploy --config {output_path} --env-file .env.secrets --preview"
     )
     print()
     print("📚 Documentation:")

@@ -63,10 +63,12 @@ def create_container_apps_environment(
                     shared_key=pulumi.Output.all(
                         resource_group_name, log_analytics_workspace.name
                     ).apply(
-                        lambda args: azure_native.operationalinsights.get_shared_keys(
-                            resource_group_name=args[0],
-                            workspace_name=args[1],
-                        ).primary_shared_key
+                        lambda args: (
+                            azure_native.operationalinsights.get_shared_keys(
+                                resource_group_name=args[0],
+                                workspace_name=args[1],
+                            ).primary_shared_key
+                        )
                     ),
                 ),
             )
@@ -190,8 +192,9 @@ def create_container_app_with_key_vault_secrets(
         for secret_name in key_vault_secret_refs.values():
             # Fallback: construct URI from key_vault_uri (legacy behavior)
             secret_uri = key_vault_uri.apply(
-                lambda vault_uri,
-                sn=secret_name: f"{vault_uri.rstrip('/')}/secrets/{sn}"
+                lambda vault_uri, sn=secret_name: (
+                    f"{vault_uri.rstrip('/')}/secrets/{sn}"
+                )
             )
 
             # Use managed identity resource ID if provided, otherwise use system-assigned identity
