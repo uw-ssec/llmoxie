@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 from enum import Enum
+from datetime import datetime, time, timezone, timedelta
 from typing import TYPE_CHECKING, NoReturn, Optional
 
 import typer
@@ -622,7 +623,6 @@ def _get_litellm_credentials(env_file: Optional[Path]) -> tuple[str, str]:
 
 def _parse_utc_date(date_value: str) -> "date":
     """Parse a YYYY-MM-DD date, exiting with a helpful message on failure."""
-    from datetime import datetime
 
     try:
         return datetime.strptime(date_value, "%Y-%m-%d").date()
@@ -641,10 +641,21 @@ def _prepare_extract_output_file(
     from_date: str,
     to_date: str,
 ) -> Path:
+    assert source in (ExtractSource.litellm, ExtractSource.mlflow)
+
     use_default_path = output_file is None
-    path = output_file or Path(
-        f"llmaven_{source.value}_spend_logs_{from_date}_to_{to_date}.zip"
-    )
+    filename_prefix = "llmaven_"
+    filename_suffix = f"_{from_date}_to_{to_date}.zip"
+
+    if source.value == ExtractSource.litellm:
+        path = output_file or Path(
+            f"{filename_prefix}litellm_spend_logs{filename_suffix}"
+        )
+    else:
+        # Source is validated in caller, so this has to be ExtractSource.mlflow if not litellm.
+        path = output_file or Path(
+            f"{filename_prefix}mlflow_experiment_traces{filename_suffix}"
+        )
 
     # Guard only for the default path (Typer can't validate a value that wasn't provided)
     if use_default_path and path.exists() and path.is_dir():
@@ -670,7 +681,6 @@ def _extract_litellm_logs(
     output_file: Path,
     env_file: Optional[Path],
 ) -> None:
-    from datetime import timedelta
     import json
     import zipfile
 
@@ -723,6 +733,7 @@ def _extract_litellm_logs(
 
                 total_records += len(data)
 
+                # TODO (https://github.com/uw-ssec/llmaven/issues/102): Use jsonlines instead of manual JSON handling.
                 jsonl_payload = "\n".join(
                     json.dumps(item, ensure_ascii=False) for item in data
                 )
@@ -742,20 +753,35 @@ def _extract_litellm_logs(
 
 
 def _utc_date_to_epoch_ms(d: "date") -> int:
-    from datetime import datetime, time, timezone
-
     return int(datetime.combine(d, time.min, tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def _fetch_all_mlflow_experiment_ids(client) -> list[str]:
+def _fetch_mlflow_experiment_ids_for_date_range(
+    mlflow_client: "MlflowClient", start_date_obj: "date", end_date_obj: "date"
+) -> list[str]:
     from mlflow.entities import ViewType
 
     experiment_ids: list[str] = []
     page_token: Optional[str] = None
 
+    # Use only creation_time as a coarse pre-filter for experiments.
+    # If an experiment was created after the requested window ends, it cannot
+    # contain traces from that window, so excluding it is safe.
+    #
+    # We intentionally do NOT filter on search_experiment's last_update_time here:
+    # in practice, experiment-level update metadata is not a reliable proxy for
+    # whether the experiment contains traces in the requested time range. Using it
+    # can false negatives by excluding experiments that still had matching traces.
+    #
+    # The authoritative time filter remains the trace-level predicate in
+    # search_traces(...), which filters directly on trace.timestamp_ms.
+    end_ms = _utc_date_to_epoch_ms(end_date_obj)
+    date_filter_string = f"creation_time < {end_ms}"
+
     while True:
-        experiments = client.search_experiments(
+        experiments = mlflow_client.search_experiments(
             view_type=ViewType.ACTIVE_ONLY,
+            filter_string=date_filter_string,
             max_results=1000,
             page_token=page_token,
         )
@@ -769,7 +795,7 @@ def _fetch_all_mlflow_experiment_ids(client) -> list[str]:
     return experiment_ids
 
 
-def _fetch_all_mlflow_traces_for_window(
+def _fetch_mlflow_experiment_traces_in_date_range(
     client,
     experiment_ids: list[str],
     start_ms: int,
@@ -778,28 +804,36 @@ def _fetch_all_mlflow_traces_for_window(
     if not experiment_ids:
         return []
 
-    filter_string = (
+    date_filter_string = (
         f"trace.timestamp_ms >= {start_ms} AND trace.timestamp_ms < {end_ms}"
     )
 
     all_traces = []
     page_token: Optional[str] = None
+    page_num = 0
 
-    while True:
-        traces = client.search_traces(
-            locations=experiment_ids,
-            filter_string=filter_string,
-            max_results=500,
-            order_by=["timestamp_ms ASC"],
-            page_token=page_token,
-            include_spans=True,
-        )
+    with console.status("[blue]Fetching MLflow traces...[/blue]") as status:
+        while True:
+            page_num += 1
+            status.update(
+                f"[blue]Fetching MLflow traces...[/blue] "
+                f"(page {page_num}, {len(all_traces)} collected)"
+            )
 
-        all_traces.extend(traces)
+            traces = client.search_traces(
+                locations=experiment_ids,
+                filter_string=date_filter_string,
+                max_results=500,
+                order_by=["timestamp_ms ASC"],
+                page_token=page_token,
+                include_spans=True,
+            )
 
-        page_token = traces.token
-        if not page_token:
-            break
+            all_traces.extend(traces)
+
+            page_token = traces.token
+            if not page_token:
+                break
 
     return all_traces
 
@@ -821,13 +855,14 @@ def _extract_mlflow_logs(
     output_file: Path,
     env_file: Optional[Path],
 ) -> None:
-    from datetime import timedelta
-    import zipfile
     import json
+    import zipfile
+    from collections import defaultdict
 
     import mlflow
     from mlflow import MlflowClient
 
+    # Initialize the MLflow client from the configured tracking backend.
     mlflow_tracking_uri = _get_mlflow_tracking_uri(env_file)
     mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow_client = MlflowClient(tracking_uri=mlflow_tracking_uri)
@@ -835,28 +870,39 @@ def _extract_mlflow_logs(
     console.print(
         f"[blue]→[/blue] Extracting MLflow traces "
         f"{start_date_obj.isoformat()} → {end_date_obj.isoformat()} "
-        f"(inclusive UTC dates; all experiments)"
+        f"(inclusive UTC dates; relevant experiments)"
     )
 
+    # Fetch the candidate experiment ids once for the overall requested window.
+    # This is only a coarse pre-filter; the authoritative date filtering happens
+    # later at the trace level via trace.timestamp_ms.
     try:
-        experiment_ids = _fetch_all_mlflow_experiment_ids(mlflow_client)
+        experiment_ids = _fetch_mlflow_experiment_ids_for_date_range(
+            mlflow_client,
+            start_date_obj,
+            end_date_obj,
+        )
     except Exception as exc:
         _fail_extract(f"MLflow experiment search failed: {exc}")
 
     console.print(f"[blue]→[/blue] Found {len(experiment_ids)} MLflow experiment(s)")
 
     total_records = 0
+    total_files_written = 0
 
     with zipfile.ZipFile(
         output_file, mode="w", compression=zipfile.ZIP_DEFLATED
     ) as zipf:
         current_date = start_date_obj
+
+        # Partition the export by UTC day using half-open windows [D, D+1).
         while current_date <= end_date_obj:
             next_date = current_date + timedelta(days=1)
             date_str = current_date.isoformat()
 
+            # Fetch all traces for this UTC day across the candidate experiments.
             try:
-                traces = _fetch_all_mlflow_traces_for_window(
+                traces = _fetch_mlflow_experiment_traces_in_date_range(
                     client=mlflow_client,
                     experiment_ids=experiment_ids,
                     start_ms=_utc_date_to_epoch_ms(current_date),
@@ -867,26 +913,57 @@ def _extract_mlflow_logs(
 
             total_records += len(traces)
 
+            # Group the day's traces by experiment id so the zip contains one file
+            # per (experiment_id, UTC day) instead of mixing multiple experiments
+            # into a single daily file.
+            traces_by_experiment_id: dict[str, list[dict]] = defaultdict(list)
+
             try:
-                jsonl_payload = "\n".join(
-                    json.dumps(trace.to_dict(), ensure_ascii=False) for trace in traces
-                )
+                for trace in traces:
+                    # Normalize the MLflow trace object to a plain dict once, then
+                    # reuse it both for grouping and JSON serialization.
+                    trace_dict = trace.to_dict()
+                    experiment_id = str(
+                        trace_dict["info"]["trace_location"]["mlflow_experiment"][
+                            "experiment_id"
+                        ]
+                    )
+                    traces_by_experiment_id[experiment_id].append(trace_dict)
             except Exception as exc:
                 _fail_extract(
-                    f"Failed to JSON-serialize MLflow traces for {date_str}: {exc}"
+                    f"Failed to group MLflow traces by experiment for {date_str}: {exc}"
                 )
 
-            zipf.writestr(
-                f"mlflow_spend_logs_{date_str}.jsonl",
-                (jsonl_payload + "\n") if jsonl_payload else "",
-            )
+            # Write one JSONL file per experiment for this UTC day.
+            # TODO (https://github.com/uw-ssec/llmaven/issues/102): Use jsonlines instead of manual JSON handling.
+            for experiment_id, experiment_traces in traces_by_experiment_id.items():
+                try:
+                    jsonl_payload = "\n".join(
+                        json.dumps(trace_dict, ensure_ascii=False)
+                        for trace_dict in experiment_traces
+                    )
+                except Exception as exc:
+                    _fail_extract(
+                        "Failed to JSON-serialize MLflow traces for "
+                        f"{date_str}, experiment {experiment_id}: {exc}"
+                    )
 
-            console.print(f"[green]✓[/green] {date_str}: {len(traces)} records")
+                zipf.writestr(
+                    f"mlflow_traces_{date_str}_experiment_{experiment_id}.jsonl",
+                    jsonl_payload + "\n",
+                )
+                total_files_written += 1
+
+            console.print(
+                f"[green]✓[/green] {date_str}: {len(traces)} records "
+                f"across {len(traces_by_experiment_id)} experiment(s)"
+            )
             current_date = next_date
 
     console.print(
         "[green]✓[/green] Extraction complete! "
-        f"{total_records} total records written to: {output_file}"
+        f"{total_records} total records across {total_files_written} file(s) "
+        f"written to: {output_file}"
     )
 
 
@@ -949,8 +1026,10 @@ def extract(
         dates in an arbitrary timezone, then fetch a UTC-date superset from LiteLLM
         and filter records client-side by timestamp into the desired local ranges.
     """
-    # Parse & validate dates
+    if source != ExtractSource.litellm and source != ExtractSource.mlflow:
+        _fail_extract(f"Source is not supported: {source}")
 
+    # Parse & validate dates
     start_date_obj = _parse_utc_date(from_date)
     end_date_obj = _parse_utc_date(to_date)
 
@@ -979,8 +1058,7 @@ def extract(
             output_file,
             env_file,
         )
-    else:
-        _fail_extract(f"Source is not supported: {source}")
+    # else: source is validated in the initial check.
 
 
 @infra_app.command()

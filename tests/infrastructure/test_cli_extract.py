@@ -8,6 +8,7 @@ avoiding event-loop / async / grpc side effects during unit tests.
 
 from __future__ import annotations
 
+from datetime import date
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from llmaven.cli import app
+from llmaven.cli import _utc_date_to_epoch_ms, app
 
 
 @pytest.fixture()
@@ -528,7 +529,7 @@ class TestInfraExtractSources:
         called_args = mock_mlflow_extract.call_args[0]
         assert (
             called_args[2].name
-            == "llmaven_mlflow_spend_logs_2026-01-01_to_2026-01-01.zip"
+            == "llmaven_mlflow_experiment_traces_2026-01-01_to_2026-01-01.zip"
         )
 
 
@@ -565,8 +566,8 @@ class TestInfraExtractMLflow:
         "llmaven.cli._get_llmaven_secrets",
         return_value={"mlflow-tracking-uri": "http://mlflow"},
     )
-    @patch("llmaven.cli._fetch_all_mlflow_traces_for_window")
-    @patch("llmaven.cli._fetch_all_mlflow_experiment_ids")
+    @patch("llmaven.cli._fetch_mlflow_experiment_traces_in_date_range")
+    @patch("llmaven.cli._fetch_mlflow_experiment_ids_for_date_range")
     @patch("zipfile.ZipFile")
     @patch("mlflow.MlflowClient")
     @patch("mlflow.set_tracking_uri")
@@ -622,7 +623,9 @@ class TestInfraExtractMLflow:
         mock_set_tracking_uri.assert_called_once_with("http://mlflow")
         mock_mlflow_client_cls.assert_called_once_with(tracking_uri="http://mlflow")
         mock_fetch_experiment_ids.assert_called_once_with(
-            mock_mlflow_client_cls.return_value
+            mock_mlflow_client_cls.return_value,
+            date(2026, 1, 1),
+            date(2026, 1, 2),
         )
 
         assert mock_fetch_traces.call_count == 2
@@ -630,24 +633,24 @@ class TestInfraExtractMLflow:
         first_kwargs = mock_fetch_traces.call_args_list[0].kwargs
         assert first_kwargs["client"] == mock_mlflow_client_cls.return_value
         assert first_kwargs["experiment_ids"] == ["1", "2"]
-        assert first_kwargs["start_ms"] == 1767225600000
-        assert first_kwargs["end_ms"] == 1767312000000
+        assert first_kwargs["start_ms"] == _utc_date_to_epoch_ms(date(2026, 1, 1))
+        assert first_kwargs["end_ms"] == _utc_date_to_epoch_ms(date(2026, 1, 2))
 
         second_kwargs = mock_fetch_traces.call_args_list[1].kwargs
-        assert second_kwargs["start_ms"] == 1767312000000
-        assert second_kwargs["end_ms"] == 1767398400000
+        assert second_kwargs["start_ms"] == _utc_date_to_epoch_ms(date(2026, 1, 2))
+        assert second_kwargs["end_ms"] == _utc_date_to_epoch_ms(date(2026, 1, 3))
 
         assert zipf.writestr.call_count == 2
 
         name0, payload0 = zipf.writestr.call_args_list[0][0]
-        assert name0 == "mlflow_spend_logs_2026-01-01.jsonl"
+        assert name0 == "mlflow_traces_2026-01-01_experiment_1.jsonl"
         assert '"info":' in payload0
         assert '"data":' in payload0
         assert '"spans":' in payload0
         assert '"trace_id": "tr-1"' in payload0
 
         name1, payload1 = zipf.writestr.call_args_list[1][0]
-        assert name1 == "mlflow_spend_logs_2026-01-02.jsonl"
+        assert name1 == "mlflow_traces_2026-01-02_experiment_2.jsonl"
         assert '"trace_id": "tr-2"' in payload1
 
         assert "2 total records" in result.output
@@ -656,12 +659,12 @@ class TestInfraExtractMLflow:
         "llmaven.cli._get_llmaven_secrets",
         return_value={"mlflow-tracking-uri": "http://mlflow"},
     )
-    @patch("llmaven.cli._fetch_all_mlflow_traces_for_window")
-    @patch("llmaven.cli._fetch_all_mlflow_experiment_ids", return_value=[])
+    @patch("llmaven.cli._fetch_mlflow_experiment_traces_in_date_range")
+    @patch("llmaven.cli._fetch_mlflow_experiment_ids_for_date_range", return_value=[])
     @patch("zipfile.ZipFile")
     @patch("mlflow.MlflowClient")
     @patch("mlflow.set_tracking_uri")
-    def test_mlflow_no_experiments_writes_empty_daily_files(
+    def test_mlflow_no_experiments_writes_no_files(
         self,
         mock_set_tracking_uri,
         mock_mlflow_client_cls,
@@ -695,41 +698,21 @@ class TestInfraExtractMLflow:
         )
 
         assert result.exit_code == 0
-        mock_set_tracking_uri.assert_called_once_with("http://mlflow")
-        mock_mlflow_client_cls.assert_called_once_with(tracking_uri="http://mlflow")
-        mock_fetch_experiment_ids.assert_called_once_with(
-            mock_mlflow_client_cls.return_value
-        )
-
-        assert mock_fetch_traces.call_count == 2
-        first_kwargs = mock_fetch_traces.call_args_list[0].kwargs
-        assert first_kwargs["experiment_ids"] == []
-
-        second_kwargs = mock_fetch_traces.call_args_list[1].kwargs
-        assert second_kwargs["experiment_ids"] == []
-
-        assert zipf.writestr.call_count == 2
-
-        name0, payload0 = zipf.writestr.call_args_list[0][0]
-        assert name0 == "mlflow_spend_logs_2026-01-01.jsonl"
-        assert payload0 == ""
-
-        name1, payload1 = zipf.writestr.call_args_list[1][0]
-        assert name1 == "mlflow_spend_logs_2026-01-02.jsonl"
-        assert payload1 == ""
-
+        assert zipf.writestr.call_count == 0
         assert "0 total records" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"mlflow-tracking-uri": "http://mlflow"},
     )
-    @patch("llmaven.cli._fetch_all_mlflow_traces_for_window")
-    @patch("llmaven.cli._fetch_all_mlflow_experiment_ids", return_value=["1"])
+    @patch("llmaven.cli._fetch_mlflow_experiment_traces_in_date_range")
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range", return_value=["1"]
+    )
     @patch("zipfile.ZipFile")
     @patch("mlflow.MlflowClient")
     @patch("mlflow.set_tracking_uri")
-    def test_mlflow_empty_trace_day_writes_empty_jsonl(
+    def test_mlflow_empty_trace_day_writes_no_files(
         self,
         mock_set_tracking_uri,
         mock_mlflow_client_cls,
@@ -765,10 +748,7 @@ class TestInfraExtractMLflow:
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
 
-        name0, payload0 = zipf.writestr.call_args_list[0][0]
-        assert name0 == "mlflow_spend_logs_2026-01-01.jsonl"
-        assert payload0 == ""
-
+        assert zipf.writestr.call_count == 0
         assert "0 total records" in result.output
 
     @patch(
@@ -776,17 +756,15 @@ class TestInfraExtractMLflow:
         return_value={"mlflow-tracking-uri": "http://mlflow"},
     )
     @patch(
-        "llmaven.cli._fetch_all_mlflow_traces_for_window",
-        return_value=[DummyTrace({"bad": {1, 2, 3}})],
+        "llmaven.cli._fetch_mlflow_experiment_traces_in_date_range",
     )
-    @patch("llmaven.cli._fetch_all_mlflow_experiment_ids", return_value=["1"])
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range",
+        return_value=["1"],
+    )
     @patch("zipfile.ZipFile")
-    @patch("mlflow.MlflowClient")
-    @patch("mlflow.set_tracking_uri")
     def test_mlflow_json_serialize_error_exits(
         self,
-        mock_set_tracking_uri,
-        mock_mlflow_client_cls,
         mock_zip_cls,
         mock_fetch_experiment_ids,
         mock_fetch_traces,
@@ -794,6 +772,10 @@ class TestInfraExtractMLflow:
         runner: CliRunner,
         tmp_path: Path,
     ):
+        bad_payload = _make_trace_payload("tr-1", experiment_id="1")
+        bad_payload["bad"] = {1, 2, 3}
+        mock_fetch_traces.return_value = [DummyTrace(bad_payload)]
+
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
@@ -814,14 +796,17 @@ class TestInfraExtractMLflow:
         )
 
         assert result.exit_code == 1
-        assert "Failed to JSON-serialize MLflow traces for 2026-01-01" in result.output
+        assert (
+            "Failed to JSON-serialize MLflow traces for "
+            "2026-01-01, experiment 1" in result.output
+        )
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
         return_value={"mlflow-tracking-uri": "http://mlflow"},
     )
     @patch(
-        "llmaven.cli._fetch_all_mlflow_experiment_ids",
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range",
         side_effect=RuntimeError("boom"),
     )
     @patch("mlflow.MlflowClient")
@@ -861,10 +846,12 @@ class TestInfraExtractMLflow:
         return_value={"mlflow-tracking-uri": "http://mlflow"},
     )
     @patch(
-        "llmaven.cli._fetch_all_mlflow_traces_for_window",
+        "llmaven.cli._fetch_mlflow_experiment_traces_in_date_range",
         side_effect=RuntimeError("boom"),
     )
-    @patch("llmaven.cli._fetch_all_mlflow_experiment_ids", return_value=["1"])
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range", return_value=["1"]
+    )
     @patch("zipfile.ZipFile")
     @patch("mlflow.MlflowClient")
     @patch("mlflow.set_tracking_uri")
@@ -901,8 +888,8 @@ class TestInfraExtractMLflow:
         assert result.exit_code == 1
         assert "MLflow trace search failed for 2026-01-01: boom" in result.output
 
-    def test_fetch_all_mlflow_experiment_ids_paginates(self):
-        from llmaven.cli import _fetch_all_mlflow_experiment_ids
+    def test_fetch_mlflow_experiment_ids_for_date_range_paginates(self):
+        from llmaven.cli import _fetch_mlflow_experiment_ids_for_date_range
 
         client = Mock()
         client.search_experiments.side_effect = [
@@ -910,17 +897,21 @@ class TestInfraExtractMLflow:
             MockPagedList([DummyExperiment("2"), DummyExperiment("3")], token=None),
         ]
 
-        experiment_ids = _fetch_all_mlflow_experiment_ids(client)
+        experiment_ids = _fetch_mlflow_experiment_ids_for_date_range(
+            client, date(2026, 1, 1), date(2026, 1, 2)
+        )
 
         assert experiment_ids == ["1", "2", "3"]
         assert client.search_experiments.call_count == 2
 
-    def test_fetch_all_mlflow_traces_for_window_returns_empty_when_no_experiments(self):
-        from llmaven.cli import _fetch_all_mlflow_traces_for_window
+    def test_fetch_mlflow_experiment_traces_in_date_range_returns_empty_when_no_experiments(
+        self,
+    ):
+        from llmaven.cli import _fetch_mlflow_experiment_traces_in_date_range
 
         client = Mock()
 
-        traces = _fetch_all_mlflow_traces_for_window(
+        traces = _fetch_mlflow_experiment_traces_in_date_range(
             client=client,
             experiment_ids=[],
             start_ms=1,
@@ -930,10 +921,10 @@ class TestInfraExtractMLflow:
         assert traces == []
         client.search_traces.assert_not_called()
 
-    def test_fetch_all_mlflow_traces_for_window_paginates_and_uses_expected_filter(
+    def test_fetch_mlflow_experiment_traces_in_date_range_paginates_and_uses_expected_filter(
         self,
     ):
-        from llmaven.cli import _fetch_all_mlflow_traces_for_window
+        from llmaven.cli import _fetch_mlflow_experiment_traces_in_date_range
 
         trace1 = DummyTrace(_make_trace_payload("tr-a", experiment_id="11"))
         trace2 = DummyTrace(_make_trace_payload("tr-b", experiment_id="22"))
@@ -944,7 +935,7 @@ class TestInfraExtractMLflow:
             MockPagedList([trace2], token=None),
         ]
 
-        traces = _fetch_all_mlflow_traces_for_window(
+        traces = _fetch_mlflow_experiment_traces_in_date_range(
             client=client,
             experiment_ids=["11", "22"],
             start_ms=1767225600000,
@@ -967,3 +958,281 @@ class TestInfraExtractMLflow:
 
         _, kwargs1 = client.search_traces.call_args_list[1]
         assert kwargs1["page_token"] == "next"
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"mlflow-tracking-uri": "http://mlflow"},
+    )
+    @patch("llmaven.cli._fetch_mlflow_experiment_traces_in_date_range")
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range",
+        return_value=["1", "2"],
+    )
+    @patch("zipfile.ZipFile")
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    def test_mlflow_same_day_traces_are_split_by_experiment(
+        self,
+        mock_set_tracking_uri,
+        mock_mlflow_client_cls,
+        mock_zip_cls,
+        mock_fetch_experiment_ids,
+        mock_fetch_traces,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_file = tmp_path / "out.zip"
+
+        mock_fetch_traces.return_value = [
+            DummyTrace(_make_trace_payload("tr-1", experiment_id="1", message="hello")),
+            DummyTrace(_make_trace_payload("tr-2", experiment_id="2", message="world")),
+        ]
+
+        zipf = Mock()
+        mock_zip_cls.return_value.__enter__.return_value = zipf
+
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--source",
+                "mlflow",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_fetch_traces.assert_called_once()
+        assert zipf.writestr.call_count == 2
+
+        written = {call.args[0]: call.args[1] for call in zipf.writestr.call_args_list}
+
+        assert "mlflow_traces_2026-01-01_experiment_1.jsonl" in written
+        assert "mlflow_traces_2026-01-01_experiment_2.jsonl" in written
+
+        payload1 = written["mlflow_traces_2026-01-01_experiment_1.jsonl"]
+        payload2 = written["mlflow_traces_2026-01-01_experiment_2.jsonl"]
+
+        assert '"trace_id": "tr-1"' in payload1
+        assert '"trace_id": "tr-2"' not in payload1
+
+        assert '"trace_id": "tr-2"' in payload2
+        assert '"trace_id": "tr-1"' not in payload2
+
+        assert "2 total records" in result.output
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"mlflow-tracking-uri": "http://mlflow"},
+    )
+    @patch("llmaven.cli._fetch_mlflow_experiment_traces_in_date_range")
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range",
+        return_value=["1"],
+    )
+    @patch("zipfile.ZipFile")
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    def test_mlflow_same_day_same_experiment_traces_are_grouped_into_one_file(
+        self,
+        mock_set_tracking_uri,
+        mock_mlflow_client_cls,
+        mock_zip_cls,
+        mock_fetch_experiment_ids,
+        mock_fetch_traces,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_file = tmp_path / "out.zip"
+
+        mock_fetch_traces.return_value = [
+            DummyTrace(_make_trace_payload("tr-1", experiment_id="1", message="hello")),
+            DummyTrace(_make_trace_payload("tr-2", experiment_id="1", message="world")),
+        ]
+
+        zipf = Mock()
+        mock_zip_cls.return_value.__enter__.return_value = zipf
+
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--source",
+                "mlflow",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_fetch_traces.assert_called_once()
+        assert zipf.writestr.call_count == 1
+
+        name0, payload0 = zipf.writestr.call_args_list[0][0]
+        assert name0 == "mlflow_traces_2026-01-01_experiment_1.jsonl"
+        assert '"trace_id": "tr-1"' in payload0
+        assert '"trace_id": "tr-2"' in payload0
+
+        # Two JSONL records should be present in the same file.
+        assert len(payload0.strip().splitlines()) == 2
+
+        assert "2 total records" in result.output
+
+    @patch("llmaven.cli._extract_litellm_logs")
+    def test_default_output_path_directory_exits_for_generated_litellm_filename(
+        self,
+        mock_litellm_extract,
+        runner: CliRunner,
+    ):
+        with runner.isolated_filesystem():
+            default_dir = Path(
+                "llmaven_litellm_spend_logs_2026-01-01_to_2026-01-01.zip"
+            )
+            default_dir.mkdir()
+
+            result = runner.invoke(
+                app,
+                [
+                    "infra",
+                    "extract",
+                    "--from",
+                    "2026-01-01",
+                    "--to",
+                    "2026-01-01",
+                ],
+            )
+
+        assert result.exit_code == 1
+        assert "Default output path is a directory" in result.output
+        mock_litellm_extract.assert_not_called()
+
+    @patch("llmaven.cli._extract_mlflow_logs")
+    def test_accepts_overwrite_and_continues(
+        self,
+        mock_mlflow_extract,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_file = tmp_path / "out.zip"
+        output_file.write_text("already exists", encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--source",
+                "mlflow",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+            input="y\n",
+        )
+
+        assert result.exit_code == 0
+        mock_mlflow_extract.assert_called_once()
+
+        called_args = mock_mlflow_extract.call_args[0]
+        assert called_args[0] == date(2026, 1, 1)
+        assert called_args[1] == date(2026, 1, 1)
+        assert called_args[2] == output_file
+        assert called_args[3] is None
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"mlflow-tracking-uri": "http://mlflow"},
+    )
+    @patch("llmaven.cli._fetch_mlflow_experiment_traces_in_date_range")
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range",
+        return_value=["1"],
+    )
+    @patch("zipfile.ZipFile")
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    def test_mlflow_grouping_failure_when_trace_to_dict_raises(
+        self,
+        mock_set_tracking_uri,
+        mock_mlflow_client_cls,
+        mock_zip_cls,
+        mock_fetch_experiment_ids,
+        mock_fetch_traces,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        class BadTrace:
+            def to_dict(self):
+                raise RuntimeError("boom")
+
+        output_file = tmp_path / "out.zip"
+        mock_fetch_traces.return_value = [BadTrace()]
+        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        result = runner.invoke(
+            app,
+            [
+                "infra",
+                "extract",
+                "--source",
+                "mlflow",
+                "--from",
+                "2026-01-01",
+                "--to",
+                "2026-01-01",
+                "--out",
+                str(output_file),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert (
+            "Failed to group MLflow traces by experiment for 2026-01-01: boom"
+            in result.output
+        )
+
+    def test_fetch_mlflow_experiment_ids_for_date_range_uses_expected_filter_and_args(
+        self,
+    ):
+        from mlflow.entities import ViewType
+        from llmaven.cli import _fetch_mlflow_experiment_ids_for_date_range
+
+        client = Mock()
+        client.search_experiments.return_value = MockPagedList(
+            [DummyExperiment("1")], token=None
+        )
+
+        start_date = date(2026, 1, 1)
+        end_date = date(2026, 1, 2)
+
+        experiment_ids = _fetch_mlflow_experiment_ids_for_date_range(
+            client, start_date, end_date
+        )
+
+        assert experiment_ids == ["1"]
+        client.search_experiments.assert_called_once()
+
+        _, kwargs = client.search_experiments.call_args
+        assert kwargs["view_type"] == ViewType.ACTIVE_ONLY
+        assert kwargs["filter_string"] == (
+            f"creation_time < {_utc_date_to_epoch_ms(end_date)}"
+        )
+        assert kwargs["max_results"] == 1000
+        assert kwargs["page_token"] is None
