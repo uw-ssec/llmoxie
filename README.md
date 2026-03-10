@@ -1,45 +1,48 @@
 # LLMaven
 
-A platform for building and deploying AI-powered research tools. LLMaven is made
-of two components: **infrastructure** (CLI, Docker services stack, and
-Pulumi-based Azure deployment) and **application** (built as
-[RSE-Plugins](https://github.com/uw-ssec/rse-plugins)).
+An open-source AI control plane developed under NSF NAIRR award [#240292](https://nairrpilot.org/projects/awarded?_requestNumber=NAIRR240292) by [UW SSEC](https://escience.washington.edu/software-engineering/ssec/) under Schmidt Sciences [Virtual Institutes for Scientific Software](https://www.schmidtsciences.org/viss/) program.
+
+LLMaven provides open, transparent, and useful AI-based software for scientific discovery by providing AI infrastructure that can be installed on cloud and HPC systems to access large language models, observability features, and an [agentic framework](https://github.com/uw-ssec/rse-plugins) for AI assisted coding for Research Software Engineering.  
 
 ## Overview
 
-LLMaven combines a **Typer CLI**, a **Docker Compose services stack**
-(PostgreSQL, MinIO, MLflow, LiteLLM, Qdrant), and **Pulumi-based Azure
-deployment** into a single workflow. The local stack mirrors the cloud
-architecture: the same databases, object storage, AI gateway, and experiment
-tracking services run locally via Docker and deploy to Azure as managed
-resources. Application logic is developed as RSE-Plugins on top of this
-infrastructure. Dependency management is handled by [pixi](https://pixi.sh)
-with multi-environment support.
+LLMaven leverages CLI and Pulumi-based Infrastructure as Code configurations into a single workflow. A local stack utilizing docker mirrors the cloud architecture: the same databases, object storage, AI gateway, and experiment tracking services run locally. AI harness that defines coding subagents and skills are developed, now, as Claude Code RSE-Plugins on top of this infrastructure.
+
+Key Components
+
+The architecture has three layers:
+
+Layer 1 — Inference Engine: The inference engine is provided by each cloud provider or HPC. Azure via Microsoft Foundry Models, AWS via Amazon Bedrock, and GCP via Vertex AI. For local inference in HPC GPU nodes, users can utilize vLLM. This is the compute layer.
+
+Layer 2 — API Gateway (LiteLLM + MLFlow): A lightweight proxy that provides unified access to the various models from the inference engine. It provides a single OpenAI-compatible endpoint for all researchers, handling authentication, rate limiting (RPM/TPM), per-user and per-team budgets, spend tracking, PII masking via Microsoft Presidio, and request logging to PostgreSQL as well as MLFlow. The MLFlow application allows for evaluations of AI Agents and observability. This is the main control plane layer that llmaven provides.
+
+Layer 3 — [RSE-Plugins](https://github.com/uw-ssec/rse-plugins): Claude Code plugins for domain-specific research workflows. This is the application augmentation layer that emphasizes best research software engineering practices including reproducibility, testing rigor, and adherence to Scientific Python ecosystem conventions. RSE-Plugins provides specialized AI agents and reusable knowledge modules organized in a Plugin → Agent → Skill hierarchy — covering scientific Python development (packaging, pytest, pixi environments), scientific domain application (astronomy, climate science, Earth science), structured AI research workflows (/research, /plan, /implement,  /validate), project management and onboarding, and HoloViz visualization. Together these give Claude Code the context needed to guide complex feature development through documented decision-making phases while following community best practices.
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                         CLI (Typer)                            │
-│   llmaven version | infra [init|validate|deploy] | agentic    │
-└────────┬──────────────────────────────────────────┬────────────┘
-         │                                          │
-         ▼                                          ▼
-┌──────────────────────┐               ┌──────────────────────┐
-│  Infrastructure      │               │  Docker Compose      │
-│  (Pulumi → Azure)    │               │  Stack (local dev)   │
-│                      │               │                      │
-│  deployment/         │               │  Qdrant:6333         │
-│    init.py           │  mirrors      │  PostgreSQL:5432     │
-│    validate.py       │ ←──────────→  │  MinIO:9000/9001     │
-│    deploy.py         │               │  MLflow:8080         │
-│                      │               │  LiteLLM:4000        │
-│  infrastructure/     │               │                      │
-│    main.py (Pulumi)  │               │  (llmaven-network)   │
-│    config/           │               │                      │
-│    resources/        │               └──────────────────────┘
-│    utils/            │
-└──────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Layer 3 — RSE-Plugins (Application)                            │
+│  Claude Code agents & skills for research workflows             │
+│  /research → /plan → /implement → /validate                    │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 2 — API Gateway (Control Plane)                          │
+│  LiteLLM (unified endpoint, auth, budgets, spend tracking)     │
+│  MLflow (experiment tracking, agent evaluation, observability) │
+│  PostgreSQL (request logs, metadata) · MinIO (artifacts)       │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 1 — Inference Engine (Compute)                           │
+│  Azure Foundry Models · AWS Bedrock · GCP Vertex AI · vLLM    │
+└─────────────────────────────────────────────────────────────────┘
+
+         CLI (Typer)                    Docker Compose
+    llmaven infra [init|               (local dev stack)
+     validate|deploy]        mirrors
+                            ←──────→   PostgreSQL:5432
+    deployment/                        MinIO:9000/9001
+    infrastructure/                    MLflow:8080
+      (Pulumi → Azure)                LiteLLM:4000
+                                       Qdrant:6333
 ```
 
 ## Quick Start
@@ -99,18 +102,17 @@ The local stack runs 6 services on a shared bridge network (`llmaven-network`):
 
 | Service | URL |
 |---------|-----|
-| LiteLLM | http://localhost:4000 |
-| MLflow | http://localhost:8080 |
-| MinIO Console | http://localhost:9001 |
-| Qdrant Dashboard | http://localhost:6333/dashboard |
+| LiteLLM | <http://localhost:4000> |
+| MLflow | <http://localhost:8080> |
+| MinIO Console | <http://localhost:9001> |
+| Qdrant Dashboard | <http://localhost:6333/dashboard> |
 
 ## CLI Reference
 
-LLMaven provides a CLI built with Typer. Key commands:
+LLMaven provides a CLI built with Typer:
 
 ```bash
-# Show version
-llmaven version
+llmaven version                           # Show version
 
 # Infrastructure commands
 llmaven infra init --environment dev      # Generate llmaven-config.yaml
@@ -119,17 +121,12 @@ llmaven infra deploy --preview            # Dry run (no resources created)
 llmaven infra deploy --yes                # Deploy to Azure
 llmaven infra status                      # View deployment status
 llmaven infra destroy --yes               # Tear down resources
-
-# Agentic RAG commands
-llmaven agentic ingest ./docs             # Ingest documents
-llmaven agentic search "query"            # Hybrid search
-llmaven agentic chat                      # Interactive RAG chat
 ```
 
 ## Azure Infrastructure Deployment
 
-LLMaven deploys to Azure using Pulumi Automation API. The local Docker services
-map directly to Azure equivalents:
+The local Docker services map directly to Azure managed equivalents, deployed
+via Pulumi Automation API:
 
 | Local Service | Azure Equivalent |
 |---|---|
@@ -141,12 +138,14 @@ map directly to Azure equivalents:
 ### Deployment Workflow
 
 1. **Initialize** configuration:
+
    ```bash
    pixi shell -e llmaven
    llmaven infra init --environment dev
    ```
 
 2. **Configure** the generated `llmaven-config.yaml`:
+
    ```yaml
    project:
      name: llmaven
@@ -160,6 +159,7 @@ map directly to Azure equivalents:
    ```
 
 3. **Set secrets** via environment variables:
+
    ```bash
    export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="$(openssl rand -base64 32)"
    export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-key"
@@ -167,11 +167,13 @@ map directly to Azure equivalents:
 
 4. **Validate** configuration (runs 6 checks: syntax, security, Azure prereqs,
    secrets, cost estimate, production readiness):
+
    ```bash
    llmaven infra validate --strict
    ```
 
 5. **Deploy** (or preview first):
+
    ```bash
    llmaven infra deploy --preview   # Dry run
    llmaven infra deploy --yes       # Actual deployment
@@ -230,10 +232,13 @@ BSD License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-University of Washington Scientific Software Engineering Center (SSEC)
+- [University of Washington Scientific Software Engineering Center (SSEC)](https://escience.washington.edu/software-engineering/ssec/)
+- [NSF National Artificial Intelligence Research Resource (NAIRR)](https://nairrpilot.org/) — Award [#240292](https://nairrpilot.org/projects/awarded?_requestNumber=NAIRR240292)
+- [Schmidt Sciences Virtual Institutes for Scientific Software (VISS)](https://www.schmidtsciences.org/viss/)
 
 ## Additional Resources
 
+- [RSE-Plugins](https://github.com/uw-ssec/rse-plugins) - Claude Code plugins for research software engineering workflows
 - [AGENTS.md](AGENTS.md) - Technical reference for developers and AI assistants
 - [GitHub Issues](https://github.com/uw-ssec/llmaven/issues)
 - [SSEC Tutorials](https://github.com/uw-ssec/tutorials)
