@@ -1,195 +1,103 @@
 # LLMaven
 
-An AI-powered tool library for scientific research using Retrieval Augmented
-Generation (RAG) with Large Language Models (LLMs). LLMaven provides open,
-transparent, and useful AI-based software for scientific discovery by leveraging
-publicly available diverse datasets and disparate academic knowledge bases.
+A platform for building and deploying AI-powered research tools. LLMaven is made
+of two components: **infrastructure** (CLI, Docker services stack, and
+Pulumi-based Azure deployment) and **application** (built as
+[RSE-Plugins](https://github.com/uw-ssec/rse-plugins)).
 
 ## Overview
 
-LLMaven's scientific goal is to create accessible AI tools for researchers who
-need to work with private/IP-sensitive data in a cost-effective manner. The
-project uses RAG-based LLMs to extend language models with domain-specific
-knowledge without requiring expensive model training or specialized hardware for
-individual researchers.
-
-### Key Features
-
-- **FastAPI Backend**: RESTful API with retrieval and generation endpoints
-- **Streamlit Frontend**: Interactive chat interface for document Q&A
-- **RAG Architecture**: Combines retrieval from vector databases with language
-  model generation
-- **Vector Database**: Qdrant-based document storage with semantic search (MMR -
-  Maximal Marginal Relevance)
-- **Agentic RAG System** (NEW): Next-generation hybrid search with multi-vector
-  embeddings (Dense + Sparse + ColBERT) and intelligent agent-based Q&A
-- **Flexible Models**:
-  - Embedding models via HuggingFace (default:
-    sentence-transformers/all-MiniLM-L12-v2)
-  - Generation models via HuggingFace Transformers (default:
-    allenai/OLMo-2-1124-7B-Instruct)
-  - Quantization support (4-bit/8-bit) for efficient inference
-- **Infrastructure Deployment**: Production-ready Azure infrastructure
-  deployment with Pulumi
-  - PostgreSQL Flexible Server for persistent storage
-  - Azure Key Vault for secret management
-  - Container Apps for MLflow and LiteLLM
-  - Comprehensive validation and cost estimation
+LLMaven combines a **Typer CLI**, a **Docker Compose services stack**
+(PostgreSQL, MinIO, MLflow, LiteLLM, Qdrant), and **Pulumi-based Azure
+deployment** into a single workflow. The local stack mirrors the cloud
+architecture: the same databases, object storage, AI gateway, and experiment
+tracking services run locally via Docker and deploy to Azure as managed
+resources. Application logic is developed as RSE-Plugins on top of this
+infrastructure. Dependency management is handled by [pixi](https://pixi.sh)
+with multi-environment support.
 
 ## Architecture
 
-LLMaven consists of several components that work together:
-
-```mermaid
-graph TB
-    subgraph Main[LLMaven Architecture]
-        UI["Streamlit UI<br/>Port 8501"] --> Backend["FastAPI Backend<br/>Port 8000"]
-
-        Backend --> EndpointsGroup
-
-        subgraph EndpointsGroup[API Endpoints]
-            Retrieve["Retrieve<br/>/v1/retrieve"]
-            Generate["Generate<br/>/v1/generate"]
-        end
-
-        Retrieve --> RetService["Retrieval Service"]
-        Generate --> GenService["Generation Service"]
-
-        RetService --> Qdrant["Qdrant Vector Store<br/>Embeddings"]
-        GenService --> HF["HuggingFace Transformers<br/>LLM"]
-    end
-
-    subgraph Infrastructure[Azure Infrastructure]
-        KeyVault["Key Vault<br/>Secrets Management"]
-        PostgreSQL["PostgreSQL<br/>Database"]
-        Storage["Storage Account<br/>Blob Storage"]
-        ContainerApps["Container Apps<br/>MLflow & LiteLLM"]
-    end
-
-    style Main fill:#f9f9f9,stroke:#333,stroke-width:2px
-    style UI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style Backend fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style EndpointsGroup fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style RetService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style GenService fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style Qdrant fill:#fff9c4,stroke:#f9a825,stroke-width:2px
-    style HF fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    style Infrastructure fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+```
+┌────────────────────────────────────────────────────────────────┐
+│                         CLI (Typer)                            │
+│   llmaven version | infra [init|validate|deploy] | agentic    │
+└────────┬──────────────────────────────────────────┬────────────┘
+         │                                          │
+         ▼                                          ▼
+┌──────────────────────┐               ┌──────────────────────┐
+│  Infrastructure      │               │  Docker Compose      │
+│  (Pulumi → Azure)    │               │  Stack (local dev)   │
+│                      │               │                      │
+│  deployment/         │               │  Qdrant:6333         │
+│    init.py           │  mirrors      │  PostgreSQL:5432     │
+│    validate.py       │ ←──────────→  │  MinIO:9000/9001     │
+│    deploy.py         │               │  MLflow:8080         │
+│                      │               │  LiteLLM:4000        │
+│  infrastructure/     │               │                      │
+│    main.py (Pulumi)  │               │  (llmaven-network)   │
+│    config/           │               │                      │
+│    resources/        │               └──────────────────────┘
+│    utils/            │
+└──────────────────────┘
 ```
 
-### Core Components
-
-1. **FastAPI Backend** (`/src/llmaven/main.py`)
-   - RESTful API with automatic OpenAPI documentation
-   - CORS middleware for frontend integration
-   - Error handling and validation
-   - Health check endpoints
-
-2. **Streamlit Frontend** (`/src/llmaven/frontend/app.py`)
-   - Interactive chat interface
-   - Document upload (PDF support)
-   - Real-time retrieval and generation
-   - Chat history display
-
-3. **Retrieval Service** (`/src/llmaven/services/retrieval_service.py`)
-   - Document embedding and vector storage
-   - Semantic search using Qdrant
-   - MMR (Maximal Marginal Relevance) retrieval
-   - Support for temporary and persistent collections
-
-4. **Generation Service** (`/src/llmaven/services/generation_service.py`)
-   - Language model inference with caching
-   - Quantized model loading (4-bit/8-bit)
-   - HuggingFace Pipeline integration
-   - Configurable generation parameters
-
-5. **Infrastructure Management** (`/src/llmaven/infrastructure/`)
-   - YAML-based configuration schema
-   - Pulumi-based Azure resource provisioning
-   - Secret management via Azure Key Vault
-   - Comprehensive validation and deployment workflow
-
-## Installation
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.12+ (for LLMaven API)
-- Python 3.11+ (for other components)
 - [Pixi](https://pixi.sh) package manager
+- Docker and Docker Compose
 - Azure CLI (for infrastructure deployment)
 
-### Quick Start
-
-1. **Install Pixi**:
-
-   ```bash
-   curl -fsSL https://pixi.sh/install.sh | bash
-   ```
-
-2. **Clone the repository**:
-
-   ```bash
-   git clone https://github.com/uw-ssec/llmaven.git
-   cd llmaven
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pixi install
-   ```
-
-### Environment Setup
-
-LLMaven uses multiple Pixi environments for different components:
-
-- `llmaven`: Main API environment (Python 3.12)
-- `frontend`: Streamlit UI environment
-- `proxy`: OpenAI proxy service environment (archived)
-- `infra`: Infrastructure management environment
-
-## Usage
-
-### Option 1: Agentic RAG (Recommended for New Projects)
-
-The agentic RAG system provides superior retrieval accuracy with hybrid search
-and intelligent agent-based Q&A.
-
-#### Quick Start
-
-1. **Start Qdrant** (required for vector storage):
+### Installation
 
 ```bash
-docker run -p 6333:6333 qdrant/qdrant
+git clone https://github.com/uw-ssec/llmaven.git
+cd llmaven
+pixi install
 ```
 
-2. **Ingest Documents**:
+### Start Local Services
+
+The Docker Compose stack provides a full local development environment:
 
 ```bash
-# Enter the llmaven environment
-pixi shell -e llmaven
+# Copy and configure environment variables
+cp docker/.env.example docker/.env
+# Edit docker/.env with your API keys
 
-# Ingest documents from a directory
-llmaven agentic ingest ./docs
+# Start all services
+pixi run -e llmaven up
 
-# Or ingest from multiple directories
-llmaven agentic ingest ./docs ./papers --collection research-docs
+# Check service status
+pixi run -e llmaven status
+
+# View logs
+pixi run -e llmaven logs
+
+# Stop services
+pixi run -e llmaven down
 ```
 
-3. **Search the Knowledge Base**:
+## Docker Services
 
-```bash
-# Hybrid search with reranking
-llmaven agentic search "What is machine learning?"
+The local stack runs 6 services on a shared bridge network (`llmaven-network`):
 
-# Search without reranking (faster)
-llmaven agentic search "vector embeddings" --no-rerank
+| Service | Image | Port(s) | Role |
+|---------|-------|---------|------|
+| **Qdrant** | qdrant/qdrant:latest | 6333 | Vector DB for semantic search |
+| **PostgreSQL** | postgres:16 | 5432 | Relational store (3 databases) |
+| **MinIO** | minio/minio:latest | 9000, 9001 | S3-compatible object storage |
+| **MLflow** | Custom (v3.6.0) | 8080 | Experiment tracking & model registry |
+| **LiteLLM** | Custom (v1.79.1) | 4000 | Unified AI gateway proxy |
+| **CreateBuckets** | quay.io/minio/mc | -- | Init container (creates S3 buckets) |
 
-# Custom top-k results
-llmaven agentic search "transformer architecture" --top-k 10
-```
+**Startup order:** PostgreSQL, MinIO, Qdrant start in parallel. CreateBuckets waits for MinIO. MLflow waits for PostgreSQL, MinIO, and CreateBuckets. LiteLLM waits for PostgreSQL and MLflow.
 
-4. **Interactive Chat**:
+**Service UIs:**
 
+<<<<<<< Updated upstream
 ```bash
 # Start interactive RAG chat
 llmaven agentic chat
@@ -675,194 +583,145 @@ llmaven server serve --env development --reload
 ```
 
 Changes to Python files will automatically restart the server.
+=======
+| Service | URL |
+|---------|-----|
+| LiteLLM | http://localhost:4000 |
+| MLflow | http://localhost:8080 |
+| MinIO Console | http://localhost:9001 |
+| Qdrant Dashboard | http://localhost:6333/dashboard |
+>>>>>>> Stashed changes
 
 ## CLI Reference
 
-LLMaven provides a comprehensive command-line interface:
-
-### Agentic RAG Commands
+LLMaven provides a CLI built with Typer. Key commands:
 
 ```bash
-# Ingest documents
-llmaven agentic ingest [DIRECTORIES]... [OPTIONS]
-
-Options:
-  --collection, -c TEXT    Collection name (defaults to config)
-  --force, -f              Overwrite existing collection
-  --batch-size, -b INT     Documents per batch (default: 100)
-
-# Search knowledge base
-llmaven agentic search <QUERY> [OPTIONS]
-
-Options:
-  --collection, -c TEXT    Collection name (defaults to config)
-  --top-k, -k INT          Number of results (default: 5)
-  --prefetch-k, -p INT     Prefetch candidates per method (default: 20)
-  --rerank/--no-rerank     Enable/disable ColBERT reranking
-
-# Interactive chat
-llmaven agentic chat [OPTIONS]
-
-Options:
-  --collection, -c TEXT    Collection name (defaults to config)
-  --provider TEXT          LLM provider (openai, ollama, huggingface)
-  --model, -m TEXT         LLM model identifier
-```
-
-### Server Commands
-
-```bash
-# Start API server
-llmaven server serve [OPTIONS]
-
-Options:
-  --host TEXT         Host to bind (default: 0.0.0.0)
-  --port INTEGER      Port to bind (default: 8000)
-  --env TEXT          Environment: development|production
-  --workers INTEGER   Number of workers (production only)
-  --reload            Enable auto-reload (development only)
-
-# Start Streamlit UI
-llmaven server ui [OPTIONS]
-
-Options:
-  --host TEXT         Host to bind (default: localhost)
-  --port INTEGER      Port to bind (default: 8501)
-  --browser/--no-browser  Open browser automatically
-```
-
-### Infrastructure Commands
-
-```bash
-# Initialize configuration
-llmaven infra init [OPTIONS]
-
-Options:
-  --environment TEXT  Environment (dev, staging, prod)
-  --output TEXT       Output path for configuration file
-  --interactive       Interactive mode with prompts
-
-# Validate configuration
-llmaven infra validate [OPTIONS]
-
-Options:
-  --config TEXT       Path to configuration file
-  --strict            Fail on warnings
-  --skip-secrets      Skip secrets validation
-  --env-file TEXT     Path to .env file with secrets
-
-# Deploy infrastructure
-llmaven infra deploy [OPTIONS]
-
-Options:
-  --config TEXT       Path to configuration file
-  --preview           Preview changes without deploying
-  --yes               Automatically approve deployment
-  --env-file TEXT     Path to .env file with secrets
-
-# Show deployment status
-llmaven infra status [OPTIONS]
-
-# Destroy infrastructure
-llmaven infra destroy [OPTIONS]
-
-# Refresh Pulumi state
-llmaven infra refresh [OPTIONS]
-
-# Cancel in-progress operation
-llmaven infra cancel [OPTIONS]
-
 # Show version
 llmaven version
+
+# Infrastructure commands
+llmaven infra init --environment dev      # Generate llmaven-config.yaml
+llmaven infra validate --config llmaven-config.yaml  # Validate config + cost estimate
+llmaven infra deploy --preview            # Dry run (no resources created)
+llmaven infra deploy --yes                # Deploy to Azure
+llmaven infra status                      # View deployment status
+llmaven infra destroy --yes               # Tear down resources
+
+# Agentic RAG commands
+llmaven agentic ingest ./docs             # Ingest documents
+llmaven agentic search "query"            # Hybrid search
+llmaven agentic chat                      # Interactive RAG chat
 ```
 
-## Troubleshooting
+## Azure Infrastructure Deployment
 
-### Common Issues
+LLMaven deploys to Azure using Pulumi Automation API. The local Docker services
+map directly to Azure equivalents:
 
-1. **Port already in use**
+| Local Service | Azure Equivalent |
+|---|---|
+| PostgreSQL (db:5432) | Azure Database for PostgreSQL Flexible Server |
+| MinIO (minio:9000) | Azure Blob Storage (ADLS Gen2) |
+| MLflow (mlflow:8080) | Azure Container App (MLflow) |
+| LiteLLM (litellm:4000) | Azure Container App (LiteLLM) |
 
+### Deployment Workflow
+
+1. **Initialize** configuration:
    ```bash
-   # Change the port
-   llmaven server serve --port 8001
+   pixi shell -e llmaven
+   llmaven infra init --environment dev
    ```
 
-2. **Model download fails**
-   - Check internet connection
-   - Verify HuggingFace model name
-   - Check disk space (models can be several GB)
+2. **Configure** the generated `llmaven-config.yaml`:
+   ```yaml
+   project:
+     name: llmaven
+     environment: dev
+     location: westus2
+   azure:
+     subscription_id: "your-subscription-id"
+   database:
+     sku_name: Standard_B1ms
+     databases: [llmaven, mlflow_db, litellm_db]
+   ```
 
-3. **Out of memory during generation**
-   - Use 8-bit or 4-bit quantization
-   - Reduce batch size
-   - Use a smaller model
+3. **Set secrets** via environment variables:
+   ```bash
+   export LLMAVEN_SECRETS_LITELLM_MASTER_KEY="$(openssl rand -base64 32)"
+   export LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY="your-key"
+   ```
 
-4. **Vector store not found**
-   - Verify the path in configuration
-   - Create vector store first using the notebook
-   - Check file permissions
+4. **Validate** configuration (runs 6 checks: syntax, security, Azure prereqs,
+   secrets, cost estimate, production readiness):
+   ```bash
+   llmaven infra validate --strict
+   ```
 
-5. **Infrastructure deployment fails**
-   - Ensure Azure CLI is installed and logged in: `az login`
-   - Verify subscription ID is correct
-   - Check that all required secrets are set
-   - Review quota limits in your Azure subscription
+5. **Deploy** (or preview first):
+   ```bash
+   llmaven infra deploy --preview   # Dry run
+   llmaven infra deploy --yes       # Actual deployment
+   ```
 
-### Debugging
+### Azure Resources Created
 
-Enable debug logging:
-
-```bash
-# Set log level
-export LOG_LEVEL=DEBUG
-
-# Run with verbose output
-llmaven server serve --env development
+```
+Resource Group
+├── Virtual Network
+│   ├── Container Apps Subnet
+│   └── PostgreSQL Subnet
+├── Key Vault (secrets + auto-generated credentials)
+├── PostgreSQL Flexible Server (llmaven, mlflow_db, litellm_db)
+├── Storage Account (ADLS Gen2: mlflow, llmaven containers)
+├── Log Analytics Workspace
+└── Container Apps Environment
+    ├── MLflow Container App (managed identity → Key Vault)
+    └── LiteLLM Container App (managed identity → Key Vault)
 ```
 
-View API logs at the console or check application logs.
+### Cost Estimates
+
+| Environment | Estimate | DB SKU |
+|---|---|---|
+| Dev | ~$50-100/mo | B_Standard_B1ms |
+| Staging | ~$200-400/mo | GP_Standard_D2s_v3 |
+| Production | ~$400-800/mo | GP_Standard_D4s_v3 + HA |
+
+## Development
+
+```bash
+# Run tests
+pixi shell -e llmaven
+pytest
+
+# Run pre-commit hooks
+pre-commit run --all-files
+
+# Docker lifecycle
+pixi run -e llmaven up        # Start services
+pixi run -e llmaven down      # Stop services
+pixi run -e llmaven clean     # Stop + delete all data volumes
+```
 
 ## Contributing
 
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linters
-5. Submit a pull request
+Contributions are welcome! Please fork the repository, create a feature branch,
+and submit a pull request.
 
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community guidelines.
 
 ## License
 
-This project is licensed under the BSD License - see the [LICENSE](LICENSE) file
-for details.
+BSD License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- University of Washington Scientific Software Engineering Center (SSEC)
-- Built with: FastAPI, Streamlit, LangChain, Qdrant, HuggingFace Transformers,
-  Pulumi
-- Inspired by the need for accessible AI tools in scientific research
+University of Washington Scientific Software Engineering Center (SSEC)
 
 ## Additional Resources
 
-- **AGENTS Guide**: [AGENTS.md](AGENTS.md) - Comprehensive technical reference
-  for developers and AI assistants
-- **Tutorials**: [SSEC Tutorials](https://github.com/uw-ssec/tutorials)
-- **Issues**: [GitHub Issues](https://github.com/uw-ssec/llmaven/issues)
-- **Deployment Guide**: See AGENTS.md for detailed infrastructure deployment
-  instructions
-
-## Contact
-
-For questions and support:
-
-- Open an issue on GitHub
-- Contact: UW SSEC Team
-
----
-
-**Note**: This project is under active development. Features and APIs may
-change.
+- [AGENTS.md](AGENTS.md) - Technical reference for developers and AI assistants
+- [GitHub Issues](https://github.com/uw-ssec/llmaven/issues)
+- [SSEC Tutorials](https://github.com/uw-ssec/tutorials)
