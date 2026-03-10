@@ -119,3 +119,93 @@ def save_config(config: LLMavenConfig, output_path: Union[str, Path]) -> None:
             )
     except Exception as e:
         raise ConfigLoadError(f"Failed to write configuration to {output_path}: {e}")
+
+
+def update_config_fields(
+    config_path: Union[str, Path], updates: dict[str, str]
+) -> None:
+    """Update specific fields in YAML config while preserving formatting.
+
+    This function updates only the specified fields while preserving all comments,
+    blank lines, and formatting in the YAML file.
+
+    Args:
+        config_path: Path to llmaven-config.yaml file
+        updates: Dictionary mapping field paths to new values
+                 (e.g., {'azure.resource_group': 'rg-name'})
+
+    Raises:
+        ConfigLoadError: If file operations fail
+
+    Example:
+        update_config_fields('/path/to/llmaven-config.yaml', {
+            'azure.resource_group': 'rg-llmaven-westus',
+            'project.pulumi_state_store': 'pulumistate'
+        })
+    """
+    import re
+
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise ConfigLoadError(f"Configuration file not found: {config_path}")
+
+    try:
+        with open(config_path, "r") as f:
+            content = f.read()
+    except Exception as e:
+        raise ConfigLoadError(f"Failed to read configuration file {config_path}: {e}")
+
+    lines = content.split("\n")
+    result_lines = []
+    applied_updates = set()
+    current_section = None
+
+    for line in lines:
+        section_match = re.match(r"^([a-z_]+):\s*(?:#.*)?$", line)
+        if section_match:
+            current_section = section_match.group(1)
+            result_lines.append(line)
+            continue
+
+        field_match = (
+            re.match(r"^(\s+)([a-z_]+):\s*(.*)$", line) if current_section else None
+        )
+        if field_match:
+            indent, field_name, rest = field_match.groups()
+            full_path = f"{current_section}.{field_name}"
+
+            if full_path in updates:
+                new_value = updates[full_path]
+                applied_updates.add(full_path)
+                comment = (
+                    comment_match.group(1)
+                    if (comment_match := re.search(r"(\s+#.*)$", rest))
+                    else ""
+                )
+
+                formatted_value = (
+                    "null"
+                    if new_value in [None, "null"]
+                    else str(new_value).lower()
+                    if isinstance(new_value, bool)
+                    else f'"{new_value}"'
+                    if isinstance(new_value, str)
+                    and (" " in new_value or ":" in new_value)
+                    else str(new_value)
+                )
+                result_lines.append(f"{indent}{field_name}: {formatted_value}{comment}")
+                continue
+
+        result_lines.append(line)
+
+    unapplied_updates = set(updates.keys()) - applied_updates
+    if unapplied_updates:
+        raise ConfigLoadError(
+            f"Configuration fields not found: {', '.join(sorted(unapplied_updates))}"
+        )
+
+    try:
+        with open(config_path, "w") as f:
+            f.write("\n".join(result_lines))
+    except Exception as e:
+        raise ConfigLoadError(f"Failed to write configuration file {config_path}: {e}")

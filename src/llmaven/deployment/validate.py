@@ -333,15 +333,15 @@ def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[st
             matches = re.findall(pattern, content, re.IGNORECASE)
             if matches:
                 messages.append(
-                    f"  ⚠️  Potential hardcoded secret detected: {description}"
+                    f"   ⚠️  Potential hardcoded secret detected: {description}"
                 )
                 has_hardcoded_secrets = True
 
         if not has_hardcoded_secrets:
-            messages.append("  ✓ No hardcoded secrets detected in configuration file")
+            messages.append("   ✓ No hardcoded secrets detected in configuration file")
 
     except Exception as e:
-        messages.append(f"  ⚠️  Failed to scan for hardcoded secrets: {e}")
+        messages.append(f"   ⚠️  Failed to scan for hardcoded secrets: {e}")
 
     return not has_hardcoded_secrets, messages
 
