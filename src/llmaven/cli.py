@@ -641,8 +641,6 @@ def _prepare_extract_output_file(
     from_date: str,
     to_date: str,
 ) -> Path:
-    assert source in (ExtractSource.litellm, ExtractSource.mlflow)
-
     use_default_path = output_file is None
     filename_prefix = "llmaven_"
     filename_suffix = f"_{from_date}_to_{to_date}.zip"
@@ -651,11 +649,12 @@ def _prepare_extract_output_file(
         path = output_file or Path(
             f"{filename_prefix}litellm_spend_logs{filename_suffix}"
         )
-    else:
-        # Source is validated in caller, so this has to be ExtractSource.mlflow if not litellm.
+    elif source.value == ExtractSource.mlflow:
         path = output_file or Path(
             f"{filename_prefix}mlflow_experiment_traces{filename_suffix}"
         )
+    else:
+        _fail_extract(f"Source is not supported: {source}")
 
     # Guard only for the default path (Typer can't validate a value that wasn't provided)
     if use_default_path and path.exists() and path.is_dir():
