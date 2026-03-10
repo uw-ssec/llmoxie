@@ -1,22 +1,56 @@
 # LLMaven
 
-An open-source AI control plane developed under NSF NAIRR award [#240292](https://nairrpilot.org/projects/awarded?_requestNumber=NAIRR240292) by [UW SSEC](https://escience.washington.edu/software-engineering/ssec/) under Schmidt Sciences [Virtual Institutes for Scientific Software](https://www.schmidtsciences.org/viss/) program.
+An open-source AI control plane developed under NSF NAIRR award
+[#240292](https://nairrpilot.org/projects/awarded?_requestNumber=NAIRR240292) by
+[UW SSEC](https://escience.washington.edu/software-engineering/ssec/) under
+Schmidt Sciences
+[Virtual Institutes for Scientific Software](https://www.schmidtsciences.org/viss/)
+program.
 
-LLMaven provides open, transparent, and useful AI-based software for scientific discovery by providing AI infrastructure that can be installed on cloud and HPC systems to access large language models, observability features, and an [agentic framework](https://github.com/uw-ssec/rse-plugins) for AI assisted coding for Research Software Engineering.  
+LLMaven provides open, transparent, and useful AI-based software for scientific
+discovery by providing AI infrastructure that can be installed on cloud and HPC
+systems to access large language models, observability features, and an
+[agentic framework](https://github.com/uw-ssec/rse-plugins) for AI assisted
+coding for Research Software Engineering.
 
 ## Overview
 
-LLMaven leverages CLI and Pulumi-based Infrastructure as Code configurations into a single workflow. A local stack utilizing docker mirrors the cloud architecture: the same databases, object storage, AI gateway, and experiment tracking services run locally. AI harness that defines coding subagents and skills are developed, now, as Claude Code RSE-Plugins on top of this infrastructure.
+LLMaven leverages CLI and Pulumi-based Infrastructure as Code configurations
+into a single workflow. A local stack utilizing docker mirrors the cloud
+architecture: the same databases, object storage, AI gateway, and experiment
+tracking services run locally. AI harness that defines coding subagents and
+skills are developed, now, as Claude Code RSE-Plugins on top of this
+infrastructure.
 
 Key Components
 
 The architecture has three layers:
 
-Layer 1 — Inference Engine: The inference engine is provided by each cloud provider or HPC. Azure via Microsoft Foundry Models, AWS via Amazon Bedrock, and GCP via Vertex AI. For local inference in HPC GPU nodes, users can utilize vLLM. This is the compute layer.
+Layer 1 — Inference Engine: The inference engine is provided by each cloud
+provider or HPC. Azure via Microsoft Foundry Models, AWS via Amazon Bedrock, and
+GCP via Vertex AI. For local inference in HPC GPU nodes, users can utilize vLLM.
+This is the compute layer.
 
-Layer 2 — API Gateway (LiteLLM + MLFlow): A lightweight proxy that provides unified access to the various models from the inference engine. It provides a single OpenAI-compatible endpoint for all researchers, handling authentication, rate limiting (RPM/TPM), per-user and per-team budgets, spend tracking, PII masking via Microsoft Presidio, and request logging to PostgreSQL as well as MLFlow. The MLFlow application allows for evaluations of AI Agents and observability. This is the main control plane layer that llmaven provides.
+Layer 2 — API Gateway (LiteLLM + MLFlow): A lightweight proxy that provides
+unified access to the various models from the inference engine. It provides a
+single OpenAI-compatible endpoint for all researchers, handling authentication,
+rate limiting (RPM/TPM), per-user and per-team budgets, spend tracking, PII
+masking via Microsoft Presidio, and request logging to PostgreSQL as well as
+MLFlow. The MLFlow application allows for evaluations of AI Agents and
+observability. This is the main control plane layer that llmaven provides.
 
-Layer 3 — [RSE-Plugins](https://github.com/uw-ssec/rse-plugins): Claude Code plugins for domain-specific research workflows. This is the application augmentation layer that emphasizes best research software engineering practices including reproducibility, testing rigor, and adherence to Scientific Python ecosystem conventions. RSE-Plugins provides specialized AI agents and reusable knowledge modules organized in a Plugin → Agent → Skill hierarchy — covering scientific Python development (packaging, pytest, pixi environments), scientific domain application (astronomy, climate science, Earth science), structured AI research workflows (/research, /plan, /implement,  /validate), project management and onboarding, and HoloViz visualization. Together these give Claude Code the context needed to guide complex feature development through documented decision-making phases while following community best practices.
+Layer 3 — [RSE-Plugins](https://github.com/uw-ssec/rse-plugins): Claude Code
+plugins for domain-specific research workflows. This is the application
+augmentation layer that emphasizes best research software engineering practices
+including reproducibility, testing rigor, and adherence to Scientific Python
+ecosystem conventions. RSE-Plugins provides specialized AI agents and reusable
+knowledge modules organized in a Plugin → Agent → Skill hierarchy — covering
+scientific Python development (packaging, pytest, pixi environments), scientific
+domain application (astronomy, climate science, Earth science), structured AI
+research workflows (/research, /plan, /implement, /validate), project management
+and onboarding, and HoloViz visualization. Together these give Claude Code the
+context needed to guide complex feature development through documented
+decision-making phases while following community best practices.
 
 ## Architecture
 
@@ -87,24 +121,26 @@ pixi run -e llmaven down
 
 The local stack runs 6 services on a shared bridge network (`llmaven-network`):
 
-| Service | Image | Port(s) | Role |
-|---------|-------|---------|------|
-| **Qdrant** | qdrant/qdrant:latest | 6333 | Vector DB for semantic search |
-| **PostgreSQL** | postgres:16 | 5432 | Relational store (3 databases) |
-| **MinIO** | minio/minio:latest | 9000, 9001 | S3-compatible object storage |
-| **MLflow** | Custom (v3.6.0) | 8080 | Experiment tracking & model registry |
-| **LiteLLM** | Custom (v1.79.1) | 4000 | Unified AI gateway proxy |
-| **CreateBuckets** | quay.io/minio/mc | -- | Init container (creates S3 buckets) |
+| Service           | Image                | Port(s)    | Role                                 |
+| ----------------- | -------------------- | ---------- | ------------------------------------ |
+| **Qdrant**        | qdrant/qdrant:latest | 6333       | Vector DB for semantic search        |
+| **PostgreSQL**    | postgres:16          | 5432       | Relational store (3 databases)       |
+| **MinIO**         | minio/minio:latest   | 9000, 9001 | S3-compatible object storage         |
+| **MLflow**        | Custom (v3.6.0)      | 8080       | Experiment tracking & model registry |
+| **LiteLLM**       | Custom (v1.79.1)     | 4000       | Unified AI gateway proxy             |
+| **CreateBuckets** | quay.io/minio/mc     | --         | Init container (creates S3 buckets)  |
 
-**Startup order:** PostgreSQL, MinIO, Qdrant start in parallel. CreateBuckets waits for MinIO. MLflow waits for PostgreSQL, MinIO, and CreateBuckets. LiteLLM waits for PostgreSQL and MLflow.
+**Startup order:** PostgreSQL, MinIO, Qdrant start in parallel. CreateBuckets
+waits for MinIO. MLflow waits for PostgreSQL, MinIO, and CreateBuckets. LiteLLM
+waits for PostgreSQL and MLflow.
 
 **Service UIs:**
 
-| Service | URL |
-|---------|-----|
-| LiteLLM | <http://localhost:4000> |
-| MLflow | <http://localhost:8080> |
-| MinIO Console | <http://localhost:9001> |
+| Service          | URL                               |
+| ---------------- | --------------------------------- |
+| LiteLLM          | <http://localhost:4000>           |
+| MLflow           | <http://localhost:8080>           |
+| MinIO Console    | <http://localhost:9001>           |
 | Qdrant Dashboard | <http://localhost:6333/dashboard> |
 
 ## CLI Reference
@@ -128,12 +164,12 @@ llmaven infra destroy --yes               # Tear down resources
 The local Docker services map directly to Azure managed equivalents, deployed
 via Pulumi Automation API:
 
-| Local Service | Azure Equivalent |
-|---|---|
-| PostgreSQL (db:5432) | Azure Database for PostgreSQL Flexible Server |
-| MinIO (minio:9000) | Azure Blob Storage (ADLS Gen2) |
-| MLflow (mlflow:8080) | Azure Container App (MLflow) |
-| LiteLLM (litellm:4000) | Azure Container App (LiteLLM) |
+| Local Service          | Azure Equivalent                              |
+| ---------------------- | --------------------------------------------- |
+| PostgreSQL (db:5432)   | Azure Database for PostgreSQL Flexible Server |
+| MinIO (minio:9000)     | Azure Blob Storage (ADLS Gen2)                |
+| MLflow (mlflow:8080)   | Azure Container App (MLflow)                  |
+| LiteLLM (litellm:4000) | Azure Container App (LiteLLM)                 |
 
 ### Deployment Workflow
 
@@ -197,11 +233,11 @@ Resource Group
 
 ### Cost Estimates
 
-| Environment | Estimate | DB SKU |
-|---|---|---|
-| Dev | ~$50-100/mo | B_Standard_B1ms |
-| Staging | ~$200-400/mo | GP_Standard_D2s_v3 |
-| Production | ~$400-800/mo | GP_Standard_D4s_v3 + HA |
+| Environment | Estimate     | DB SKU                  |
+| ----------- | ------------ | ----------------------- |
+| Dev         | ~$50-100/mo  | B_Standard_B1ms         |
+| Staging     | ~$200-400/mo | GP_Standard_D2s_v3      |
+| Production  | ~$400-800/mo | GP_Standard_D4s_v3 + HA |
 
 ## Development
 
@@ -233,12 +269,15 @@ BSD License - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - [University of Washington Scientific Software Engineering Center (SSEC)](https://escience.washington.edu/software-engineering/ssec/)
-- [NSF National Artificial Intelligence Research Resource (NAIRR)](https://nairrpilot.org/) — Award [#240292](https://nairrpilot.org/projects/awarded?_requestNumber=NAIRR240292)
+- [NSF National Artificial Intelligence Research Resource (NAIRR)](https://nairrpilot.org/)
+  — Award
+  [#240292](https://nairrpilot.org/projects/awarded?_requestNumber=NAIRR240292)
 - [Schmidt Sciences Virtual Institutes for Scientific Software (VISS)](https://www.schmidtsciences.org/viss/)
 
 ## Additional Resources
 
-- [RSE-Plugins](https://github.com/uw-ssec/rse-plugins) - Claude Code plugins for research software engineering workflows
+- [RSE-Plugins](https://github.com/uw-ssec/rse-plugins) - Claude Code plugins
+  for research software engineering workflows
 - [AGENTS.md](AGENTS.md) - Technical reference for developers and AI assistants
 - [GitHub Issues](https://github.com/uw-ssec/llmaven/issues)
 - [SSEC Tutorials](https://github.com/uw-ssec/tutorials)
