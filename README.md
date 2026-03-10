@@ -231,14 +231,6 @@ Resource Group
     └── LiteLLM Container App (managed identity → Key Vault)
 ```
 
-### Cost Estimates
-
-| Environment | Estimate     | DB SKU                  |
-| ----------- | ------------ | ----------------------- |
-| Dev         | ~$50-100/mo  | B_Standard_B1ms         |
-| Staging     | ~$200-400/mo | GP_Standard_D2s_v3      |
-| Production  | ~$400-800/mo | GP_Standard_D4s_v3 + HA |
-
 ## Development
 
 ```bash
