@@ -188,3 +188,6 @@ logs/*.jsonl
 
 # LLMaven Configs
 llmaven-config*.yaml
+
+# Agents Dump
+.agents/

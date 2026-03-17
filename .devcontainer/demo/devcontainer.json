@@ -1,0 +1,48 @@
+{
+  "name": "LLMaven Demo (NAIRR)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "../.."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/azure-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml",
+        "jjjermiah.pixi-vscode",
+        "ms-azuretools.vscode-docker",
+        "anthropics.claude-code"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    },
+    "codespaces": {
+      "openFiles": ["demo/README.md"]
+    }
+  },
+  "mounts": [
+    "source=${localWorkspaceFolderBasename}-pixi,target=${containerWorkspaceFolder}/.pixi,type=volume"
+  ],
+  "onCreateCommand": ".devcontainer/demo/onCreate.sh",
+  "forwardPorts": [4000, 5432, 6333, 8080, 9000, 9001],
+  "portsAttributes": {
+    "4000": { "label": "LiteLLM Proxy", "onAutoForward": "notify" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" },
+    "6333": { "label": "Qdrant", "onAutoForward": "notify" },
+    "8080": { "label": "MLflow", "onAutoForward": "notify" },
+    "9000": { "label": "MinIO API", "onAutoForward": "silent" },
+    "9001": { "label": "MinIO Console", "onAutoForward": "notify" }
+  },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "remoteUser": "vscode"
+}
