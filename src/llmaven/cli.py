@@ -16,6 +16,7 @@ from rich.console import Console
 
 if TYPE_CHECKING:
     from datetime import date
+    from mlflow import MlflowClient
 
 console = Console()
 console_err = Console(stderr=True)
@@ -756,7 +757,7 @@ def _utc_date_to_epoch_ms(d: "date") -> int:
 
 
 def _fetch_mlflow_experiment_ids_for_date_range(
-    mlflow_client: "MlflowClient", start_date_obj: "date", end_date_obj: "date"
+    mlflow_client: MlflowClient, start_date_obj: date, end_date_obj: date
 ) -> list[str]:
     from mlflow.entities import ViewType
 
@@ -795,7 +796,7 @@ def _fetch_mlflow_experiment_ids_for_date_range(
 
 
 def _fetch_mlflow_experiment_traces_in_date_range(
-    client,
+    client: MlflowClient,
     experiment_ids: list[str],
     start_ms: int,
     end_ms: int,
