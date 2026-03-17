@@ -11,7 +11,7 @@ on:
   workflow_dispatch: # Allow manual triggers
 
 env:
-  PIXI_VERSION: v0.55.0
+  PIXI_VERSION: v0.63.2
 
 jobs:
   test-linux:

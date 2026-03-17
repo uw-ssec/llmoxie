@@ -1,11 +1,11 @@
-"$schema" = "https://pixi.sh/v0.55.0/schema/manifest/schema.json"
+"$schema" = "https://pixi.sh/v0.63.2/schema/manifest/schema.json"
 
 [workspace]
 name = "LLMaven"
 version = "0.1.0"
 description = "An AI Powered Tool library for Scientific Discovery"
 authors = ["UW SSEC Team"]
-requires-pixi = ">=0.55.0"
+requires-pixi = ">=0.63.2"
 channels = ["conda-forge", "pytorch"]
 platforms = ["linux-64", "osx-arm64"]
 
@@ -91,6 +91,7 @@ proxy = { features = [
 
 [feature.llmaven.pypi-dependencies]
 llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
+mlflow = "==3.10.0"
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
