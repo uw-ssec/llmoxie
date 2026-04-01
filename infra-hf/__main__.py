@@ -47,6 +47,15 @@ TAGS = {
 # Azure caller identity (needed for Key Vault access policy)
 client_config = authorization.get_client_config()
 
+# ── Key Vault access: object IDs granted read/write on secrets ────────────────
+# Use the CLI to get the object ID of other users. E.g.
+# az ad user show --id carlosg@cloudbank.org  --query id -o tsv
+KV_ACCESSOR_OBJECT_IDS: list[tuple[str, str]] = [
+    (client_config.object_id, "deployer"),
+    ("9bf5e068-dfa9-4cc8-89b6-dd72ae960435", "Carlos"),  # Carlos
+    ("ebbe0303-efce-43c7-abef-90db6c1c1e64", "Don"),  # Don
+]
+
 # ── Resource Group ────────────────────────────────────────────────────────────
 resource_group = azure_native.resources.ResourceGroup(
     "rg-llmaven-hf",
@@ -71,12 +80,11 @@ key_vault = azure_native.keyvault.Vault(
             name=azure_native.keyvault.SkuName.STANDARD,
         ),
         enable_rbac_authorization=False,
-        enable_soft_delete=False,
-        # Grant the deploying principal full secrets access
+        enable_soft_delete=True,
         access_policies=[
             azure_native.keyvault.AccessPolicyEntryArgs(
                 tenant_id=client_config.tenant_id,
-                object_id=client_config.object_id,
+                object_id=object_id,
                 permissions=azure_native.keyvault.PermissionsArgs(
                     secrets=[
                         azure_native.keyvault.SecretPermissions.GET,
@@ -89,6 +97,7 @@ key_vault = azure_native.keyvault.Vault(
                     ],
                 ),
             )
+            for object_id, _name in KV_ACCESSOR_OBJECT_IDS
         ],
         network_acls=azure_native.keyvault.NetworkRuleSetArgs(
             bypass=azure_native.keyvault.NetworkRuleBypassOptions.AZURE_SERVICES,
