@@ -46,17 +46,13 @@ def invoke_extract(
 
 class TestInfraExtract:
     def test_rejects_invalid_date_format(self, runner: CliRunner):
-        result = invoke_extract(
-            runner, from_date="2026-99-01", to_date="2026-01-02"
-        )
+        result = invoke_extract(runner, from_date="2026-99-01", to_date="2026-01-02")
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
 
     def test_rejects_inverted_date_range(self, runner: CliRunner):
-        result = invoke_extract(
-            runner, from_date="2026-01-03", to_date="2026-01-02"
-        )
+        result = invoke_extract(runner, from_date="2026-01-03", to_date="2026-01-02")
 
         assert result.exit_code == 1
         assert "--from must be <= --to" in result.output
@@ -165,9 +161,7 @@ class TestInfraExtract:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(
-            runner, to_date="2026-01-02", output_file=output_file
-        )
+        result = invoke_extract(runner, to_date="2026-01-02", output_file=output_file)
 
         assert result.exit_code == 0
 
@@ -419,9 +413,7 @@ class TestInfraExtractMLflow:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert "Missing: LLMAVEN_SECRETS_MLFLOW_TRACKING_URI" in result.output
@@ -569,9 +561,7 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
@@ -607,9 +597,7 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert (
@@ -638,9 +626,7 @@ class TestInfraExtractMLflow:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert "MLflow experiment search failed: boom" in result.output
@@ -673,9 +659,7 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert "MLflow trace search failed for 2026-01-01: boom" in result.output
@@ -784,9 +768,7 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
@@ -841,9 +823,7 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
@@ -931,9 +911,7 @@ class TestInfraExtractMLflow:
         mock_fetch_traces.return_value = [BadTrace()]
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(
-            runner, source="mlflow", output_file=output_file
-        )
+        result = invoke_extract(runner, source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert (
