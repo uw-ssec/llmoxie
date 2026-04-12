@@ -6,7 +6,6 @@ This module provides command-line interface functionality for the LLMaven projec
 from __future__ import annotations
 
 from pathlib import Path
-import io
 import sys
 from enum import Enum
 from datetime import datetime, time, timezone, timedelta
@@ -637,7 +636,8 @@ def _fail_extract(message: str, code: int = 1) -> NoReturn:
     raise typer.Exit(code=code)
 
 
-def _render_jsonl_payload(records: list[object]) -> str:
+def _serialize_to_jsonl(records: list[object]) -> str:
+    import io
     import json
 
     import jsonlines
@@ -749,9 +749,16 @@ def _extract_litellm_logs(
 
                 total_records += len(data)
 
+                try:
+                    jsonl_payload = _serialize_to_jsonl(data)
+                except Exception as exc:
+                    _fail_extract(
+                        f"Failed to serialize records for {date_str}: {exc}"
+                    )
+
                 zipf.writestr(
                     f"litellm_spend_logs_{date_str}.jsonl",
-                    _render_jsonl_payload(data),
+                    jsonl_payload,
                 )
 
                 console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
@@ -947,7 +954,7 @@ def _extract_mlflow_logs(
             # Write one JSONL file per experiment for this UTC day.
             for experiment_id, experiment_traces in traces_by_experiment_id.items():
                 try:
-                    jsonl_payload = _render_jsonl_payload(experiment_traces)
+                    jsonl_payload = _serialize_to_jsonl(experiment_traces)
                 except Exception as exc:
                     _fail_extract(
                         "Failed to JSON-serialize MLflow traces for "

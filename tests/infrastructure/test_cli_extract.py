@@ -17,7 +17,21 @@ from unittest.mock import Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from llmaven.cli import _utc_date_to_epoch_ms, app
+from llmaven.cli import _serialize_to_jsonl, _utc_date_to_epoch_ms, app
+
+
+class TestSerializeToJsonl:
+    def test_empty_list_returns_empty_string(self):
+        result = _serialize_to_jsonl([])
+        assert result == ""
+
+    def test_two_records_each_on_own_line(self):
+        records = [{"id": 1, "value": "a"}, {"id": 2, "value": "b"}]
+        result = _serialize_to_jsonl(records)
+        lines = result.splitlines()
+        assert len(lines) == 2
+        assert json.loads(lines[0]) == {"id": 1, "value": "a"}
+        assert json.loads(lines[1]) == {"id": 2, "value": "b"}
 
 
 @pytest.fixture()
