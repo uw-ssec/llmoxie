@@ -6,7 +6,6 @@ This module provides command-line interface functionality for the LLMaven projec
 from __future__ import annotations
 
 from pathlib import Path
-import io
 import sys
 from enum import Enum
 from datetime import datetime, time, timezone, timedelta
@@ -637,21 +636,6 @@ def _fail_extract(message: str, code: int = 1) -> NoReturn:
     raise typer.Exit(code=code)
 
 
-def _render_jsonl_payload(records: list[object]) -> str:
-    import json
-
-    import jsonlines
-
-    buffer = io.StringIO()
-    with jsonlines.Writer(
-        buffer,
-        dumps=lambda obj: json.dumps(obj, ensure_ascii=False),
-    ) as writer:
-        writer.write_all(records)
-
-    return buffer.getvalue()
-
-
 def _prepare_extract_output_file(
     output_file: Optional[Path],
     source: "ExtractSource",
@@ -749,9 +733,14 @@ def _extract_litellm_logs(
 
                 total_records += len(data)
 
+                # TODO (https://github.com/uw-ssec/llmaven/issues/102): Use jsonlines instead of manual JSON handling.
+                jsonl_payload = "\n".join(
+                    json.dumps(item, ensure_ascii=False) for item in data
+                )
+
                 zipf.writestr(
                     f"litellm_spend_logs_{date_str}.jsonl",
-                    _render_jsonl_payload(data),
+                    (jsonl_payload + "\n") if jsonl_payload else "",
                 )
 
                 console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
@@ -866,6 +855,7 @@ def _extract_mlflow_logs(
     output_file: Path,
     env_file: Optional[Path],
 ) -> None:
+    import json
     import zipfile
     from collections import defaultdict
 
@@ -945,9 +935,13 @@ def _extract_mlflow_logs(
                 )
 
             # Write one JSONL file per experiment for this UTC day.
+            # TODO (https://github.com/uw-ssec/llmaven/issues/102): Use jsonlines instead of manual JSON handling.
             for experiment_id, experiment_traces in traces_by_experiment_id.items():
                 try:
-                    jsonl_payload = _render_jsonl_payload(experiment_traces)
+                    jsonl_payload = "\n".join(
+                        json.dumps(trace_dict, ensure_ascii=False)
+                        for trace_dict in experiment_traces
+                    )
                 except Exception as exc:
                     _fail_extract(
                         "Failed to JSON-serialize MLflow traces for "
@@ -956,7 +950,7 @@ def _extract_mlflow_logs(
 
                 zipf.writestr(
                     f"mlflow_traces_{date_str}_experiment_{experiment_id}.jsonl",
-                    jsonl_payload,
+                    jsonl_payload + "\n",
                 )
                 total_files_written += 1
 
