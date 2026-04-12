@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from click.testing import Result
 from typer.testing import CliRunner
 
 from llmaven.cli import _utc_date_to_epoch_ms, app
@@ -33,7 +34,7 @@ def invoke_extract(
     source: str | None = None,
     output_file: Path | None = None,
     input: str | None = None,
-) -> object:
+) -> Result:
     args = ["infra", "extract"]
     if source is not None:
         args += ["--source", source]
