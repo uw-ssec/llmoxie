@@ -752,9 +752,7 @@ def _extract_litellm_logs(
                 try:
                     jsonl_payload = _serialize_to_jsonl(data)
                 except Exception as exc:
-                    _fail_extract(
-                        f"Failed to serialize records for {date_str}: {exc}"
-                    )
+                    _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
 
                 zipf.writestr(
                     f"litellm_spend_logs_{date_str}.jsonl",
