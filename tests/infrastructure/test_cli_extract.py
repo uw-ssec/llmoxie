@@ -29,9 +29,9 @@ def runner() -> CliRunner:
 def invoke_extract(
     runner: CliRunner,
     *,
-    from_date: str = "2026-01-01",
-    to_date: str = "2026-01-01",
-    source: str | None = None,
+    from_date: str,
+    to_date: str,
+    source: str | None,
     output_file: Path | None = None,
     input: str | None = None,
 ) -> Result:
@@ -62,7 +62,7 @@ class TestInfraExtract:
         out_dir = tmp_path / "output-dir"
         out_dir.mkdir()
 
-        result = invoke_extract(runner, output_file=out_dir)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=out_dir)
 
         assert result.exit_code == 2
         assert "Invalid value for '--out'" in result.output
@@ -74,7 +74,7 @@ class TestInfraExtract:
         output_file = base_dir / "nested" / "out.zip"
 
         try:
-            result = invoke_extract(runner, output_file=output_file)
+            result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file)
         finally:
             os.chmod(base_dir, 0o700)
 
@@ -85,7 +85,7 @@ class TestInfraExtract:
         output_file = tmp_path / "out.zip"
         output_file.write_text("already exists", encoding="utf-8")
 
-        result = invoke_extract(runner, output_file=output_file, input="n\n")
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file, input="n\n")
 
         assert result.exit_code == 0
         assert "Extraction cancelled" in result.output
@@ -102,7 +102,7 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = invoke_extract(runner, output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file)
 
         assert result.exit_code == 1
         assert "Missing: LLMAVEN_SECRETS_LITELLM_MASTER_KEY" in result.output
@@ -118,7 +118,7 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = invoke_extract(runner, output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file)
 
         assert result.exit_code == 1
         assert "Missing: LLMAVEN_SECRETS_LITELLM_BASE_URL" in result.output
@@ -162,7 +162,7 @@ class TestInfraExtract:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(runner, to_date="2026-01-02", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-02", source=None, output_file=output_file)
 
         assert result.exit_code == 0
 
@@ -214,7 +214,7 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(runner, output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file)
 
         assert result.exit_code == 1
         assert "LiteLLM /spend/logs failed for 2026-01-01" in result.output
@@ -244,7 +244,7 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(runner, output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file)
 
         assert result.exit_code == 1
         assert "Invalid JSON response for 2026-01-01" in result.output
@@ -274,7 +274,7 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(runner, output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None, output_file=output_file)
 
         assert result.exit_code == 1
         assert "Invalid JSON response for 2026-01-01" in result.output
@@ -349,7 +349,7 @@ class TestInfraExtractSources:
         runner: CliRunner,
     ):
         with runner.isolated_filesystem():
-            result = invoke_extract(runner)
+            result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None)
 
         assert result.exit_code == 0
         mock_litellm_extract.assert_called_once()
@@ -370,7 +370,7 @@ class TestInfraExtractSources:
         runner: CliRunner,
     ):
         with runner.isolated_filesystem():
-            result = invoke_extract(runner, source="litellm")
+            result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="litellm")
 
         assert result.exit_code == 0
         mock_litellm_extract.assert_called_once()
@@ -391,7 +391,7 @@ class TestInfraExtractSources:
         runner: CliRunner,
     ):
         with runner.isolated_filesystem():
-            result = invoke_extract(runner, source="mlflow")
+            result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow")
 
         assert result.exit_code == 0
         mock_mlflow_extract.assert_called_once()
@@ -414,7 +414,7 @@ class TestInfraExtractMLflow:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert "Missing: LLMAVEN_SECRETS_MLFLOW_TRACKING_URI" in result.output
@@ -459,7 +459,7 @@ class TestInfraExtractMLflow:
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
         result = invoke_extract(
-            runner, source="mlflow", to_date="2026-01-02", output_file=output_file
+            runner, from_date="2026-01-01", to_date="2026-01-02", source="mlflow", output_file=output_file
         )
 
         assert result.exit_code == 0
@@ -527,7 +527,7 @@ class TestInfraExtractMLflow:
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
         result = invoke_extract(
-            runner, source="mlflow", to_date="2026-01-02", output_file=output_file
+            runner, from_date="2026-01-01", to_date="2026-01-02", source="mlflow", output_file=output_file
         )
 
         assert result.exit_code == 0
@@ -562,7 +562,7 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
@@ -598,7 +598,7 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert (
@@ -627,7 +627,7 @@ class TestInfraExtractMLflow:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert "MLflow experiment search failed: boom" in result.output
@@ -660,7 +660,7 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert "MLflow trace search failed for 2026-01-01: boom" in result.output
@@ -769,7 +769,7 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
@@ -824,7 +824,7 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 0
         mock_fetch_traces.assert_called_once()
@@ -852,7 +852,7 @@ class TestInfraExtractMLflow:
             )
             default_dir.mkdir()
 
-            result = invoke_extract(runner)
+            result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source=None)
 
         assert result.exit_code == 1
         assert "Default output path is a directory" in result.output
@@ -869,7 +869,7 @@ class TestInfraExtractMLflow:
         output_file.write_text("already exists", encoding="utf-8")
 
         result = invoke_extract(
-            runner, source="mlflow", output_file=output_file, input="y\n"
+            runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file, input="y\n"
         )
 
         assert result.exit_code == 0
@@ -912,7 +912,7 @@ class TestInfraExtractMLflow:
         mock_fetch_traces.return_value = [BadTrace()]
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = invoke_extract(runner, source="mlflow", output_file=output_file)
+        result = invoke_extract(runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow", output_file=output_file)
 
         assert result.exit_code == 1
         assert (
