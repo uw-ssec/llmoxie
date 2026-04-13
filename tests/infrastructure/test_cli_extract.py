@@ -28,10 +28,7 @@ class TestSerializeToJsonl:
     def test_two_records_each_on_own_line(self):
         records = [{"id": 1, "value": "a"}, {"id": 2, "value": "b"}]
         result = _serialize_to_jsonl(records)
-        lines = result.splitlines()
-        assert len(lines) == 2
-        assert json.loads(lines[0]) == {"id": 1, "value": "a"}
-        assert json.loads(lines[1]) == {"id": 2, "value": "b"}
+        assert result == '{"id": 1, "value": "a"}\n{"id": 2, "value": "b"}\n'
 
 
 @pytest.fixture()
