@@ -8548,7 +8548,7 @@ packages:
 - pypi: ./
   name: llmaven
   version: 0.1.0
-  sha256: 7da3c2ed32f85fe736a1e7be3a4cfd809eca4c3c6b5d3bcc4a7c4b528324af99
+  sha256: c08d6dddf8e2532ef4f334171cba4518ae35b89ebf1e13a53fa37ec022de63bf
   requires_dist:
   - accelerate>=0.26.0
   - arxiv>=2.1.3,<2.2
