@@ -92,6 +92,7 @@ proxy = { features = [
 [feature.llmaven.pypi-dependencies]
 llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
 mlflow = "==3.10.0"
+jsonlines = ">=3.1.0,<4.0.0"
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
