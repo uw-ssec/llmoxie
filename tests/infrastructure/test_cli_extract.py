@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from click.testing import Result
 from typer.testing import CliRunner
 
 from llmaven.cli import _serialize_to_jsonl, _utc_date_to_epoch_ms, app
@@ -36,21 +37,34 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
+def invoke_extract(
+    runner: CliRunner,
+    *,
+    from_date: str,
+    to_date: str,
+    source: str | None,
+    output_file: Path | None = None,
+    input: str | None = None,
+) -> Result:
+    args = ["infra", "extract"]
+    if source is not None:
+        args += ["--source", source]
+    args += ["--from", from_date, "--to", to_date]
+    if output_file is not None:
+        args += ["--out", str(output_file)]
+
+    return runner.invoke(app, args, input=input)
+
+
 class TestInfraExtract:
     def test_rejects_invalid_date_format(self, runner: CliRunner):
-        result = runner.invoke(
-            app,
-            ["infra", "extract", "--from", "2026-99-01", "--to", "2026-01-02"],
-        )
+        result = invoke_extract(runner, from_date="2026-99-01", to_date="2026-01-02")
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
 
     def test_rejects_inverted_date_range(self, runner: CliRunner):
-        result = runner.invoke(
-            app,
-            ["infra", "extract", "--from", "2026-01-03", "--to", "2026-01-02"],
-        )
+        result = invoke_extract(runner, from_date="2026-01-03", to_date="2026-01-02")
 
         assert result.exit_code == 1
         assert "--from must be <= --to" in result.output
@@ -59,18 +73,12 @@ class TestInfraExtract:
         out_dir = tmp_path / "output-dir"
         out_dir.mkdir()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(out_dir),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=out_dir,
         )
 
         assert result.exit_code == 2
@@ -83,18 +91,12 @@ class TestInfraExtract:
         output_file = base_dir / "nested" / "out.zip"
 
         try:
-            result = runner.invoke(
-                app,
-                [
-                    "infra",
-                    "extract",
-                    "--from",
-                    "2026-01-01",
-                    "--to",
-                    "2026-01-01",
-                    "--out",
-                    str(output_file),
-                ],
+            result = invoke_extract(
+                runner,
+                from_date="2026-01-01",
+                to_date="2026-01-01",
+                source=None,
+                output_file=output_file,
             )
         finally:
             os.chmod(base_dir, 0o700)
@@ -106,18 +108,12 @@ class TestInfraExtract:
         output_file = tmp_path / "out.zip"
         output_file.write_text("already exists", encoding="utf-8")
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
             input="n\n",
         )
 
@@ -136,18 +132,12 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -164,18 +154,12 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -220,18 +204,12 @@ class TestInfraExtract:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-02",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-02",
+            source=None,
+            output_file=output_file,
         )
 
         assert result.exit_code == 0
@@ -284,18 +262,12 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -326,18 +298,12 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -368,18 +334,12 @@ class TestInfraExtract:
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -455,16 +415,8 @@ class TestInfraExtractSources:
         runner: CliRunner,
     ):
         with runner.isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "infra",
-                    "extract",
-                    "--from",
-                    "2026-01-01",
-                    "--to",
-                    "2026-01-01",
-                ],
+            result = invoke_extract(
+                runner, from_date="2026-01-01", to_date="2026-01-01", source=None
             )
 
         assert result.exit_code == 0
@@ -486,18 +438,8 @@ class TestInfraExtractSources:
         runner: CliRunner,
     ):
         with runner.isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "infra",
-                    "extract",
-                    "--source",
-                    "litellm",
-                    "--from",
-                    "2026-01-01",
-                    "--to",
-                    "2026-01-01",
-                ],
+            result = invoke_extract(
+                runner, from_date="2026-01-01", to_date="2026-01-01", source="litellm"
             )
 
         assert result.exit_code == 0
@@ -519,18 +461,8 @@ class TestInfraExtractSources:
         runner: CliRunner,
     ):
         with runner.isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "infra",
-                    "extract",
-                    "--source",
-                    "mlflow",
-                    "--from",
-                    "2026-01-01",
-                    "--to",
-                    "2026-01-01",
-                ],
+            result = invoke_extract(
+                runner, from_date="2026-01-01", to_date="2026-01-01", source="mlflow"
             )
 
         assert result.exit_code == 0
@@ -554,20 +486,12 @@ class TestInfraExtractMLflow:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -612,20 +536,12 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-02",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-02",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 0
@@ -692,20 +608,12 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-02",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-02",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 0
@@ -740,20 +648,12 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 0
@@ -790,20 +690,12 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -833,20 +725,12 @@ class TestInfraExtractMLflow:
     ):
         output_file = tmp_path / "out.zip"
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -880,20 +764,12 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
@@ -1003,20 +879,12 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 0
@@ -1072,20 +940,12 @@ class TestInfraExtractMLflow:
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 0
@@ -1114,16 +974,8 @@ class TestInfraExtractMLflow:
             )
             default_dir.mkdir()
 
-            result = runner.invoke(
-                app,
-                [
-                    "infra",
-                    "extract",
-                    "--from",
-                    "2026-01-01",
-                    "--to",
-                    "2026-01-01",
-                ],
+            result = invoke_extract(
+                runner, from_date="2026-01-01", to_date="2026-01-01", source=None
             )
 
         assert result.exit_code == 1
@@ -1140,20 +992,12 @@ class TestInfraExtractMLflow:
         output_file = tmp_path / "out.zip"
         output_file.write_text("already exists", encoding="utf-8")
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
             input="y\n",
         )
 
@@ -1197,20 +1041,12 @@ class TestInfraExtractMLflow:
         mock_fetch_traces.return_value = [BadTrace()]
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
-        result = runner.invoke(
-            app,
-            [
-                "infra",
-                "extract",
-                "--source",
-                "mlflow",
-                "--from",
-                "2026-01-01",
-                "--to",
-                "2026-01-01",
-                "--out",
-                str(output_file),
-            ],
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source="mlflow",
+            output_file=output_file,
         )
 
         assert result.exit_code == 1
