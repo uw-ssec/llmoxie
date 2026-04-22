@@ -340,11 +340,17 @@ def validate(
         is_flag=True,
         help="Skip secrets validation (use with caution)",
     ),
-    env_file: Optional[str] = typer.Option(
+    env_file: Optional[Path] = typer.Option(
         None,
         "--env-file",
         "-e",
         help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+        exists=True,
+        dir_okay=False,
+        file_okay=True,
+        readable=True,
+        resolve_path=True,
+        path_type=Path,
     ),
 ) -> None:
     """Validate LLMaven deployment configuration.
@@ -374,14 +380,13 @@ def validate(
     from llmaven.deployment.validate import ValidationError, validate_config
 
     config_path = Path(config) if config else Path("llmaven-config.yaml")
-    env_file_path = Path(env_file) if env_file else None
 
     try:
         validate_config(
             config_path=config_path,
             strict=strict,
             skip_secrets=skip_secrets,
-            env_file_path=env_file_path,
+            env_file_path=env_file,
         )
     except ValidationError:
         sys.exit(1)
@@ -412,11 +417,17 @@ def deploy(
         is_flag=True,
         help="Automatically approve deployment",
     ),
-    env_file: Optional[str] = typer.Option(
+    env_file: Optional[Path] = typer.Option(
         None,
         "--env-file",
         "-e",
         help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+        exists=True,
+        dir_okay=False,
+        file_okay=True,
+        readable=True,
+        resolve_path=True,
+        path_type=Path,
     ),
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
@@ -442,14 +453,13 @@ def deploy(
     from llmaven.deployment.deploy import DeploymentError, deploy_infrastructure
 
     config_path = Path(config) if config else Path("llmaven-config.yaml")
-    env_file_path = Path(env_file) if env_file else None
 
     try:
         deploy_infrastructure(
             config_path=config_path,
             preview=preview,
             auto_approve=auto_approve,
-            env_file_path=env_file_path,
+            env_file_path=env_file,
         )
     except DeploymentError as e:
         typer.echo(f"✗ Deployment failed: {e}", err=True)
@@ -1006,7 +1016,6 @@ def extract(
         resolve_path=True,
         path_type=Path,
     ),
-    # TODO: enforce env_file rules specified below in similar parameter definitions in this file (https://github.com/uw-ssec/llmaven/issues/90).
     env_file: Optional[Path] = typer.Option(
         None,
         "--env-file",
