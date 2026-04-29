@@ -43,6 +43,14 @@ infra_app = typer.Typer(
 )
 app.add_typer(infra_app)
 
+# Create subcommand for backup infrastructure management
+backup_app = typer.Typer(
+    name="backup",
+    help="Backup infrastructure commands (Azure Backup Vault, isolated from primary stack)",
+    add_completion=False,
+)
+infra_app.add_typer(backup_app)
+
 # Create subcommand for agentic RAG operations
 agentic_app = typer.Typer(
     name="agentic",
@@ -591,6 +599,262 @@ def refresh(
         sys.exit(1)
     except Exception as e:
         typer.echo(f"✗ Refresh failed: {e}", err=True)
+        sys.exit(1)
+
+
+@backup_app.command("init")
+def backup_init(
+    environment: str = typer.Option(
+        "dev",
+        "--environment",
+        "-e",
+        help="Environment to configure (dev, staging, prod)",
+    ),
+    output: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output path for backup config file (default: llmaven-backup-config.yaml)",
+    ),
+    from_primary_stack: Optional[str] = typer.Option(
+        None,
+        "--from-primary-stack",
+        help="Path to primary llmaven-config.yaml to auto-populate primary_stack.* fields",
+    ),
+) -> None:
+    """Initialize the backup infrastructure configuration.
+
+    Generates llmaven-backup-config.yaml with environment-appropriate defaults.
+    Use --from-primary-stack to automatically populate the primary stack references
+    (postgres_server_name, resource_group_name) from a deployed primary stack.
+
+    Examples:
+        Generate backup config for dev:
+            llmaven infra backup init -e dev
+
+        Auto-populate from an existing primary stack deployment:
+            llmaven infra backup init -e prod --from-primary-stack llmaven-config.yaml
+
+        Write to a custom path:
+            llmaven infra backup init -e prod -o llmaven-backup-config.prod.yaml
+    """
+    from llmaven.infrastructure_backup.config.defaults import get_backup_config_template_yaml
+
+    output_path = Path(output) if output else Path("llmaven-backup-config.yaml")
+
+    if output_path.exists():
+        if not typer.confirm(f"Config file already exists: {output_path}. Overwrite?"):
+            typer.echo("Cancelled.")
+            raise typer.Exit(code=0)
+
+    output_path.write_text(get_backup_config_template_yaml(environment))
+    typer.echo(f"✓ Backup config written to: {output_path}")
+    typer.echo()
+
+    if from_primary_stack:
+        primary_config_path = Path(from_primary_stack)
+        typer.echo(f"Reading primary stack outputs from: {primary_config_path}")
+        try:
+            from llmaven.deployment.backup_deploy import (
+                BackupDeploymentError,
+                populate_from_primary_stack,
+            )
+
+            populate_from_primary_stack(
+                backup_config_path=output_path,
+                primary_config_path=primary_config_path,
+            )
+            typer.echo()
+            typer.echo("✓ primary_stack.* fields populated from primary stack.")
+        except BackupDeploymentError as e:
+            typer.echo(f"⚠️  Could not read primary stack: {e}", err=True)
+            typer.echo(
+                "   You can set primary_stack.* fields manually in the config file.",
+                err=True,
+            )
+    else:
+        typer.echo(
+            "Next steps:\n"
+            f"  1. Edit {output_path} — set azure.subscription_id and primary_stack.*\n"
+            "     Or re-run with --from-primary-stack to auto-populate from a deployed stack.\n"
+            f"  2. llmaven infra backup deploy --config {output_path}"
+        )
+
+
+@backup_app.command("deploy")
+def backup_deploy(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to backup configuration file (default: llmaven-backup-config.yaml)",
+    ),
+    preview: bool = typer.Option(
+        False,
+        "--preview",
+        "-p",
+        is_flag=True,
+        help="Preview changes without deploying",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="Automatically approve deployment",
+    ),
+) -> None:
+    """Deploy the backup infrastructure (Azure Backup Vault) to Azure.
+
+    The backup vault is deployed into an isolated resource group separate from
+    the primary infrastructure. Backups survive deletion of the primary stack.
+
+    Examples:
+        Preview backup deployment:
+            llmaven infra backup deploy --preview
+
+        Deploy with auto-approval:
+            llmaven infra backup deploy --yes
+
+        Deploy a specific environment:
+            llmaven infra backup deploy --config llmaven-backup-config.prod.yaml --yes
+    """
+    from llmaven.deployment.backup_deploy import BackupDeploymentError, deploy_backup
+
+    config_path = Path(config) if config else Path("llmaven-backup-config.yaml")
+
+    try:
+        deploy_backup(
+            config_path=config_path,
+            preview=preview,
+            auto_approve=auto_approve,
+        )
+    except BackupDeploymentError as e:
+        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
+        sys.exit(1)
+
+
+@backup_app.command("destroy")
+def backup_destroy(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to backup configuration file (default: llmaven-backup-config.yaml)",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="Automatically approve destruction",
+    ),
+) -> None:
+    """Destroy the backup infrastructure.
+
+    WARNING: This permanently deletes the Backup Vault and all recovery points.
+    If vault immutability is enabled, you must disable it in the Azure Portal first.
+
+    Examples:
+        Destroy with confirmation:
+            llmaven infra backup destroy
+
+        Destroy with auto-approval:
+            llmaven infra backup destroy --yes
+    """
+    from llmaven.deployment.backup_deploy import BackupDeploymentError, destroy_backup
+
+    config_path = Path(config) if config else Path("llmaven-backup-config.yaml")
+
+    if not auto_approve:
+        typer.confirm(
+            "⚠️  This will destroy the Backup Vault and ALL recovery points. Are you sure?",
+            abort=True,
+        )
+
+    try:
+        destroy_backup(config_path=config_path)
+    except BackupDeploymentError as e:
+        typer.echo(f"✗ Backup destruction failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Backup destruction failed: {e}", err=True)
+        sys.exit(1)
+
+
+@backup_app.command("status")
+def backup_status(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to backup configuration file (default: llmaven-backup-config.yaml)",
+    ),
+) -> None:
+    """Show the current backup deployment status and outputs.
+
+    Examples:
+        Show backup status:
+            llmaven infra backup status
+
+        Show status for a specific environment:
+            llmaven infra backup status --config llmaven-backup-config.prod.yaml
+    """
+    from llmaven.deployment.backup_deploy import BackupDeploymentError, show_backup_status
+
+    config_path = Path(config) if config else Path("llmaven-backup-config.yaml")
+
+    try:
+        show_backup_status(config_path=config_path)
+    except BackupDeploymentError as e:
+        typer.echo(f"✗ Backup status check failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Backup status check failed: {e}", err=True)
+        sys.exit(1)
+
+
+@backup_app.command("refresh")
+def backup_refresh(
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to backup configuration file (default: llmaven-backup-config.yaml)",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="Automatically approve refresh",
+    ),
+) -> None:
+    """Refresh the backup Pulumi state from actual cloud resources.
+
+    Detects configuration drift without making any changes to resources.
+
+    Examples:
+        Refresh backup stack state:
+            llmaven infra backup refresh
+
+        Refresh with auto-approval:
+            llmaven infra backup refresh --yes
+    """
+    from llmaven.deployment.backup_deploy import BackupDeploymentError, refresh_backup
+
+    config_path = Path(config) if config else Path("llmaven-backup-config.yaml")
+
+    try:
+        refresh_backup(config_path=config_path, auto_approve=auto_approve)
+    except BackupDeploymentError as e:
+        typer.echo(f"✗ Backup refresh failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Backup refresh failed: {e}", err=True)
         sys.exit(1)
 
 
