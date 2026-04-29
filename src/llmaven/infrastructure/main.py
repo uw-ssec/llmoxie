@@ -95,6 +95,12 @@ def create_pulumi_program(config_path: Path):
             virtual_network_name=vnet.name,
             subnet_name="container-apps-subnet",
             address_prefix=config.networking.container_apps_subnet,
+            delegations=[
+                azure_native.network.DelegationArgs(
+                    name="container-apps-delegation",
+                    service_name="Microsoft.App/environments",
+                )
+            ],
         )
 
         pulumi.log.info("Setting up for postgres subnet...")
@@ -258,6 +264,7 @@ def create_pulumi_program(config_path: Path):
 
         # 7.1.1. Create managed identity for MLflow
         mlflow_managed_identity = None
+        mlflow_kv_access_policy = None
         if config.mlflow and config.mlflow.enabled:
             mlflow_managed_identity = create_user_assigned_managed_identity(
                 name=f"{stack_name}-mlflow-identity",
@@ -267,7 +274,7 @@ def create_pulumi_program(config_path: Path):
             )
 
             # Grant Key Vault access to the managed identity
-            grant_key_vault_access(
+            mlflow_kv_access_policy = grant_key_vault_access(
                 key_vault=key_vault,
                 principal_id=mlflow_managed_identity.principal_id,
                 resource_group_name=resource_group,
@@ -278,6 +285,7 @@ def create_pulumi_program(config_path: Path):
 
         # 7.1.2. Create managed identity for LiteLLM
         litellm_managed_identity = None
+        litellm_kv_access_policy = None
         if config.litellm and config.litellm.enabled:
             litellm_managed_identity = create_user_assigned_managed_identity(
                 name=f"{stack_name}-litellm-identity",
@@ -287,7 +295,7 @@ def create_pulumi_program(config_path: Path):
             )
 
             # Grant Key Vault access to the managed identity
-            grant_key_vault_access(
+            litellm_kv_access_policy = grant_key_vault_access(
                 key_vault=key_vault,
                 principal_id=litellm_managed_identity.principal_id,
                 resource_group_name=resource_group,
@@ -320,6 +328,11 @@ def create_pulumi_program(config_path: Path):
                 if mlflow_managed_identity
                 else None,
                 tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[mlflow_kv_access_policy]
+                    if mlflow_kv_access_policy
+                    else []
+                ),
             )
 
             mlflow_fqdn = mlflow_app.configuration.apply(
@@ -363,6 +376,11 @@ def create_pulumi_program(config_path: Path):
                 if litellm_managed_identity
                 else None,
                 tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[litellm_kv_access_policy]
+                    if litellm_kv_access_policy
+                    else []
+                ),
             )
 
             # Export LiteLLM URL
