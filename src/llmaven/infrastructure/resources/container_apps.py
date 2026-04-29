@@ -121,6 +121,7 @@ def create_container_app_with_key_vault_secrets(
     tags: Optional[Dict[str, str]] = None,
     enable_ingress: bool = True,
     ingress_external: bool = True,
+    opts: Optional[pulumi.ResourceOptions] = None,
 ) -> azure_native.app.ContainerApp:
     """
     Create Azure Container App with Key Vault secret references.
@@ -240,6 +241,7 @@ def create_container_app_with_key_vault_secrets(
     # Create Container App
     container_app = azure_native.app.ContainerApp(
         f"container-app-{app_name}-{environment}",
+        opts=opts,
         resource_group_name=resource_group_name,
         container_app_name=f"{app_name}-{environment}",
         location=location,
@@ -264,6 +266,18 @@ def create_container_app_with_key_vault_secrets(
                         memory=memory,
                     ),
                     env=env_list if env_list else None,
+                    probes=[
+                        azure_native.app.ContainerAppProbeArgs(
+                            type="Startup",
+                            http_get=azure_native.app.ContainerAppProbeHttpGetArgs(
+                                path="/health/liveliness",
+                                port=container_port,
+                            ),
+                            initial_delay_seconds=10,
+                            period_seconds=10,
+                            failure_threshold=30,
+                        )
+                    ],
                 )
             ],
             scale=azure_native.app.ScaleArgs(
