@@ -324,14 +324,14 @@ def create_pulumi_program(config_path: Path):
                 env_vars=config.mlflow.env_vars,
                 key_vault=key_vault,
                 key_vault_secret_refs=config.mlflow.key_vault_secret_refs,
-                managed_identity_id=mlflow_managed_identity.id
-                if mlflow_managed_identity
-                else None,
+                managed_identity_id=(
+                    mlflow_managed_identity.id if mlflow_managed_identity else None
+                ),
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=[mlflow_kv_access_policy]
-                    if mlflow_kv_access_policy
-                    else []
+                    depends_on=(
+                        [mlflow_kv_access_policy] if mlflow_kv_access_policy else []
+                    )
                 ),
             )
 
@@ -353,6 +353,14 @@ def create_pulumi_program(config_path: Path):
         # 8.2. LiteLLM Container App
         if config.litellm and config.litellm.enabled:
             pulumi.log.info("Creating LiteLLM Container App...")
+            config_file_path = None
+
+            # Interpret config file path relative to the configuration file location
+            if hasattr(config.litellm, "config_file") and config.litellm.config_file:
+                config_file_path = Path(config.litellm.config_file)
+                if not config_file_path.is_absolute():
+                    config_file_path = (config_path.parent / config_file_path).resolve()
+            pulumi.log.info(f"Using LiteLLM config file: {config_file_path}")
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
@@ -369,17 +377,15 @@ def create_pulumi_program(config_path: Path):
                 env_vars=config.litellm.env_vars,
                 key_vault=key_vault,
                 key_vault_secret_refs=config.litellm.key_vault_secret_refs,
-                config_file=config.litellm.config_file
-                if hasattr(config.litellm, "config_file")
-                else None,
-                managed_identity_id=litellm_managed_identity.id
-                if litellm_managed_identity
-                else None,
+                config_file=config_file_path,
+                managed_identity_id=(
+                    litellm_managed_identity.id if litellm_managed_identity else None
+                ),
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=[litellm_kv_access_policy]
-                    if litellm_kv_access_policy
-                    else []
+                    depends_on=(
+                        [litellm_kv_access_policy] if litellm_kv_access_policy else []
+                    )
                 ),
             )
 

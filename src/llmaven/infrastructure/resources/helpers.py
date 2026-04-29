@@ -380,6 +380,8 @@ def create_litellm_app(
 
             # LiteLLM expects: --config /app/config/config.yaml
             command_args = ["--config", "/app/config/config.yaml"]
+        else:
+            raise FileNotFoundError(f"Config file not found: {config_file}")
 
     # Create container app
     return create_container_app_with_key_vault_secrets(
