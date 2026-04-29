@@ -60,7 +60,9 @@ def create_backup_program(config_path: Path):
 
         pulumi.log.info(f"Deploying backup stack for environment: {environment}")
         pulumi.log.info(f"Backup resource group: {resource_group}")
-        pulumi.log.info(f"Target PostgreSQL server: {postgres_server_name} in {primary_rg}")
+        pulumi.log.info(
+            f"Target PostgreSQL server: {postgres_server_name} in {primary_rg}"
+        )
 
         # 1. Create Backup Vault
         pulumi.log.info("Creating Backup Vault...")

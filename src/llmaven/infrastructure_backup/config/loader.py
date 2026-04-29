@@ -38,7 +38,9 @@ def load_backup_config(config_path: Path) -> LLMavenBackupConfig:
         raise BackupConfigLoadError(f"Invalid YAML in {config_path}: {e}")
 
     if not isinstance(raw, dict):
-        raise BackupConfigLoadError(f"Backup config file is empty or invalid: {config_path}")
+        raise BackupConfigLoadError(
+            f"Backup config file is empty or invalid: {config_path}"
+        )
 
     try:
         return LLMavenBackupConfig(**raw)
@@ -79,6 +81,4 @@ def update_backup_config_fields(config_path: Path, updates: dict) -> None:
             node = node.setdefault(part, {})
         node[parts[-1]] = value
 
-    config_path.write_text(
-        yaml.dump(raw, default_flow_style=False, sort_keys=False)
-    )
+    config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))

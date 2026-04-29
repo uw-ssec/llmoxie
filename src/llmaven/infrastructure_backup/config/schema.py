@@ -13,7 +13,8 @@ class BackupProjectConfig(BaseModel):
 
     name: str = Field(default="llmaven-backup", description="Backup project name")
     environment: str = Field(
-        default="dev", description="Environment (dev, staging, prod) — must match primary"
+        default="dev",
+        description="Environment (dev, staging, prod) — must match primary",
     )
     location: str = Field(default="eastus", description="Azure region")
     enable_passphrase: bool = Field(

@@ -17,11 +17,9 @@ from pathlib import Path
 from pulumi import automation as auto
 
 from ..infrastructure_backup.config.loader import (
-    BackupConfigLoadError,
     load_backup_config,
     update_backup_config_fields,
 )
-from ..infrastructure_backup.config.defaults import get_backup_config_template_yaml
 from ..infrastructure_backup.main import create_backup_program
 
 CONTAINER_NAME = "pulumi-state"
@@ -252,7 +250,10 @@ def populate_from_primary_stack(
     Raises:
         BackupDeploymentError: If primary stack outputs cannot be read
     """
-    from ..deployment.deploy import get_stack as get_primary_stack, PULUMI_BACKEND_URL as PRIMARY_BACKEND_URL
+    from ..deployment.deploy import (
+        get_stack as get_primary_stack,
+        PULUMI_BACKEND_URL as PRIMARY_BACKEND_URL,
+    )
     from ..infrastructure.config.loader import load_config as load_primary_config
 
     try:
@@ -282,7 +283,9 @@ def populate_from_primary_stack(
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
 
     try:
-        stack_name = f"{primary_config.project.name}-{primary_config.project.environment}"
+        stack_name = (
+            f"{primary_config.project.name}-{primary_config.project.environment}"
+        )
         primary_stack = get_primary_stack(
             stack_name=stack_name,
             project_name=primary_config.project.name,
@@ -404,7 +407,9 @@ def deploy_backup(
     environment = config.project.environment
     stack_name = f"{config.project.name}-{environment}"
 
-    print(f"Step 2: {'Previewing' if preview else 'Deploying'} backup infrastructure...")
+    print(
+        f"Step 2: {'Previewing' if preview else 'Deploying'} backup infrastructure..."
+    )
     print(f"Stack: {stack_name}")
     print(f"Backup RG: {config.azure.resource_group}")
     print(f"Target PostgreSQL server: {config.primary_stack.postgres_server_name}")
@@ -426,9 +431,15 @@ def deploy_backup(
             preview_result = stack.preview(on_output=lambda msg: print(msg))
             print()
             print("✓ Preview completed")
-            print(f"Resources to create: {preview_result.change_summary.get('create', 0)}")
-            print(f"Resources to update: {preview_result.change_summary.get('update', 0)}")
-            print(f"Resources to delete: {preview_result.change_summary.get('delete', 0)}")
+            print(
+                f"Resources to create: {preview_result.change_summary.get('create', 0)}"
+            )
+            print(
+                f"Resources to update: {preview_result.change_summary.get('update', 0)}"
+            )
+            print(
+                f"Resources to delete: {preview_result.change_summary.get('delete', 0)}"
+            )
         else:
             if not auto_approve:
                 print("⚠️  This will deploy backup infrastructure to Azure.")
@@ -547,7 +558,9 @@ def refresh_backup(config_path: Path, auto_approve: bool = False) -> None:
         stack.workspace.install_plugin("azure-native", "v2.0.0")
 
         if not auto_approve:
-            print("⚠️  This will update the backup stack state from actual cloud resources.")
+            print(
+                "⚠️  This will update the backup stack state from actual cloud resources."
+            )
             try:
                 confirm = input("Continue? (yes/no): ").strip().lower()
                 if confirm != "yes":
