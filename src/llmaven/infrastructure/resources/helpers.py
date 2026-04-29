@@ -2,6 +2,7 @@
 
 from typing import Dict, List, Optional
 
+import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
@@ -191,6 +192,7 @@ def create_mlflow_app(
     key_vault_secret_refs: Dict[str, str],
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
+    opts: Optional[pulumi.ResourceOptions] = None,
 ) -> azure_native.app.ContainerApp:
     """Create MLflow Container App.
 
@@ -257,6 +259,7 @@ def create_mlflow_app(
         tags=tags,
         enable_ingress=True,
         ingress_external=True,
+        opts=opts,
     )
 
 
@@ -278,6 +281,7 @@ def create_litellm_app(
     config_file: Optional[str] = None,
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
+    opts: Optional[pulumi.ResourceOptions] = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -401,4 +405,5 @@ def create_litellm_app(
         tags=tags,
         enable_ingress=True,
         ingress_external=True,
+        opts=opts,
     )
