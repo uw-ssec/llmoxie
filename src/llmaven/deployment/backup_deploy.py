@@ -238,22 +238,22 @@ def populate_from_primary_stack(
     backup_config_path: Path,
     primary_config_path: Path,
 ) -> None:
-    """Populate primary_stack.* fields in the backup config from primary stack outputs.
+    """Populate primary_stack.* fields in the backup config from the primary config file.
 
-    Reads the deployed primary stack and copies the PostgreSQL server name,
-    resource group, and state store into the backup config file.
+    Reads the primary llmaven-config.yaml and derives the values needed by the
+    backup stack: subscription ID, resource group, PostgreSQL server name, and
+    Pulumi state store. The server name is derived from the deterministic naming
+    convention used by the primary infrastructure (see database.py).
+
+    No live stack connection is required — everything is read from the config file.
 
     Args:
         backup_config_path: Path to llmaven-backup-config.yaml (will be updated)
         primary_config_path: Path to the primary llmaven-config.yaml
 
     Raises:
-        BackupDeploymentError: If primary stack outputs cannot be read
+        BackupDeploymentError: If primary config cannot be loaded or is missing fields
     """
-    from ..deployment.deploy import (
-        get_stack as get_primary_stack,
-        PULUMI_BACKEND_URL as PRIMARY_BACKEND_URL,
-    )
     from ..infrastructure.config.loader import load_config as load_primary_config
 
     try:
@@ -261,46 +261,27 @@ def populate_from_primary_stack(
     except Exception as e:
         raise BackupDeploymentError(f"Failed to load primary config: {e}")
 
-    primary_state_store = primary_config.project.pulumi_state_store
     primary_rg = primary_config.azure.resource_group
+    primary_state_store = primary_config.project.pulumi_state_store
 
-    if not primary_state_store or not primary_rg:
+    if not primary_rg:
         raise BackupDeploymentError(
-            "Primary stack has not been initialized yet. "
-            "Run 'llmaven infra deploy' first to deploy the primary infrastructure."
+            "azure.resource_group is not set in the primary config. "
+            "Run 'llmaven infra deploy' first to initialize the primary infrastructure."
         )
 
-    # Set up env to point at the primary backend
-    os.environ["PULUMI_BACKEND_URL"] = PRIMARY_BACKEND_URL.format(
-        storage_account=primary_state_store
-    )
-    os.environ["AZURE_STORAGE_ACCOUNT"] = primary_state_store
-    storage_key = _get_storage_key(primary_rg, primary_state_store)
-    if storage_key:
-        os.environ["AZURE_STORAGE_KEY"] = storage_key
-
-    if not primary_config.project.enable_passphrase:
-        os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
-
-    try:
-        stack_name = (
-            f"{primary_config.project.name}-{primary_config.project.environment}"
-        )
-        primary_stack = get_primary_stack(
-            stack_name=stack_name,
-            project_name=primary_config.project.name,
-            config_path=primary_config_path,
-        )
-        outputs = primary_stack.outputs()
-    except Exception as e:
-        raise BackupDeploymentError(f"Failed to read primary stack outputs: {e}")
-
-    postgres_server_name = outputs.get("postgres_server_name")
-    if not postgres_server_name:
+    if not primary_state_store:
         raise BackupDeploymentError(
-            "Could not find 'postgres_server_name' in primary stack outputs. "
-            "Ensure the primary stack has been deployed successfully."
+            "project.pulumi_state_store is not set in the primary config. "
+            "Run 'llmaven infra deploy' first to initialize the primary infrastructure."
         )
+
+    # The PostgreSQL server name is constructed deterministically by the primary
+    # infrastructure (see src/llmaven/infrastructure/resources/database.py line 45):
+    #   server_name = f"{project_name}-postgres-{environment}"
+    project_name = primary_config.project.name
+    environment = primary_config.project.environment
+    postgres_server_name = f"{project_name}-postgres-{environment}"
 
     update_backup_config_fields(
         backup_config_path,
@@ -308,13 +289,13 @@ def populate_from_primary_stack(
             "azure.subscription_id": primary_config.azure.subscription_id,
             "azure.tenant_id": primary_config.azure.tenant_id,
             "primary_stack.resource_group_name": primary_rg,
-            "primary_stack.postgres_server_name": postgres_server_name.value,
+            "primary_stack.postgres_server_name": postgres_server_name,
             "primary_stack.pulumi_state_store": primary_state_store,
         },
     )
 
-    print(f"   ✓ Populated from primary stack '{stack_name}':")
-    print(f"     postgres_server_name : {postgres_server_name.value}")
+    print(f"   ✓ Populated from primary config '{primary_config_path}':")
+    print(f"     postgres_server_name : {postgres_server_name}")
     print(f"     resource_group_name  : {primary_rg}")
     print(f"     pulumi_state_store   : {primary_state_store}")
 

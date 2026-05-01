@@ -162,6 +162,14 @@ llmaven infra deploy --preview            # Dry run (no resources created)
 llmaven infra deploy --yes                # Deploy to Azure
 llmaven infra status                      # View deployment status
 llmaven infra destroy --yes               # Tear down resources
+
+# Backup infrastructure commands (separate Pulumi project, isolated resource group)
+llmaven infra backup init -e prod --from-primary-stack llmaven-config.yaml
+llmaven infra backup deploy --preview     # Dry run
+llmaven infra backup deploy --yes         # Deploy Azure Backup Vault
+llmaven infra backup status               # View backup deployment status
+llmaven infra backup refresh              # Sync Pulumi state with Azure
+llmaven infra backup destroy --yes        # Remove backup vault (deletes recovery points)
 ```
 
 ## Azure Infrastructure Deployment
@@ -235,6 +243,172 @@ Resource Group
     ├── MLflow Container App (managed identity → Key Vault)
     └── LiteLLM Container App (managed identity → Key Vault)
 ```
+
+## Database Backup (Azure Backup Vault)
+
+LLMaven uses a separate `infrastructure-backup` Pulumi project to protect the
+PostgreSQL Flexible Server with Azure Backup Vault. Backups are stored in
+Microsoft-managed storage outside your subscription — they survive accidental
+deletion of the primary resource group, including `pulumi destroy` on the main
+stack.
+
+**How it works**: A weekly full backup (pg_dump) is triggered by the vault via
+Azure Resource Manager APIs. No database credentials are stored. Recovery points
+are retained according to the configured schedule.
+
+**Restore note**: Recovery currently produces `.sql` dump files in a target
+storage account ("Restore as Files"). Use `pg_restore` on a new server to
+reconstruct the database. "Restore as Server" is on the Azure roadmap.
+
+### First-Time Backup Setup
+
+Run these steps once per environment, **after** the primary infrastructure is
+deployed:
+
+**1. Generate the backup config:**
+
+```bash
+# Auto-populates postgres_server_name and resource_group_name from your
+# deployed primary stack:
+llmaven infra backup init \
+  --environment prod \
+  --from-primary-stack llmaven-config.yaml \
+  --output llmaven-backup-config.yaml
+```
+
+If the primary stack is not yet deployed, omit `--from-primary-stack` and fill
+in `primary_stack.*` manually after deploying:
+
+```bash
+llmaven infra backup init --environment prod
+# then edit llmaven-backup-config.yaml
+```
+
+**2. Set your subscription ID** in `llmaven-backup-config.yaml`:
+
+```yaml
+azure:
+  subscription_id: "your-subscription-id"
+```
+
+**3. Review backup settings** (optional):
+
+```yaml
+backup:
+  redundancy: GeoRedundant        # prod: GeoRedundant; dev/staging: LocallyRedundant
+  immutability_enabled: true      # prevents deletion of recovery points
+  soft_delete_retention_days: 30  # days to recover soft-deleted backups
+  backup_schedule_utc: "R/2024-01-01T02:00:00Z/P1W"  # weekly, Sundays 02:00 UTC
+  retention_weeks: 52             # keep 1 year of weekly backups (prod default)
+```
+
+**4. Preview and deploy:**
+
+```bash
+llmaven infra backup deploy --config llmaven-backup-config.yaml --preview
+llmaven infra backup deploy --config llmaven-backup-config.yaml --yes
+```
+
+This creates an isolated Azure resource group (e.g., `rg-llmaven-backup-prod-eastus`)
+containing:
+
+```
+rg-llmaven-backup-prod-eastus
+├── Backup Vault (system-assigned MSI)
+│   ├── Backup Policy (weekly, configurable retention)
+│   └── Backup Instance → PostgreSQL Flexible Server
+└── Storage Account (Pulumi state for the backup stack)
+
+Cross-RG role assignments (managed by backup stack):
+  Vault MSI → Reader on rg-llmaven-prod-eastus
+  Vault MSI → PostgreSQL Flexible Server Long Term Retention Backup Role (on server)
+```
+
+**5. Verify the role definition GUID** before deploying (one-time check):
+
+```bash
+az role definition list \
+  --name "PostgreSQL Flexible Server Long Term Retention Backup Role" \
+  --query "[0].name" \
+  --output tsv
+```
+
+The GUID is hardcoded in
+`src/llmaven/infrastructure_backup/resources/backup.py` as
+`_POSTGRES_LTR_BACKUP_ROLE_ID`. Update it if the output differs.
+
+### Updating Backup Configuration
+
+To change retention, redundancy, or schedule after the initial deployment:
+
+**1. Edit `llmaven-backup-config.yaml`** with the new values.
+
+**2. Preview the changes:**
+
+```bash
+llmaven infra backup deploy --config llmaven-backup-config.yaml --preview
+```
+
+**3. Apply:**
+
+```bash
+llmaven infra backup deploy --config llmaven-backup-config.yaml --yes
+```
+
+> **Immutability note**: Once `immutability_enabled: true` has been deployed and
+> the vault is in "Locked" state, it cannot be disabled via Pulumi. To destroy the
+> vault you must first manually remove the lock in the Azure Portal.
+
+### Backup CLI Reference
+
+```bash
+# Initialize backup config (auto-populate from deployed primary stack)
+llmaven infra backup init -e prod --from-primary-stack llmaven-config.yaml
+
+# Preview changes
+llmaven infra backup deploy --config llmaven-backup-config.yaml --preview
+
+# Deploy backup infrastructure
+llmaven infra backup deploy --config llmaven-backup-config.yaml --yes
+
+# Show backup deployment status
+llmaven infra backup status --config llmaven-backup-config.yaml
+
+# Refresh Pulumi state from actual cloud resources
+llmaven infra backup refresh --config llmaven-backup-config.yaml
+
+# Destroy backup infrastructure (requires disabling immutability first if enabled)
+llmaven infra backup destroy --config llmaven-backup-config.yaml
+```
+
+### Restoring from Backup
+
+When you need to restore (e.g., after the primary RG was accidentally deleted):
+
+1. **Create a new PostgreSQL Flexible Server** (via `llmaven infra deploy` with a
+   fresh config, or manually in the Azure Portal).
+
+2. **Create a target storage account** to receive the dump files (can be any
+   storage account you own).
+
+3. **Initiate restore** in the Azure Portal:
+   - Navigate to the Backup Vault → Backup Instances
+   - Select the PostgreSQL instance → Restore
+   - Choose "Restore as Files" → select the target storage account and container
+
+4. **Download the `.sql` dump files** from the storage container.
+
+5. **Restore using `pg_restore`**:
+
+   ```bash
+   pg_restore \
+     --host=<new-server-fqdn> \
+     --port=5432 \
+     --username=<admin-login> \
+     --dbname=<database-name> \
+     --no-owner \
+     <dump-file.sql>
+   ```
 
 ## Development
 

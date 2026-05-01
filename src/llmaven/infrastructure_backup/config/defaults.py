@@ -38,7 +38,7 @@ def generate_default_backup_config(environment: str) -> LLMavenBackupConfig:
         backup = BackupVaultResourceConfig(
             redundancy="LocallyRedundant",
             immutability_enabled=False,
-            soft_delete_retention_days=7.0,
+            soft_delete_retention_days=14.0,
             backup_schedule_utc="R/2024-01-01T02:00:00Z/P1W",
             retention_weeks=4,
         )
@@ -128,7 +128,8 @@ backup:
   # Recommended: true for production. Once locked, cannot be disabled.
   immutability_enabled: {immutability}
 
-  # Soft-delete: how long (days) deleted backups are recoverable before permanent removal
+  # Soft-delete: how long (days) deleted backups are recoverable before permanent removal.
+  # Minimum value is 14 days (Azure API requirement).
   soft_delete_retention_days: {soft_delete}
 
   # Weekly backup schedule in ISO 8601 recurring interval format

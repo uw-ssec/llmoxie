@@ -25,7 +25,7 @@ from ..config.schema import LLMavenBackupConfig
 # Verify with: az role definition list --name "Reader" --query "[0].name"
 _READER_ROLE_ID = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
 
-# Verify with:
+# Obtained with:
 # az role definition list \
 #   --name "PostgreSQL Flexible Server Long Term Retention Backup Role" \
 #   --query "[0].name"
@@ -65,12 +65,30 @@ def create_backup_vault(
     """
     environment = config.project.environment
 
-    # Immutability state: "Unlocked" allows admin override; "Locked" is permanent.
-    # We use "Unlocked" so that operators can still remove a misconfigured vault,
-    # while still preventing accidental deletion during normal operations.
-    immutability_state = (
-        "Unlocked" if config.backup.immutability_enabled else "Disabled"
+    # Build security settings.
+    # Rules:
+    # - immutability_settings is only included when immutability is enabled.
+    #   Explicitly passing state="Disabled" causes a 400 from the Azure BMS API.
+    # - soft_delete minimum retention is 14 days when state="On".
+    soft_delete = azure_native.dataprotection.SoftDeleteSettingsArgs(
+        retention_duration_in_days=config.backup.soft_delete_retention_days,
+        state="On",
     )
+
+    if config.backup.immutability_enabled:
+        # "Unlocked": recovery points are protected but vault admins can still
+        # remove the vault (requires disabling immutability first in the Portal).
+        # "Locked": permanent — cannot be undone without Microsoft support.
+        security_settings = azure_native.dataprotection.SecuritySettingsArgs(
+            immutability_settings=azure_native.dataprotection.ImmutabilitySettingsArgs(
+                state="Unlocked",
+            ),
+            soft_delete_settings=soft_delete,
+        )
+    else:
+        security_settings = azure_native.dataprotection.SecuritySettingsArgs(
+            soft_delete_settings=soft_delete,
+        )
 
     vault = azure_native.dataprotection.BackupVault(
         f"backup-vault-{environment}",
@@ -87,15 +105,7 @@ def create_backup_vault(
                     type=config.backup.redundancy,
                 )
             ],
-            security_settings=azure_native.dataprotection.SecuritySettingsArgs(
-                immutability_settings=azure_native.dataprotection.ImmutabilitySettingsArgs(
-                    state=immutability_state,
-                ),
-                soft_delete_settings=azure_native.dataprotection.SoftDeleteSettingsArgs(
-                    retention_duration_in_days=config.backup.soft_delete_retention_days,
-                    state="On",
-                ),
-            ),
+            security_settings=security_settings,
         ),
         tags=tags,
     )
@@ -136,7 +146,7 @@ def create_backup_policy(
         vault_name=vault_name,
         backup_policy_name=policy_name,
         properties=azure_native.dataprotection.BackupPolicyArgs(
-            datasource_types=["AzureDatabaseForPostgreSQLFlexibleServer"],
+            datasource_types=["Microsoft.DBforPostgreSQL/flexibleServers"],
             object_type="BackupPolicy",
             policy_rules=[
                 # Backup rule: trigger weekly full backups
@@ -309,7 +319,7 @@ def create_backup_instance(
         properties=azure_native.dataprotection.BackupInstanceArgs(
             object_type="BackupInstance",
             friendly_name=f"PostgreSQL {postgres_server_name} ({environment})",
-            datasource_info=azure_native.dataprotection.DatasourceArgs(
+            data_source_info=azure_native.dataprotection.DatasourceArgs(
                 object_type="Datasource",
                 resource_id=server_resource_id,
                 resource_name=postgres_server_name,

@@ -16,7 +16,7 @@ class BackupProjectConfig(BaseModel):
         default="dev",
         description="Environment (dev, staging, prod) — must match primary",
     )
-    location: str = Field(default="eastus", description="Azure region")
+    location: str = Field(default="westus2", description="Azure region")
     enable_passphrase: bool = Field(
         default=False,
         description="Enable Pulumi passphrase protection (requires PULUMI_CONFIG_PASSPHRASE)",
@@ -85,8 +85,8 @@ class BackupVaultResourceConfig(BaseModel):
     )
     soft_delete_retention_days: float = Field(
         default=14.0,
-        description="Days to retain soft-deleted backup data before permanent removal",
-        ge=1,
+        description="Days to retain soft-deleted backup data before permanent removal (min 14)",
+        ge=14,
         le=180,
     )
     backup_schedule_utc: str = Field(
