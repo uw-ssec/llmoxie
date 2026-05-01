@@ -295,11 +295,11 @@ azure:
 
 ```yaml
 backup:
-  redundancy: GeoRedundant        # prod: GeoRedundant; dev/staging: LocallyRedundant
-  immutability_enabled: true      # prevents deletion of recovery points
-  soft_delete_retention_days: 30  # days to recover soft-deleted backups
-  backup_schedule_utc: "R/2024-01-01T02:00:00Z/P1W"  # weekly, Sundays 02:00 UTC
-  retention_weeks: 52             # keep 1 year of weekly backups (prod default)
+  redundancy: GeoRedundant # prod: GeoRedundant; dev/staging: LocallyRedundant
+  immutability_enabled: true # prevents deletion of recovery points
+  soft_delete_retention_days: 30 # days to recover soft-deleted backups
+  backup_schedule_utc: "R/2024-01-01T02:00:00Z/P1W" # weekly, Sundays 02:00 UTC
+  retention_weeks: 52 # keep 1 year of weekly backups (prod default)
 ```
 
 **4. Preview and deploy:**
@@ -309,8 +309,8 @@ llmaven infra backup deploy --config llmaven-backup-config.yaml --preview
 llmaven infra backup deploy --config llmaven-backup-config.yaml --yes
 ```
 
-This creates an isolated Azure resource group (e.g., `rg-llmaven-backup-prod-eastus`)
-containing:
+This creates an isolated Azure resource group (e.g.,
+`rg-llmaven-backup-prod-eastus`) containing:
 
 ```
 rg-llmaven-backup-prod-eastus
@@ -333,9 +333,8 @@ az role definition list \
   --output tsv
 ```
 
-The GUID is hardcoded in
-`src/llmaven/infrastructure_backup/resources/backup.py` as
-`_POSTGRES_LTR_BACKUP_ROLE_ID`. Update it if the output differs.
+The GUID is hardcoded in `src/llmaven/infrastructure_backup/resources/backup.py`
+as `_POSTGRES_LTR_BACKUP_ROLE_ID`. Update it if the output differs.
 
 ### Updating Backup Configuration
 
@@ -356,8 +355,8 @@ llmaven infra backup deploy --config llmaven-backup-config.yaml --yes
 ```
 
 > **Immutability note**: Once `immutability_enabled: true` has been deployed and
-> the vault is in "Locked" state, it cannot be disabled via Pulumi. To destroy the
-> vault you must first manually remove the lock in the Azure Portal.
+> the vault is in "Locked" state, it cannot be disabled via Pulumi. To destroy
+> the vault you must first manually remove the lock in the Azure Portal.
 
 ### Backup CLI Reference
 
@@ -385,8 +384,8 @@ llmaven infra backup destroy --config llmaven-backup-config.yaml
 
 When you need to restore (e.g., after the primary RG was accidentally deleted):
 
-1. **Create a new PostgreSQL Flexible Server** (via `llmaven infra deploy` with a
-   fresh config, or manually in the Azure Portal).
+1. **Create a new PostgreSQL Flexible Server** (via `llmaven infra deploy` with
+   a fresh config, or manually in the Azure Portal).
 
 2. **Create a target storage account** to receive the dump files (can be any
    storage account you own).
