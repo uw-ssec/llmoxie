@@ -52,6 +52,22 @@ agentic_app = typer.Typer(
 app.add_typer(agentic_app)
 
 
+# Shared --env-file option: enforces consistent Typer Path validation
+# across `infra validate`, `infra deploy`, and `infra extract`.
+ENV_FILE_OPTION = typer.Option(
+    None,
+    "--env-file",
+    "-e",
+    help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+    exists=True,
+    dir_okay=False,
+    file_okay=True,
+    readable=True,
+    resolve_path=True,
+    path_type=Path,
+)
+
+
 class Environment(str, Enum):
     """Environment modes for the server."""
 
@@ -340,18 +356,7 @@ def validate(
         is_flag=True,
         help="Skip secrets validation (use with caution)",
     ),
-    env_file: Optional[Path] = typer.Option(
-        None,
-        "--env-file",
-        "-e",
-        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
-        exists=True,
-        dir_okay=False,
-        file_okay=True,
-        readable=True,
-        resolve_path=True,
-        path_type=Path,
-    ),
+    env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
@@ -417,18 +422,7 @@ def deploy(
         is_flag=True,
         help="Automatically approve deployment",
     ),
-    env_file: Optional[Path] = typer.Option(
-        None,
-        "--env-file",
-        "-e",
-        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
-        exists=True,
-        dir_okay=False,
-        file_okay=True,
-        readable=True,
-        resolve_path=True,
-        path_type=Path,
-    ),
+    env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -1016,18 +1010,7 @@ def extract(
         resolve_path=True,
         path_type=Path,
     ),
-    env_file: Optional[Path] = typer.Option(
-        None,
-        "--env-file",
-        "-e",
-        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
-        exists=True,
-        dir_okay=False,
-        file_okay=True,
-        readable=True,
-        resolve_path=True,
-        path_type=Path,
-    ),
+    env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Extract source logs/traces into a day-partitioned JSONL zip.
 
