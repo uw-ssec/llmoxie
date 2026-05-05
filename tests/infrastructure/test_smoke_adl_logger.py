@@ -77,7 +77,7 @@ def test_adl_logger_smoke_test():
     time.sleep(1)
 
     # 4. Read log from Azurite
-    print(f"→ Reading log from Azurite...")
+    print("→ Reading log from Azurite...")
     log_data = read_log_from_azurite(request_id, today)
     print(f"✓ Log record for {request_id}:")
     print(json.dumps(log_data, indent=2, default=str)[:1000])

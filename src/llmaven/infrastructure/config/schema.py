@@ -99,7 +99,8 @@ class StorageConfig(BaseModel):
         default=True, description="Enable ADLS Gen2"
     )
     containers: List[str] = Field(
-        default=["mlflow", "llmaven", "litellm-logs"], description="Storage container names"
+        default=["mlflow", "llmaven", "litellm-logs"],
+        description="Storage container names",
     )
 
     @field_validator("account_tier")

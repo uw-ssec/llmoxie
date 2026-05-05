@@ -114,7 +114,8 @@ services:
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite
     container_name: llmaven_azurite
-    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
+    command:
+      "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
     ports:
       - "10000:10000"
     healthcheck:
@@ -137,7 +138,7 @@ services:
     env_file:
       - .env # Load local .env file
     environment:
-      PYTHONPATH: /app  # So LiteLLM can import adl_logger from the mounted volume
+      PYTHONPATH: /app # So LiteLLM can import adl_logger from the mounted volume
     depends_on:
       db:
         condition: service_healthy
