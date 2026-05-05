@@ -10,10 +10,14 @@ model_list:
       api_key: os.environ/AZURE_API_KEY
       api_version: os.environ/AZURE_API_VERSION
 
-# Logging Configuration - Push to mlflow
+# Logging Configuration
 litellm_settings:
+  # Built-in string callbacks go in success/failure_callback
   success_callback: ["mlflow"]
   failure_callback: ["mlflow"]
+  # CustomLogger instances must go in `callbacks` so LiteLLM invokes
+  # async_log_success_event / async_log_failure_event on them
+  callbacks: adl_logger.proxy_handler_instance
 
 # Logging Configuration - Store logs to S3
 # litellm_settings:

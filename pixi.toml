@@ -61,7 +61,6 @@ pulumi-azure-native = ">=3.8.0, <4"
 
 [feature.proxy.dependencies]
 python = "3.11.*"
-adlfs = ">=2025.8.0, <2026"
 aiohttp = ">=3.13.0,<4"
 propcache = ">=0.2.0"
 fastapi = ">=0.119.1,<0.120"
@@ -69,6 +68,8 @@ uvicorn = ">=0.38.0,<0.39"
 httpx = ">=0.28.1,<0.29"
 python-dotenv = ">=1.1.1,<2"
 azure-data-tables = ">=12.7.0,<13"
+azure-storage-blob = ">=12.0.0,<13"
+azure-identity = ">=1.0.0,<2"
 
 [target.linux-64.pypi-dependencies]
 llama-cpp-python = { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp311-cp311-linux_x86_64.whl" }

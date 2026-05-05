@@ -110,6 +110,22 @@ services:
     networks:
       - llmaven-network
 
+  # Azurite — Azure Blob Storage emulator (local dev only, replaces ADLS Gen2)
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: llmaven_azurite
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
+    ports:
+      - "10000:10000"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 10000 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - llmaven-network
+
   # LiteLLM AI Gateway service
   litellm:
     build:
@@ -120,13 +136,18 @@ services:
       - "4000:4000" # Map the container port to the host, change the host port if necessary
     env_file:
       - .env # Load local .env file
+    environment:
+      PYTHONPATH: /app  # So LiteLLM can import adl_logger from the mounted volume
     depends_on:
       db:
         condition: service_healthy
       mlflow:
         condition: service_healthy
+      azurite:
+        condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml
+      - ../src/llmaven/proxy/adl_logger.py:/app/adl_logger.py
     command:
       - --config
       - /app/config.yaml

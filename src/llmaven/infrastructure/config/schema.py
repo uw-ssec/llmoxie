@@ -99,7 +99,7 @@ class StorageConfig(BaseModel):
         default=True, description="Enable ADLS Gen2"
     )
     containers: List[str] = Field(
-        default=["mlflow", "llmaven"], description="Storage container names"
+        default=["mlflow", "llmaven", "litellm-logs"], description="Storage container names"
     )
 
     @field_validator("account_tier")
@@ -222,6 +222,8 @@ class LiteLLMConfig(ContainerAppConfig):
             "ANTHROPIC_API_KEY": "anthropic-api-key",
             "MLFLOW_EXPERIMENT_NAME": "mlflow-experiment-name",
             "MLFLOW_TRACKING_URI": "mlflow-tracking-uri",
+            "ADLS_ACCOUNT_NAME": "adls-account-name",
+            "ADLS_CONTAINER": "adls-litellm-logs-container",
         },
         description="LiteLLM Key Vault secret references",
     )
