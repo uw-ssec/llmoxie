@@ -209,7 +209,7 @@ class LiteLLMConfig(ContainerAppConfig):
         default="docker/config.yaml", description="Path to LiteLLM config file"
     )
     env_vars: Dict[str, str] = Field(
-        default_factory=lambda: {"LITELLM_HOST": "0.0.0.0"},
+        default_factory=lambda: {"LITELLM_HOST": "0.0.0.0", "PYTHONPATH": "/app"},
         description="LiteLLM environment variables",
     )
 
