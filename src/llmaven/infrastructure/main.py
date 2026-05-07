@@ -224,12 +224,6 @@ def create_pulumi_program(config_path: Path):
             environment=environment,
         )
 
-        # 5.3. Store ADLS account name and container for LiteLLM AdlLogger
-        pulumi.log.info("Creating ADLS secrets for LiteLLM logger...")
-        secrets_manager.create_adls_secrets(
-            storage_account_name=storage_account.name,
-        )
-
         # 5.5. Create MLflow artifact root URL
         pulumi.log.info("Creating MLflow artifact root secret...")
         secrets_manager.create_mlflow_artifact_root_secret(

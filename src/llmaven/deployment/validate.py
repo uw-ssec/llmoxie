@@ -262,8 +262,6 @@ def check_secrets(
             if secret_name in [
                 "db-connection-string-litellm-db",
                 "mlflow-tracking-uri",
-                "adls-account-name",
-                "adls-litellm-logs-container",
                 "storage-connection-string",
             ]:
                 continue
