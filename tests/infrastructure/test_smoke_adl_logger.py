@@ -8,7 +8,7 @@ Prerequisites:
   Valid Azure OpenAI credentials in docker/.env
 
 Run:
-  pytest tests/infrastructure/test_smoke_adl_logger.py -v
+  RUN_ADL_LOGGER_SMOKE_TEST=1 pytest tests/infrastructure/test_smoke_adl_logger.py -v
 """
 
 import json
@@ -17,7 +17,7 @@ import time
 from datetime import datetime
 
 import httpx
-from azure.storage.blob import BlobClient
+import pytest
 
 # Environment configuration
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://localhost:4000")
@@ -27,6 +27,9 @@ ADLS_CONTAINER = os.environ.get("ADLS_CONTAINER", "litellm-logs")
 AZURITE_CONN_STR = os.environ.get(
     "AZURITE_CONN_STR",
     "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;",
+)
+RUN_ADL_LOGGER_SMOKE_TEST = (
+    os.environ.get("RUN_ADL_LOGGER_SMOKE_TEST", "").lower() in {"1", "true", "yes"}
 )
 
 
@@ -48,8 +51,12 @@ def send_chat_completion_request() -> dict:
 
 def read_log_from_azurite(request_id: str, date_str: str) -> dict:
     """Read the logged request from Azurite blob storage."""
+    blob_module = pytest.importorskip(
+        "azure.storage.blob",
+        reason="azure-storage-blob is required for the AdlLogger smoke test",
+    )
     blob_name = f"logs/{date_str}/{request_id}.json"
-    blob_client = BlobClient.from_connection_string(
+    blob_client = blob_module.BlobClient.from_connection_string(
         AZURITE_CONN_STR,
         container_name=ADLS_CONTAINER,
         blob_name=blob_name,
@@ -60,6 +67,12 @@ def read_log_from_azurite(request_id: str, date_str: str) -> dict:
 
 def test_adl_logger_smoke_test():
     """Verify AdlLogger successfully logs LiteLLM requests to Azurite."""
+    if not RUN_ADL_LOGGER_SMOKE_TEST:
+        pytest.skip(
+            "Set RUN_ADL_LOGGER_SMOKE_TEST=1 to run this smoke test with Docker "
+            "services and Azure credentials."
+        )
+
     # 1. Send request
     print(f"→ POST {LITELLM_URL}/v1/chat/completions (model: {MODEL})")
     response = send_chat_completion_request()
