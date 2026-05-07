@@ -52,6 +52,22 @@ agentic_app = typer.Typer(
 app.add_typer(agentic_app)
 
 
+# Shared --env-file option: enforces consistent Typer Path validation
+# across `infra validate`, `infra deploy`, and `infra extract`.
+ENV_FILE_OPTION = typer.Option(
+    None,
+    "--env-file",
+    "-e",
+    help="Path to .env file containing LLMAVEN_SECRETS_* variables",
+    exists=True,
+    dir_okay=False,
+    file_okay=True,
+    readable=True,
+    resolve_path=True,
+    path_type=Path,
+)
+
+
 class Environment(str, Enum):
     """Environment modes for the server."""
 
@@ -340,12 +356,7 @@ def validate(
         is_flag=True,
         help="Skip secrets validation (use with caution)",
     ),
-    env_file: Optional[str] = typer.Option(
-        None,
-        "--env-file",
-        "-e",
-        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
-    ),
+    env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
@@ -374,14 +385,13 @@ def validate(
     from llmaven.deployment.validate import ValidationError, validate_config
 
     config_path = Path(config) if config else Path("llmaven-config.yaml")
-    env_file_path = Path(env_file) if env_file else None
 
     try:
         validate_config(
             config_path=config_path,
             strict=strict,
             skip_secrets=skip_secrets,
-            env_file_path=env_file_path,
+            env_file_path=env_file,
         )
     except ValidationError:
         sys.exit(1)
@@ -412,12 +422,7 @@ def deploy(
         is_flag=True,
         help="Automatically approve deployment",
     ),
-    env_file: Optional[str] = typer.Option(
-        None,
-        "--env-file",
-        "-e",
-        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
-    ),
+    env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -442,14 +447,13 @@ def deploy(
     from llmaven.deployment.deploy import DeploymentError, deploy_infrastructure
 
     config_path = Path(config) if config else Path("llmaven-config.yaml")
-    env_file_path = Path(env_file) if env_file else None
 
     try:
         deploy_infrastructure(
             config_path=config_path,
             preview=preview,
             auto_approve=auto_approve,
-            env_file_path=env_file_path,
+            env_file_path=env_file,
         )
     except DeploymentError as e:
         typer.echo(f"✗ Deployment failed: {e}", err=True)
@@ -1006,19 +1010,7 @@ def extract(
         resolve_path=True,
         path_type=Path,
     ),
-    # TODO: enforce env_file rules specified below in similar parameter definitions in this file (https://github.com/uw-ssec/llmaven/issues/90).
-    env_file: Optional[Path] = typer.Option(
-        None,
-        "--env-file",
-        "-e",
-        help="Path to .env file containing LLMAVEN_SECRETS_* variables",
-        exists=True,
-        dir_okay=False,
-        file_okay=True,
-        readable=True,
-        resolve_path=True,
-        path_type=Path,
-    ),
+    env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Extract source logs/traces into a day-partitioned JSONL zip.
 
