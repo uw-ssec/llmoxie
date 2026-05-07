@@ -95,13 +95,12 @@ services:
       createbuckets:
         condition: service_completed_successfully
     healthcheck:
-      test: [
+      test:
+        [
           "CMD",
           "python",
           "-c",
-          "import urllib.request;
-          urllib.request.urlopen('http://${MLFLOW_HOST}:${MLFLOW_PORT}/health\
-          ')",
+          "import urllib.request; urllib.request.urlopen('http://${MLFLOW_HOST}:${MLFLOW_PORT}/health')",
         ]
       interval: 10s
       timeout: 5s

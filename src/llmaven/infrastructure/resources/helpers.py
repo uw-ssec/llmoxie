@@ -359,6 +359,7 @@ def create_litellm_app(
         inline_secrets = {}
         secret_volume_items = []
         all_files = (extra_modules or []) + [Path(config_file)]
+        config_filename = Path(config_file).name
 
         for file_path in all_files:
             secret_name = (
@@ -388,8 +389,8 @@ def create_litellm_app(
             )
         ]
 
-        # LiteLLM expects: --config /app/config/config.yaml
-        command_args = ["--config", "/app/config/config.yaml"]
+        # LiteLLM expects: --config /app/config/<actual-config-filename>
+        command_args = ["--config", f"/app/config/{config_filename}"]
 
     # Create container app
     return create_container_app_with_key_vault_secrets(
