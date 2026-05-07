@@ -15,7 +15,6 @@ import json
 import os
 import time
 from datetime import datetime
-from functools import lru_cache
 
 import httpx
 import pytest
@@ -50,20 +49,10 @@ def send_chat_completion_request() -> dict:
         return response.json()
 
 
-@lru_cache(maxsize=1)
-def _get_blob_client_class():
-    """Return the BlobClient class when the optional dependency is available."""
-    blob_module = pytest.importorskip(
-        "azure.storage.blob",
-        reason="azure-storage-blob is required for the AdlLogger smoke test",
-    )
-    return blob_module.BlobClient
-
-
-def read_log_from_azurite(request_id: str, date_str: str) -> dict:
+def read_log_from_azurite(blob_client_class, request_id: str, date_str: str) -> dict:
     """Read the logged request from Azurite blob storage."""
     blob_name = f"logs/{date_str}/{request_id}.json"
-    blob_client = _get_blob_client_class().from_connection_string(
+    blob_client = blob_client_class.from_connection_string(
         AZURITE_CONN_STR,
         container_name=ADLS_CONTAINER,
         blob_name=blob_name,
@@ -79,6 +68,10 @@ def test_adl_logger_smoke_test():
             "Set RUN_ADL_LOGGER_SMOKE_TEST=1 to run this smoke test with Docker "
             "services and Azure credentials."
         )
+    blob_module = pytest.importorskip(
+        "azure.storage.blob",
+        reason="azure-storage-blob is required for the AdlLogger smoke test",
+    )
 
     # 1. Send request
     print(f"→ POST {LITELLM_URL}/v1/chat/completions (model: {MODEL})")
@@ -98,7 +91,7 @@ def test_adl_logger_smoke_test():
 
     # 4. Read log from Azurite
     print("→ Reading log from Azurite...")
-    log_data = read_log_from_azurite(request_id, today)
+    log_data = read_log_from_azurite(blob_module.BlobClient, request_id, today)
     print(f"✓ Log record for {request_id}:")
     print(json.dumps(log_data, indent=2, default=str)[:1000])
 
