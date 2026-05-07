@@ -130,8 +130,8 @@ services:
   # LiteLLM AI Gateway service
   litellm:
     build:
-      context: ..
-      dockerfile: docker/dockerfiles/litellm.dockerfile
+      context: .
+      dockerfile: dockerfiles/litellm.dockerfile
     container_name: llmaven_litellm
     ports:
       - "4000:4000" # Map the container port to the host, change the host port if necessary

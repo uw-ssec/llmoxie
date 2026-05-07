@@ -10,7 +10,7 @@ model_list:
       api_key: os.environ/AZURE_API_KEY
       api_version: os.environ/AZURE_API_VERSION
 
-# Logging Configuration
+# Logging Configuration - Push to mlflow
 litellm_settings:
   # Built-in string callbacks go in success/failure_callback
   success_callback: ["mlflow"]

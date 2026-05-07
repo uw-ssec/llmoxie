@@ -1,16 +1,8 @@
 """Custom LiteLLM callback that writes request/response JSON to Azure Data Lake Storage Gen2.
 
-Authentication:
-  - Production: DefaultAzureCredential (managed identity in Azure Container Apps)
-  - Local dev:  AZURE_STORAGE_CONNECTION_STRING pointing at Azurite
-
-Required env vars (production):
-  ADLS_ACCOUNT_NAME  - Azure Storage account name (ignored when
-                       AZURE_STORAGE_CONNECTION_STRING is set)
-
+Required env vars:
+  AZURE_STORAGE_CONNECTION_STRING  - Full connection string
 Optional env vars:
-  AZURE_STORAGE_CONNECTION_STRING  - Full connection string; takes precedence
-                                     over ADLS_ACCOUNT_NAME + managed identity
   ADLS_CONTAINER                   - Blob container name (default: litellm-logs)
 
 Log path layout: <container>/logs/<yyyy>/<mm>/<dd>/<request_id>.json
@@ -18,8 +10,6 @@ Log path layout: <container>/logs/<yyyy>/<mm>/<dd>/<request_id>.json
 One file per request, written atomically via BlobClient.upload_blob().
 The filename is the standard_logging_object["id"] (e.g. "chatcmpl-abc123"),
 guaranteeing uniqueness without any coordination across workers or replicas.
-Uses the official Azure SDK (azure-storage-blob) directly — native async,
-no private APIs, no fsspec event loop conflicts.
 """
 
 import json
@@ -31,7 +21,6 @@ from typing import Any
 
 import litellm
 from azure.core.exceptions import ResourceExistsError
-from azure.identity.aio import DefaultAzureCredential as AsyncDefaultAzureCredential
 from azure.storage.blob.aio import BlobClient
 from azure.storage.blob import ContainerClient
 from litellm.integrations.custom_logger import CustomLogger
@@ -54,23 +43,14 @@ class AdlLogger(CustomLogger):
         self._container = os.environ.get("ADLS_CONTAINER", "litellm-logs")
         self._connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
 
-        if self._connection_string:
-            # Local dev: Azurite with connection string
-            logger.info("AdlLogger initialized with AZURE_STORAGE_CONNECTION_STRING")
-            # Create container synchronously on startup (not in async context)
-            self._ensure_container_sync(self._connection_string)
-        else:
-            # Production: managed identity via AsyncDefaultAzureCredential
-            self._account_name = os.environ["ADLS_ACCOUNT_NAME"]
-            logger.info(
-                "AdlLogger initialized for managed identity with account '%s'",
-                self._account_name,
+        if not self._connection_string:
+            raise ValueError(
+                "AZURE_STORAGE_CONNECTION_STRING must be set for AdlLogger to authenticate with Azure Storage"
             )
-            self._credential = AsyncDefaultAzureCredential()
-            logger.info(
-                "AdlLogger initialized with ADLS_ACCOUNT_NAME '%s'", self._account_name
-            )
-            # Container is pre-created by Pulumi; no need to create it here
+        # Local dev: Azurite with connection string
+        logger.info("AdlLogger initialized with AZURE_STORAGE_CONNECTION_STRING")
+        # Create container synchronously on startup (not in async context)
+        self._ensure_container_sync(self._connection_string)
 
     def _ensure_container_sync(self, connection_string: str) -> None:
         """Create container if it doesn't exist (sync, called during __init__)."""
@@ -93,23 +73,11 @@ class AdlLogger(CustomLogger):
 
     async def _get_blob_client(self, blob_name: str) -> BlobClient:
         """Get a BlobClient for the given blob name using the configured auth method."""
-        if self._connection_string:
-            return BlobClient.from_connection_string(
-                self._connection_string,
-                container_name=self._container,
-                blob_name=blob_name,
-            )
-        else:
-            # managed_identity
-            assert self._credential and self._account_name, (
-                "Credential and account name must be set for managed identity auth"
-            )
-            return BlobClient(
-                account_url=f"https://{self._account_name}.blob.core.windows.net",
-                container_name=self._container,
-                blob_name=blob_name,
-                credential=self._credential,
-            )
+        return BlobClient.from_connection_string(
+            self._connection_string,
+            container_name=self._container,
+            blob_name=blob_name,
+        )
 
     async def async_log_success_event(
         self,
