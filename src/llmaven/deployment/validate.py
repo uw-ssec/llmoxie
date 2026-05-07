@@ -258,10 +258,12 @@ def check_secrets(
             else []
         )
         for secret_name in litellm_secrets:
-            # Skip auto-generated secrets
+            # Skip auto-generated secrets (derived from Pulumi-created Azure resources)
             if secret_name in [
                 "db-connection-string-litellm-db",
                 "mlflow-tracking-uri",
+                "adls-account-name",
+                "adls-litellm-logs-container",
             ]:
                 continue
 

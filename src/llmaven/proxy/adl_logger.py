@@ -62,6 +62,10 @@ class AdlLogger(CustomLogger):
         else:
             # Production: managed identity via AsyncDefaultAzureCredential
             self._account_name = os.environ["ADLS_ACCOUNT_NAME"]
+            logger.info(
+                "AdlLogger initialized for managed identity with account '%s'",
+                self._account_name,
+            )
             self._credential = AsyncDefaultAzureCredential()
             logger.info(
                 "AdlLogger initialized with ADLS_ACCOUNT_NAME '%s'", self._account_name
@@ -97,9 +101,9 @@ class AdlLogger(CustomLogger):
             )
         else:
             # managed_identity
-            assert self._credential and self._account_name, (
-                "Credential and account name must be set for managed identity auth"
-            )
+            assert (
+                self._credential and self._account_name
+            ), "Credential and account name must be set for managed identity auth"
             return BlobClient(
                 account_url=f"https://{self._account_name}.blob.core.windows.net",
                 container_name=self._container,
