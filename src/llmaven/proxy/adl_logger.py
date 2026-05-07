@@ -101,9 +101,9 @@ class AdlLogger(CustomLogger):
             )
         else:
             # managed_identity
-            assert (
-                self._credential and self._account_name
-            ), "Credential and account name must be set for managed identity auth"
+            assert self._credential and self._account_name, (
+                "Credential and account name must be set for managed identity auth"
+            )
             return BlobClient(
                 account_url=f"https://{self._account_name}.blob.core.windows.net",
                 container_name=self._container,
