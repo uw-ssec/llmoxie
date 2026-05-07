@@ -15,6 +15,7 @@ import json
 import os
 import time
 from datetime import datetime
+from functools import lru_cache
 
 import httpx
 import pytest
@@ -49,14 +50,20 @@ def send_chat_completion_request() -> dict:
         return response.json()
 
 
-def read_log_from_azurite(request_id: str, date_str: str) -> dict:
-    """Read the logged request from Azurite blob storage."""
+@lru_cache(maxsize=1)
+def _get_blob_client_class():
+    """Return the BlobClient class when the optional dependency is available."""
     blob_module = pytest.importorskip(
         "azure.storage.blob",
         reason="azure-storage-blob is required for the AdlLogger smoke test",
     )
+    return blob_module.BlobClient
+
+
+def read_log_from_azurite(request_id: str, date_str: str) -> dict:
+    """Read the logged request from Azurite blob storage."""
     blob_name = f"logs/{date_str}/{request_id}.json"
-    blob_client = blob_module.BlobClient.from_connection_string(
+    blob_client = _get_blob_client_class().from_connection_string(
         AZURITE_CONN_STR,
         container_name=ADLS_CONTAINER,
         blob_name=blob_name,
