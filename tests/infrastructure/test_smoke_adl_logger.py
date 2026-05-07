@@ -28,9 +28,11 @@ AZURITE_CONN_STR = os.environ.get(
     "AZURITE_CONN_STR",
     "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;",
 )
-RUN_ADL_LOGGER_SMOKE_TEST = (
-    os.environ.get("RUN_ADL_LOGGER_SMOKE_TEST", "").lower() in {"1", "true", "yes"}
-)
+RUN_ADL_LOGGER_SMOKE_TEST = os.environ.get("RUN_ADL_LOGGER_SMOKE_TEST", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 
 def send_chat_completion_request() -> dict:
