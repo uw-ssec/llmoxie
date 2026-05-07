@@ -346,7 +346,6 @@ def create_litellm_app(
     inline_secrets = None
 
     if config_file:
-        import os
 
         def read_file_content(file_path: Path) -> str:
             """Read file content and return as string."""
