@@ -209,7 +209,7 @@ class LiteLLMConfig(ContainerAppConfig):
         default="docker/config.yaml", description="Path to LiteLLM config file"
     )
     env_vars: Dict[str, str] = Field(
-        default_factory=lambda: {"LITELLM_HOST": "0.0.0.0", "PYTHONPATH": "/app"},
+        default_factory=lambda: {"LITELLM_HOST": "0.0.0.0"},
         description="LiteLLM environment variables",
     )
 
@@ -223,8 +223,7 @@ class LiteLLMConfig(ContainerAppConfig):
             "ANTHROPIC_API_KEY": "anthropic-api-key",
             "MLFLOW_EXPERIMENT_NAME": "mlflow-experiment-name",
             "MLFLOW_TRACKING_URI": "mlflow-tracking-uri",
-            "ADLS_ACCOUNT_NAME": "adls-account-name",
-            "ADLS_CONTAINER": "adls-litellm-logs-container",
+            "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
         },
         description="LiteLLM Key Vault secret references",
     )

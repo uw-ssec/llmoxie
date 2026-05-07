@@ -264,6 +264,7 @@ def check_secrets(
                 "mlflow-tracking-uri",
                 "adls-account-name",
                 "adls-litellm-logs-container",
+                "storage-connection-string",
             ]:
                 continue
 

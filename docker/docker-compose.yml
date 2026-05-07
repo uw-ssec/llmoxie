@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/health"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:6333/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +28,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./create_service_dbs.sql:/docker-entrypoint-initdb.d/create_service_dbs.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,7 +48,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 30s
       timeout: 20s
       retries: 3
@@ -101,7 +101,8 @@ services:
           "python",
           "-c",
           "import urllib.request;
-          urllib.request.urlopen('http://${MLFLOW_HOST}:${MLFLOW_PORT}/health')",
+            urllib.request.urlopen('http://${MLFLOW_HOST}:${MLFLOW_PORT}/health\
+            ')",
         ]
       interval: 10s
       timeout: 5s
@@ -114,12 +115,11 @@ services:
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite
     container_name: llmaven_azurite
-    command:
-      "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
     ports:
       - "10000:10000"
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 10000 || exit 1"]
+      test: [ "CMD-SHELL", "nc -z 127.0.0.1 10000 || exit 1" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -137,8 +137,6 @@ services:
       - "4000:4000" # Map the container port to the host, change the host port if necessary
     env_file:
       - .env # Load local .env file
-    environment:
-      PYTHONPATH: /app # So LiteLLM can import adl_logger from the mounted volume
     depends_on:
       db:
         condition: service_healthy
@@ -148,14 +146,17 @@ services:
         condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml
+      - ../src/llmaven/proxy/adl_logger.py:/app/adl_logger.py
     command:
       - --config
       - /app/config.yaml
-    healthcheck: # Defines the health check configuration for the container
-      test: [
+    healthcheck:
+      # Defines the health check configuration for the container
+      test:
+        [
           "CMD-SHELL",
           "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness
-          || exit 1",
+            || exit 1",
         ] # Command to execute for health check
       interval: 30s # Perform health check every 30 seconds
       timeout: 10s # Health check command times out after 10 seconds
