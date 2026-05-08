@@ -363,7 +363,7 @@ def create_pulumi_program(config_path: Path):
             pulumi.log.info(f"Using LiteLLM config file: {config_file_path}")
 
             # Add the adl_logger.py as an extra module
-            adl_logger_path = Path(__file__).parent / Path("../proxy/adl_logger.py")
+            adl_logger_path = Path(__file__).parent / Path("resources/adl_logger.py")
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",

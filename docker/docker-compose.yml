@@ -146,7 +146,7 @@ services:
         condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml
-      - ../src/llmaven/proxy/adl_logger.py:/app/adl_logger.py
+      - ../src/llmaven/infrastructure/resources/adl_logger.py:/app/adl_logger.py
     command:
       - --config
       - /app/config.yaml
