@@ -224,7 +224,7 @@ def create_pulumi_program(config_path: Path):
             environment=environment,
         )
 
-        # 5.3. Create MLflow artifact root URL
+        # 5.5. Create MLflow artifact root URL
         pulumi.log.info("Creating MLflow artifact root secret...")
         secrets_manager.create_mlflow_artifact_root_secret(
             storage_account_name=storage_account.name,
@@ -362,6 +362,9 @@ def create_pulumi_program(config_path: Path):
                     config_file_path = (config_path.parent / config_file_path).resolve()
             pulumi.log.info(f"Using LiteLLM config file: {config_file_path}")
 
+            # Add the adl_logger.py as an extra module
+            adl_logger_path = Path(__file__).parent / Path("resources/adl_logger.py")
+
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
                 resource_group_name=resource_group,
@@ -387,6 +390,7 @@ def create_pulumi_program(config_path: Path):
                         [litellm_kv_access_policy] if litellm_kv_access_policy else []
                     )
                 ),
+                extra_modules=[adl_logger_path],
             )
 
             # Export LiteLLM URL

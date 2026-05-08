@@ -1,5 +1,6 @@
 """Helper functions for creating Azure resources with LLMaven configuration."""
 
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pulumi
@@ -282,6 +283,7 @@ def create_litellm_app(
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
     opts: Optional[pulumi.ResourceOptions] = None,
+    extra_modules: Optional[List[Path]] = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -302,6 +304,8 @@ def create_litellm_app(
         config_file: Path to LiteLLM config file (will be read and mounted as a secret volume)
         managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access
         tags: Resource tags
+        opts: Pulumi resource options
+        extra_modules: List of additional local Python modules to read and mount as secrets (for custom callbacks, etc.)
 
     Returns:
         ContainerApp resource
@@ -342,46 +346,51 @@ def create_litellm_app(
     inline_secrets = None
 
     if config_file:
-        import os
 
-        # Resolve relative path from project root
-        if not os.path.isabs(config_file):
-            project_root = os.getcwd()
-            config_file = os.path.join(project_root, config_file)
+        def read_file_content(file_path: Path) -> str:
+            """Read file content and return as string."""
+            if not file_path.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            with open(file_path, "r") as f:
+                return f.read()
 
-        # Read config file content
-        if os.path.exists(config_file):
-            with open(config_file, "r") as f:
-                config_content = f.read()
+        # Both config.yaml and custom modules need to be mounted into the same volume
+        # so LiteLLM can find the callback module in the same directory as config
+        inline_secrets = {}
+        secret_volume_items = []
+        all_files = (extra_modules or []) + [Path(config_file)]
+        config_filename = Path(config_file).name
 
-            # Add the config file content as an inline secret
-            inline_secrets = {"config-yaml": config_content}
-
-            # Configure volume and volume mount that references the secret
-            volumes = [
-                azure_native.app.VolumeArgs(
-                    name="litellm-config-volume",
-                    storage_type="Secret",
-                    secrets=[
-                        azure_native.app.SecretVolumeItemArgs(
-                            secret_ref="config-yaml",  # Reference to secret name
-                            path="config.yaml",  # File name within the mount
-                        )
-                    ],
+        for file_path in all_files:
+            secret_name = (
+                file_path.name.replace(".", "-").replace(" ", "-").replace("_", "-")
+            )
+            inline_secrets[secret_name] = read_file_content(file_path)
+            secret_volume_items.append(
+                azure_native.app.SecretVolumeItemArgs(
+                    secret_ref=secret_name,
+                    path=file_path.name,
                 )
-            ]
+            )
 
-            volume_mounts = [
-                azure_native.app.VolumeMountArgs(
-                    volume_name="litellm-config-volume",
-                    mount_path="/app/config",  # Mount directory
-                )
-            ]
+        # Configure volume and volume mount that references the secret
+        volumes = [
+            azure_native.app.VolumeArgs(
+                name="litellm-config-volume",
+                storage_type="Secret",
+                secrets=secret_volume_items,
+            )
+        ]
 
-            # LiteLLM expects: --config /app/config/config.yaml
-            command_args = ["--config", "/app/config/config.yaml"]
-        else:
-            raise FileNotFoundError(f"Config file not found: {config_file}")
+        volume_mounts = [
+            azure_native.app.VolumeMountArgs(
+                volume_name="litellm-config-volume",
+                mount_path="/app/config",  # Mount directory
+            )
+        ]
+
+        # LiteLLM expects: --config /app/config/<actual-config-filename>
+        command_args = ["--config", f"/app/config/{config_filename}"]
 
     # Create container app
     return create_container_app_with_key_vault_secrets(
