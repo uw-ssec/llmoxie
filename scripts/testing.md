@@ -46,21 +46,7 @@ docker compose up -d db azurite
 docker compose ps db azurite  # wait for both to be healthy
 ```
 
-### 2. Create the blob container
-
-Azurite uses fixed well-known dev credentials. `azure-storage-blob` is pulled in
-by `adlfs`:
-
-```bash
-python -c "
-from azure.storage.blob import BlobServiceClient
-cs = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;'
-BlobServiceClient.from_connection_string(cs).create_container('pg-backups')
-print('Container created.')
-"
-```
-
-### 3. Set environment variables
+### 2. Set environment variables
 
 Pull DB credentials from `docker/.env`:
 
@@ -69,6 +55,16 @@ export DATABASE_URL="postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:
 
 # Azurite fixed dev credentials — public, safe to use as-is
 export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+```
+
+### 2. Create the blob container
+
+Azurite uses fixed well-known dev credentials:
+
+```bash
+az storage container create \
+  --name pg-backups \
+  --connection-string "$AZURE_STORAGE_CONNECTION_STRING"
 ```
 
 ### 4. Confirm destination in config
@@ -101,12 +97,11 @@ Done. Retained 1 backup(s) under az://pg-backups/llmaven/postgres/
 ### 6. Verify the backup landed
 
 ```bash
-python -c "
-from azure.storage.blob import BlobServiceClient
-cs = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;'
-cc = BlobServiceClient.from_connection_string(cs).get_container_client('pg-backups')
-for b in cc.list_blobs(): print(b.name, b.size)
-"
+az storage blob list \
+  --container-name pg-backups \
+  --prefix llmaven/ \
+  --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+  --output table
 ```
 
 ### 7. Test retention
@@ -118,15 +113,18 @@ Azurite.
 ### 8. Verify the dump is valid
 
 ```bash
-python -c "
-from azure.storage.blob import BlobServiceClient
-cs = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;'
-cc = BlobServiceClient.from_connection_string(cs).get_container_client('pg-backups')
-blobs = list(cc.list_blobs(name_starts_with='llmaven/postgres/'))
-data = cc.download_blob(blobs[-1].name).readall()
-open('/tmp/test.dump', 'wb').write(data)
-print('Downloaded', blobs[-1].name)
-"
+BLOB_NAME=$(az storage blob list \
+  --container-name pg-backups \
+  --prefix llmaven/postgres/ \
+  --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+  --query '[-1].name' -o tsv)
+
+az storage blob download \
+  --container-name pg-backups \
+  --name "$BLOB_NAME" \
+  --file /tmp/test.dump \
+  --connection-string "$AZURE_STORAGE_CONNECTION_STRING"
+
 pg_restore --list /tmp/test.dump | head -20
 ```
 

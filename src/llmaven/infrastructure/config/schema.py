@@ -284,7 +284,8 @@ class BackupJobConfig(BaseModel):
         default="ghcr.io/uw-ssec/llmaven-backup:latest",
         description="Backup container image",
     )
-    schedule: str = Field(default="0 2 * * *", description="CRON schedule (UTC)")
+    # Daily at 10:00 AM UTC — every day of the week, every month
+    schedule: str = Field(default="0 10 * * *", description="CRON schedule (UTC)")
     destination: str = Field(
         default="az://pg-backups/llmaven/",
         description="fsspec destination URL (az:// or s3://)",
