@@ -284,9 +284,7 @@ class BackupJobConfig(BaseModel):
         default="ghcr.io/uw-ssec/llmaven-backup:latest",
         description="Backup container image",
     )
-    schedule: str = Field(
-        default="0 2 * * *", description="CRON schedule (UTC)"
-    )
+    schedule: str = Field(default="0 2 * * *", description="CRON schedule (UTC)")
     destination: str = Field(
         default="az://pg-backups/llmaven/",
         description="fsspec destination URL (az:// or s3://)",
@@ -341,7 +339,8 @@ class LLMavenConfig(BaseModel):
         default_factory=SecurityConfig, description="Security configuration"
     )
     backup_job: BackupJobConfig = Field(
-        default_factory=BackupJobConfig, description="Scheduled backup job configuration"
+        default_factory=BackupJobConfig,
+        description="Scheduled backup job configuration",
     )
     tags: Dict[str, str] = Field(
         default_factory=lambda: {

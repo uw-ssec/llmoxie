@@ -17,7 +17,6 @@ def create_backup_storage_program(config_path: Path):
     """Return an inline Pulumi program that provisions backup storage."""
 
     def backup_storage():
-        from pathlib import Path as _Path
 
         import pulumi
         import pulumi_azure_native as azure_native

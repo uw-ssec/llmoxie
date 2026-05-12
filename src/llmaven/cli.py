@@ -1209,10 +1209,15 @@ def backup_infra_output(
     """
     from pathlib import Path
 
-    from llmaven.deployment.deploy_backup import DeploymentError, get_backup_stack_output
+    from llmaven.deployment.deploy_backup import (
+        DeploymentError,
+        get_backup_stack_output,
+    )
 
     if secret is None and name is None:
-        typer.echo("✗ Provide --secret <output-name> or --name <output-name>.", err=True)
+        typer.echo(
+            "✗ Provide --secret <output-name> or --name <output-name>.", err=True
+        )
         sys.exit(1)
     if secret is not None and name is not None:
         typer.echo("✗ --secret and --name are mutually exclusive.", err=True)

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pulumi import automation as auto
 
-from .deploy import DeploymentError, _get_storage_key, _run_az_command
+from .deploy import DeploymentError, _get_storage_key
 from ..infrastructure_backup.main import create_backup_storage_program
 
 CONTAINER_NAME = "pulumi-state"

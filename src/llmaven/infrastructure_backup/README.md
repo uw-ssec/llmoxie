@@ -1,6 +1,9 @@
 # LLMaven PostgreSQL Backup
 
-Secondary backup safety net for the Azure PostgreSQL Flexible Server. It runs independently of the Azure-native point-in-time backups so that an accidental database deletion (which would also delete those backups) does not result in data loss.
+Secondary backup safety net for the Azure PostgreSQL Flexible Server. It runs
+independently of the Azure-native point-in-time backups so that an accidental
+database deletion (which would also delete those backups) does not result in
+data loss.
 
 ## How it works
 
@@ -23,7 +26,10 @@ Secondary backup safety net for the Azure PostgreSQL Flexible Server. It runs in
 └─────────────────────────────────────────────────┘
 ```
 
-The Container Apps Job runs inside the same VNet as the database, so PostgreSQL does not need a public endpoint. `pg_dump` stdout is streamed directly to Azure Blob Storage via [fsspec](https://filesystem-spec.readthedocs.io/) — no bytes are written to local disk.
+The Container Apps Job runs inside the same VNet as the database, so PostgreSQL
+does not need a public endpoint. `pg_dump` stdout is streamed directly to Azure
+Blob Storage via [fsspec](https://filesystem-spec.readthedocs.io/) — no bytes
+are written to local disk.
 
 ### Two Pulumi stacks, intentionally separated
 
@@ -32,17 +38,22 @@ The Container Apps Job runs inside the same VNet as the database, so PostgreSQL 
 | **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else                     |
 | **Backup storage** | `llmaven-backup-config.yaml` | Resource group, storage account, `pg-backups` container |
 
-Keeping the storage account in a separate stack means destroying the main stack (e.g. tearing down a dev environment) does not touch the backup data.
+Keeping the storage account in a separate stack means destroying the main stack
+(e.g. tearing down a dev environment) does not touch the backup data.
 
 ### Authentication
 
-Storage access uses the storage account key embedded in a connection string. No role assignments are required anywhere. The connection string is stored as an inline Container Apps Job secret — it never appears in config files or Pulumi state in plain text.
+Storage access uses the storage account key embedded in a connection string. No
+role assignments are required anywhere. The connection string is stored as an
+inline Container Apps Job secret — it never appears in config files or Pulumi
+state in plain text.
 
 ---
 
 ## Configuration
 
-Backup job settings live in the main config (`llmaven-config.yaml`) under `backup_job`:
+Backup job settings live in the main config (`llmaven-config.yaml`) under
+`backup_job`:
 
 ```yaml
 backup_job:
@@ -71,7 +82,9 @@ All fields have defaults; set `enabled: true` to activate.
 llmaven backup-infra deploy --config llmaven-backup-config.yaml
 ```
 
-This creates the resource group, storage account, and `pg-backups` container in the isolated backup stack. On completion, the stack prints its outputs including `backup_storage_connection_string` (shown as `(secret)`).
+This creates the resource group, storage account, and `pg-backups` container in
+the isolated backup stack. On completion, the stack prints its outputs including
+`backup_storage_connection_string` (shown as `(secret)`).
 
 **Step 2 — Retrieve the connection string**
 
@@ -109,13 +122,15 @@ backup_job:
 llmaven deploy --config llmaven-config.yaml
 ```
 
-The job is created in the existing Container Apps Environment and will run on its first scheduled trigger.
+The job is created in the existing Container Apps Environment and will run on
+its first scheduled trigger.
 
 ---
 
 ### Day-to-day
 
-The job runs automatically on the configured schedule (`0 2 * * *` by default). No operator action is required.
+The job runs automatically on the configured schedule (`0 2 * * *` by default).
+No operator action is required.
 
 Monitor job history in the Azure Portal:
 
@@ -208,4 +223,6 @@ llmaven deploy --config llmaven-config.yaml
 
 ## Local testing
 
-See [`scripts/testing.md`](../../scripts/testing.md) for instructions on running the backup script locally against Azurite (Azure Blob emulator) and the docker-compose PostgreSQL instance.
+See [`scripts/testing.md`](../../scripts/testing.md) for instructions on running
+the backup script locally against Azurite (Azure Blob emulator) and the
+docker-compose PostgreSQL instance.

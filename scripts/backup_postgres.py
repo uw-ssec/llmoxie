@@ -26,7 +26,7 @@ def _load_config(config_path: str) -> dict:
 def _parse_db_name(db_url: str) -> str:
     name = urlparse(db_url).path.lstrip("/")
     if not name:
-        raise ValueError(f"Could not parse database name from connection string")
+        raise ValueError("Could not parse database name from connection string")
     return name
 
 
@@ -97,7 +97,7 @@ def backup(config_path: str | None = None) -> None:
             f"pg_dump exited {proc.returncode}:\n{stderr_out.decode(errors='replace')}"
         )
 
-    print(f"Upload complete.")
+    print("Upload complete.")
 
     # Prune backups beyond keep_last_n
     fs, root = fsspec.core.url_to_fs(destination, **storage_opts)
@@ -125,7 +125,7 @@ def main() -> None:
         "--config",
         default=None,
         help="Path to YAML config file. Omit to read all settings from env vars "
-             "(DATABASE_URL, BACKUP_DESTINATION, BACKUP_KEEP_LAST_N).",
+        "(DATABASE_URL, BACKUP_DESTINATION, BACKUP_KEEP_LAST_N).",
     )
     args = parser.parse_args()
 
