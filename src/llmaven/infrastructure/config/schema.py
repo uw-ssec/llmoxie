@@ -276,6 +276,33 @@ class SecurityConfig(BaseModel):
     )
 
 
+class BackupJobConfig(BaseModel):
+    """Container Apps Job configuration for scheduled PostgreSQL backups."""
+
+    enabled: bool = Field(default=False, description="Enable the backup job")
+    image: str = Field(
+        default="ghcr.io/uw-ssec/llmaven-backup:latest",
+        description="Backup container image",
+    )
+    schedule: str = Field(
+        default="0 2 * * *", description="CRON schedule (UTC)"
+    )
+    destination: str = Field(
+        default="az://pg-backups/llmaven/",
+        description="fsspec destination URL (az:// or s3://)",
+    )
+    keep_last_n: int = Field(default=7, ge=1, description="Number of backups to retain")
+    cpu: float = Field(default=0.25, description="CPU cores", ge=0.25)
+    memory: str = Field(default="0.5Gi", description="Memory allocation")
+    replica_timeout: int = Field(
+        default=1800, description="Max job runtime in seconds", ge=60
+    )
+    connection_string_env: str = Field(
+        default="BACKUP_STORAGE_CONNECTION_STRING",
+        description="Env var holding the backup storage account connection string",
+    )
+
+
 class LLMavenConfig(BaseModel):
     """Root configuration model for LLMaven deployment."""
 
@@ -312,6 +339,9 @@ class LLMavenConfig(BaseModel):
     )
     security: SecurityConfig = Field(
         default_factory=SecurityConfig, description="Security configuration"
+    )
+    backup_job: BackupJobConfig = Field(
+        default_factory=BackupJobConfig, description="Scheduled backup job configuration"
     )
     tags: Dict[str, str] = Field(
         default_factory=lambda: {

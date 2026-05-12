@@ -11,7 +11,7 @@ import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import LLMavenConfig
+from ..config.schema import LLMavenConfig, BackupJobConfig
 
 
 def create_container_apps_environment(
@@ -334,3 +334,99 @@ def create_container_app_with_key_vault_secrets(
     )
 
     return container_app
+
+
+def create_backup_job(
+    resource_group_name: Output[str],
+    location: str,
+    managed_environment_id: Output[str],
+    db_url: Output[str],
+    storage_conn_str: str,
+    config: LLMavenConfig,
+    tags: Dict[str, str],
+) -> azure_native.app.Job:
+    """Create a scheduled Container Apps Job that streams pg_dump to blob storage.
+
+    The job runs inside the existing VNet, giving it private access to PostgreSQL.
+    Both secrets are stored inline (no Key Vault, no managed identity required).
+
+    Args:
+        resource_group_name: Resource group for the job
+        location: Azure region
+        managed_environment_id: Existing Container Apps Environment ID
+        db_url: PostgreSQL connection string as a Pulumi Output
+        storage_conn_str: Backup storage account connection string (plain string,
+                          read from env at deploy time)
+        config: LLMaven configuration
+        tags: Resource tags
+
+    Returns:
+        Job resource
+    """
+    project_name = config.project.name
+    environment = config.project.environment
+    job_cfg: BackupJobConfig = config.backup_job
+
+    job = azure_native.app.Job(
+        f"backup-job-{environment}",
+        resource_group_name=resource_group_name,
+        job_name=f"{project_name}-backup-{environment}",
+        location=location,
+        tags=tags,
+        managed_environment_id=managed_environment_id,
+        configuration=azure_native.app.JobConfigurationArgs(
+            trigger_type=azure_native.app.TriggerType.SCHEDULE,
+            replica_retry_limit=2,
+            replica_timeout=job_cfg.replica_timeout,
+            schedule_trigger_config=azure_native.app.JobConfigurationScheduleTriggerConfigArgs(
+                cron_expression=job_cfg.schedule,
+                parallelism=1,
+                replica_completion_count=1,
+            ),
+            secrets=[
+                azure_native.app.SecretArgs(
+                    name="database-url",
+                    value=db_url,
+                ),
+                azure_native.app.SecretArgs(
+                    name="backup-storage-conn-str",
+                    value=storage_conn_str,
+                ),
+            ],
+        ),
+        template=azure_native.app.JobTemplateArgs(
+            containers=[
+                azure_native.app.ContainerArgs(
+                    name="backup",
+                    image=job_cfg.image,
+                    resources=azure_native.app.ContainerResourcesArgs(
+                        cpu=job_cfg.cpu,
+                        memory=job_cfg.memory,
+                    ),
+                    env=[
+                        azure_native.app.EnvironmentVarArgs(
+                            name="DATABASE_URL",
+                            secret_ref="database-url",
+                        ),
+                        azure_native.app.EnvironmentVarArgs(
+                            name="AZURE_STORAGE_CONNECTION_STRING",
+                            secret_ref="backup-storage-conn-str",
+                        ),
+                        azure_native.app.EnvironmentVarArgs(
+                            name="BACKUP_DESTINATION",
+                            value=job_cfg.destination,
+                        ),
+                        azure_native.app.EnvironmentVarArgs(
+                            name="BACKUP_KEEP_LAST_N",
+                            value=str(job_cfg.keep_last_n),
+                        ),
+                    ],
+                )
+            ],
+        ),
+    )
+
+    pulumi.export(f"backup_job_name_{environment}", job.name)
+    pulumi.export(f"backup_job_schedule_{environment}", job_cfg.schedule)
+
+    return job

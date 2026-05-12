@@ -41,12 +41,15 @@ def create_pulumi_program(config_path: Path):
         8. Managed Identities for services
         9. Container Apps (MLflow and LiteLLM)
         """
+        import os
+
         import pulumi
         import pulumi_azure_native as azure_native
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
         from llmaven.infrastructure.resources import (
             SecretsManager,
+            create_backup_job,
             create_container_apps_environment,
             create_databases,
             create_key_vault,
@@ -400,6 +403,35 @@ def create_pulumi_program(config_path: Path):
                     lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
                 ),
             )
+
+        # 9. Backup Container Apps Job
+        if config.backup_job and config.backup_job.enabled:
+            pulumi.log.info("Creating backup Container Apps Job...")
+            storage_conn_str = os.environ.get(config.backup_job.connection_string_env)
+            if not storage_conn_str:
+                pulumi.log.warn(
+                    f"backup_job.enabled=true but {config.backup_job.connection_string_env} "
+                    "is not set — skipping backup job"
+                )
+            else:
+                # Reconstruct DB URL from Pulumi Outputs already in scope
+                db_url = pulumi.Output.all(
+                    postgres_server.fully_qualified_domain_name, admin_password
+                ).apply(
+                    lambda args: (
+                        f"postgresql://{config.database.admin_login}:{args[1]}"
+                        f"@{args[0]}/llmaven"
+                    )
+                )
+                create_backup_job(
+                    resource_group_name=resource_group,
+                    location=location,
+                    managed_environment_id=container_env.id,
+                    db_url=db_url,
+                    storage_conn_str=storage_conn_str,
+                    config=config,
+                    tags=config.tags,
+                )
 
         # Export common outputs
         pulumi.export("resource_group_name", resource_group)
