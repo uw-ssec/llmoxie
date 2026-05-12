@@ -373,7 +373,7 @@ def create_backup_job(
         job_name=f"{project_name}-backup-{environment}",
         location=location,
         tags=tags,
-        managed_environment_id=managed_environment_id,
+        environment_id=managed_environment_id,
         configuration=azure_native.app.JobConfigurationArgs(
             trigger_type=azure_native.app.TriggerType.SCHEDULE,
             replica_retry_limit=2,

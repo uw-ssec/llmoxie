@@ -10,9 +10,9 @@ Secondary backup safety net for the Azure PostgreSQL Flexible Server. It runs in
 │                                                 │
 │  Container Apps Environment (VNet-integrated)   │
 │    └── Container Apps Job  ──scheduled daily──► │──┐
-│         pg_dump (streams, no disk write)         │  │
+│         pg_dump (streams, no disk write)        │  │
 └─────────────────────────────────────────────────┘  │
-                                                      │ az:// connection string
+                                                     │ az:// connection string
 ┌─────────────────────────────────────────────────┐  │
 │  Backup storage stack  (rg-llmaven-backup-{env})│  │
 │                                                 │◄─┘
@@ -27,9 +27,9 @@ The Container Apps Job runs inside the same VNet as the database, so PostgreSQL 
 
 ### Two Pulumi stacks, intentionally separated
 
-| Stack | Config file | What it owns |
-|---|---|---|
-| **Main** | `llmaven-config.yaml` | Container Apps Job, everything else |
+| Stack              | Config file                  | What it owns                                            |
+| ------------------ | ---------------------------- | ------------------------------------------------------- |
+| **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else                     |
 | **Backup storage** | `llmaven-backup-config.yaml` | Resource group, storage account, `pg-backups` container |
 
 Keeping the storage account in a separate stack means destroying the main stack (e.g. tearing down a dev environment) does not touch the backup data.
@@ -48,12 +48,12 @@ Backup job settings live in the main config (`llmaven-config.yaml`) under `backu
 backup_job:
   enabled: true
   image: ghcr.io/uw-ssec/llmaven-backup:latest
-  schedule: "0 2 * * *"          # daily at 2am UTC
+  schedule: "0 2 * * *" # daily at 2am UTC
   destination: "az://pg-backups/llmaven/"
-  keep_last_n: 7                 # retain the 7 most recent dumps, delete older ones
+  keep_last_n: 7 # retain the 7 most recent dumps, delete older ones
   cpu: 0.25
   memory: 0.5Gi
-  replica_timeout: 1800          # abort if the job runs longer than 30 minutes
+  replica_timeout: 1800 # abort if the job runs longer than 30 minutes
   connection_string_env: BACKUP_STORAGE_CONNECTION_STRING
 ```
 
@@ -118,6 +118,7 @@ The job is created in the existing Container Apps Environment and will run on it
 The job runs automatically on the configured schedule (`0 2 * * *` by default). No operator action is required.
 
 Monitor job history in the Azure Portal:
+
 > Container Apps → Jobs → `llmaven-backup-{env}` → Execution history
 
 Or via the Azure CLI:

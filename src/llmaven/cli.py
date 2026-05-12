@@ -43,6 +43,14 @@ infra_app = typer.Typer(
 )
 app.add_typer(infra_app)
 
+# Create subcommand for backup storage infrastructure management
+backup_infra_app = typer.Typer(
+    name="backup-infra",
+    help="Backup storage infrastructure commands",
+    add_completion=False,
+)
+app.add_typer(backup_infra_app)
+
 # Create subcommand for agentic RAG operations
 agentic_app = typer.Typer(
     name="agentic",
@@ -1099,6 +1107,133 @@ def cancel(
         sys.exit(1)
     except Exception as e:
         typer.echo(f"✗ Cancel failed: {e}", err=True)
+        sys.exit(1)
+
+
+@backup_infra_app.command(name="deploy")
+def backup_infra_deploy(
+    config: Optional[str] = typer.Option(
+        "llmaven-backup-config.yaml",
+        "--config",
+        "-c",
+        help="Path to backup configuration file",
+    ),
+    preview: bool = typer.Option(
+        False,
+        "--preview",
+        "-p",
+        is_flag=True,
+        help="Preview changes without deploying",
+    ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="Automatically approve deployment",
+    ),
+) -> None:
+    """Deploy the backup storage infrastructure to Azure.
+
+    Creates the resource group, storage account, and pg-backups container
+    in an isolated stack. This stack is intentionally separate from the main
+    stack so that backups survive a main-stack destroy.
+
+    Examples:
+        Preview deployment:
+            llmaven backup-infra deploy --preview
+
+        Deploy with auto-approval:
+            llmaven backup-infra deploy --yes
+
+        Deploy with explicit config path:
+            llmaven backup-infra deploy --config llmaven-backup-config.yaml
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy_backup import DeploymentError, deploy_backup_storage
+
+    config_path = Path(config)
+
+    try:
+        deploy_backup_storage(
+            config_path=config_path,
+            preview=preview,
+            auto_approve=auto_approve,
+        )
+    except DeploymentError as e:
+        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
+        sys.exit(1)
+
+
+@backup_infra_app.command(name="output")
+def backup_infra_output(
+    config: Optional[str] = typer.Option(
+        "llmaven-backup-config.yaml",
+        "--config",
+        "-c",
+        help="Path to backup configuration file",
+    ),
+    secret: Optional[str] = typer.Option(
+        None,
+        "--secret",
+        help="Name of a secret output to retrieve (revealed in plaintext)",
+    ),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Name of a non-secret output to retrieve",
+    ),
+) -> None:
+    """Print a backup stack output value to stdout.
+
+    Use --secret to retrieve and reveal secret outputs (e.g. connection strings).
+    Use --name for non-secret outputs. Exactly one of --secret or --name is required.
+
+    The value is printed to stdout so it can be captured by a subshell.
+
+    Examples:
+        Retrieve the storage connection string:
+            llmaven backup-infra output \\
+              --config llmaven-backup-config.yaml \\
+              --secret backup_storage_connection_string
+
+        Capture into an environment variable:
+            export BACKUP_STORAGE_CONNECTION_STRING=$(llmaven backup-infra output \\
+              --config llmaven-backup-config.yaml \\
+              --secret backup_storage_connection_string)
+    """
+    from pathlib import Path
+
+    from llmaven.deployment.deploy_backup import DeploymentError, get_backup_stack_output
+
+    if secret is None and name is None:
+        typer.echo("✗ Provide --secret <output-name> or --name <output-name>.", err=True)
+        sys.exit(1)
+    if secret is not None and name is not None:
+        typer.echo("✗ --secret and --name are mutually exclusive.", err=True)
+        sys.exit(1)
+
+    config_path = Path(config)
+    output_name = secret if secret is not None else name
+    reveal = secret is not None
+
+    try:
+        value = get_backup_stack_output(
+            config_path=config_path,
+            output_name=output_name,
+            reveal_secret=reveal,
+        )
+        typer.echo(value)
+    except DeploymentError as e:
+        typer.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        typer.echo(f"✗ Failed to retrieve output: {e}", err=True)
         sys.exit(1)
 
 

@@ -30,8 +30,10 @@ def create_pulumi_program(config_path: Path):
     def llmaven_infra():
         """Main Pulumi program that deploys all LLMaven infrastructure resources.
 
+        Note that this assumes the resource group already exists. It is created as part of initialize_azure_infra() in src/llmaven/deployment/deploy.py
+
         This function orchestrates the deployment of Azure resources in the following order:
-        1. Resource Group and Virtual Network with subnets
+        1. The Virtual Network with subnets
         2. Key Vault for secrets management
         3. Secrets Manager initialization
         4. PostgreSQL Flexible Server and databases
@@ -41,6 +43,7 @@ def create_pulumi_program(config_path: Path):
         8. Managed Identities for services
         9. Container Apps (MLflow and LiteLLM)
         """
+
         import os
 
         import pulumi

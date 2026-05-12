@@ -56,7 +56,9 @@ def get_backup_stack(config_path: Path) -> auto.Stack:
 
     os.environ.setdefault(
         "PULUMI_BACKEND_URL",
-        PULUMI_BACKEND_URL.format(container=CONTAINER_NAME, storage_account=state_store),
+        PULUMI_BACKEND_URL.format(
+            container=CONTAINER_NAME, storage_account=state_store
+        ),
     )
     os.environ.setdefault("AZURE_STORAGE_ACCOUNT", state_store)
     storage_key = _get_storage_key(rg_name, state_store)
@@ -148,8 +150,12 @@ def deploy_backup_storage(
         if conn_str_output:
             print("Next step — set this before deploying the main stack:")
             print()
-            print("  export BACKUP_STORAGE_CONNECTION_STRING=$(llmaven backup-infra output \\")
-            print(f"    --config {config_path} --secret backup_storage_connection_string)")
+            print(
+                "  export BACKUP_STORAGE_CONNECTION_STRING=$(llmaven backup-infra output \\"
+            )
+            print(
+                f"    --config {config_path} --secret backup_storage_connection_string)"
+            )
             print()
 
     except auto.errors.CommandError as e:
@@ -158,7 +164,9 @@ def deploy_backup_storage(
         raise DeploymentError(f"Backup storage deployment failed: {e}")
 
 
-def get_backup_stack_output(config_path: Path, output_name: str, reveal_secret: bool = False) -> str:
+def get_backup_stack_output(
+    config_path: Path, output_name: str, reveal_secret: bool = False
+) -> str:
     """Print a specific stack output value.
 
     Args:
