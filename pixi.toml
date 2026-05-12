@@ -80,7 +80,12 @@ streamlit = "*"
 tenacity = "==8.5.0"
 
 [environments]
-llmaven = { features = ["docker", "llmaven", "pulumi", "pre-commit"], no-default-feature = true }
+llmaven = { features = [
+    "docker",
+    "llmaven",
+    "pulumi",
+    "pre-commit",
+], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -88,11 +93,18 @@ infra = { features = [
 proxy = { features = [
     "proxy",
 ], solve-group = "proxy", no-default-feature = true }
+loadtest = { features = [
+    "loadtest",
+], solve-group = "loadtest", no-default-feature = true }
 
 # === LLMaven API dependencies and tasks ===
 
 [feature.llmaven.pypi-dependencies]
-llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
+llmaven = { path = ".", editable = true, extras = [
+    "test",
+    "deploy",
+    "production",
+] }
 mlflow = "==3.10.0"
 jsonlines = ">=3.1.0,<4.0.0"
 
@@ -141,6 +153,16 @@ restart = { cmd = "docker-compose restart", cwd = "docker" }
 clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 # === End Docker related dependencies and tasks ===
+
+# === Load testing dependencies ===
+
+[feature.loadtest.dependencies]
+python = "3.12.*"
+
+[feature.loadtest.pypi-dependencies]
+llmaven = { path = ".", editable = true, extras = ["loadtest"] }
+
+# === End Load testing dependencies ===
 
 [feature.pre-commit.dependencies]
 pre-commit = ">=3.4.0,<4"
