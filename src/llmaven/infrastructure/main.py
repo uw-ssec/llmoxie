@@ -417,14 +417,13 @@ def create_pulumi_program(config_path: Path):
                     "is not set — skipping backup job"
                 )
             else:
-                # Reconstruct DB URL from Pulumi Outputs already in scope
-                db_url = pulumi.Output.all(
-                    postgres_server.fully_qualified_domain_name, admin_password
-                ).apply(
-                    lambda args: (
-                        f"postgresql://{config.database.admin_login}:{args[1]}"
-                        f"@{args[0]}/llmaven"
-                    )
+                from llmaven.infrastructure.resources import get_connection_string
+
+                db_url = get_connection_string(
+                    postgres_server.fully_qualified_domain_name,
+                    config.database.admin_login,
+                    admin_password,
+                    "llmaven",
                 )
                 create_backup_job(
                     resource_group_name=resource_group,
