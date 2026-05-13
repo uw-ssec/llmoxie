@@ -1143,9 +1143,15 @@ def loadtest(
         readable=True,
         resolve_path=True,
     ),
-    workers: int = typer.Option(50, "--workers", "-w", min=1, help="Number of concurrent virtual users"),
-    duration: int = typer.Option(60, "--duration", "-d", min=5, help="Test duration in seconds (after ramp-up)"),
-    ramp_up: int = typer.Option(10, "--ramp-up", min=0, help="Seconds to ramp up to full concurrency"),
+    workers: int = typer.Option(
+        50, "--workers", "-w", min=1, help="Number of concurrent virtual users"
+    ),
+    duration: int = typer.Option(
+        60, "--duration", "-d", min=5, help="Test duration in seconds (after ramp-up)"
+    ),
+    ramp_up: int = typer.Option(
+        10, "--ramp-up", min=0, help="Seconds to ramp up to full concurrency"
+    ),
     api_path: str = typer.Option(
         "/v1/messages",
         "--api-path",
