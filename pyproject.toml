@@ -66,6 +66,9 @@ deploy = [
     "grpcio>=1.66.2",
     "grpcio-status==1.60.1"
 ]
+loadtest = [
+    "locust>=2.31.0",
+]
 
 [project.scripts]
 llmaven = "llmaven.cli:main"
