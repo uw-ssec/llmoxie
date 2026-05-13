@@ -288,7 +288,7 @@ class BackupJobConfig(BaseModel):
     schedule: str = Field(default="0 10 * * *", description="CRON schedule (UTC)")
     destination: str = Field(
         default="az://pg-backups/llmaven/",
-        description="fsspec destination URL (az:// or s3://)",
+        description="Azure Blob Storage destination URL (az://)",
     )
     keep_last_n: int = Field(default=7, ge=1, description="Number of backups to retain")
     cpu: float = Field(default=0.25, description="CPU cores", ge=0.25)

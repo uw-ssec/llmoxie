@@ -1,9 +1,8 @@
-"""Backup a PostgreSQL database to cloud storage (S3 or Azure Blob) via fsspec.
+"""Backup a PostgreSQL database to Azure Blob Storage via fsspec.
 
 Streams pg_dump stdout directly to the destination — no local disk writes.
-Destination URL controls the backend:
+Destination URL format:
   az://container/prefix/     → Azure Blob (adlfs)
-  s3://bucket/prefix/        → AWS S3 (s3fs)
 """
 
 import argparse
@@ -31,28 +30,24 @@ def _parse_db_name(db_url: str) -> str:
 
 
 def _storage_options(destination: str) -> dict:
-    """Build fsspec storage_options from env vars based on destination URL scheme."""
+    """Build fsspec storage_options from env vars for Azure Blob."""
     scheme = destination.split("://")[0]
-    if scheme in ("az", "abfs"):
-        # AZURE_STORAGE_CONNECTION_STRING takes priority — used for Azurite and
-        # other non-cloud endpoints where the endpoint URL differs from the default.
-        conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-        if conn_str:
-            return {"connection_string": conn_str}
-        opts = {}
-        account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
-        account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
-        if account_name:
-            opts["account_name"] = account_name
-        if account_key:
-            opts["account_key"] = account_key
-        return opts
-    # S3: boto3 picks up AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY automatically.
-    # AWS_ENDPOINT_URL overrides the endpoint — used for MinIO and other S3-compatible stores.
-    endpoint_url = os.getenv("AWS_ENDPOINT_URL")
-    if endpoint_url:
-        return {"endpoint_url": endpoint_url}
-    return {}
+    if scheme not in ("az", "abfs"):
+        raise ValueError(f"Unsupported destination scheme: {scheme}. Only az:// is supported.")
+    
+    # AZURE_STORAGE_CONNECTION_STRING takes priority — used for Azurite and
+    # other non-cloud endpoints where the endpoint URL differs from the default.
+    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if conn_str:
+        return {"connection_string": conn_str}
+    opts = {}
+    account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+    account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
+    if account_name:
+        opts["account_name"] = account_name
+    if account_key:
+        opts["account_key"] = account_key
+    return opts
 
 
 def backup(config_path: str | None = None) -> None:
@@ -119,7 +114,7 @@ def backup(config_path: str | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Stream a pg_dump backup to cloud storage (S3 or Azure Blob)"
+        description="Stream a pg_dump backup to Azure Blob Storage"
     )
     parser.add_argument(
         "--config",

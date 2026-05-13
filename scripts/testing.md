@@ -1,7 +1,7 @@
 # Testing the PostgreSQL backup script locally
 
-Uses the docker-compose stack (`docker/docker-compose.yml`). Azurite (Azure Blob
-emulator) and MinIO (S3 emulator) are both available.
+Uses the docker-compose stack (`docker/docker-compose.yml`) with Azurite (Azure
+Blob emulator).
 
 ## Prerequisites
 
@@ -127,46 +127,3 @@ az storage blob download \
 
 pg_restore --list /tmp/test.dump | head -20
 ```
-
----
-
-## AWS S3 (MinIO)
-
-MinIO is already running in the stack and the `llmaven` bucket is pre-created by
-the `createbuckets` service.
-
-### 1. Start required services
-
-```bash
-cd docker
-docker compose up -d db minio createbuckets
-```
-
-### 2. Update the destination in the config
-
-```yaml
-pg_backup:
-  destination: "s3://llmaven/pg-backups/"
-```
-
-### 3. Set environment variables
-
-```bash
-export DATABASE_URL="postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:<POSTGRES_PORT>/<POSTGRES_DB>"
-export AWS_ENDPOINT_URL="http://localhost:9000"
-export AWS_ACCESS_KEY_ID="<MINIO_ROOT_USER from docker/.env>"
-export AWS_SECRET_ACCESS_KEY="<MINIO_ROOT_PASSWORD from docker/.env>"
-```
-
-### 4. Run the backup
-
-```bash
-pixi run -e backup backup
-# or directly:
-pixi run -e backup python scripts/backup_postgres.py --config llmaven-backup-config.yaml
-```
-
-### 5. Verify via MinIO console
-
-Open http://localhost:9001 and log in with the MinIO root credentials. Navigate
-to the `llmaven` bucket to confirm the dump file is present.

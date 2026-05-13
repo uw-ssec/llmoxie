@@ -33,13 +33,15 @@ are written to local disk.
 
 ### Two Pulumi stacks, intentionally separated
 
-| Stack              | Config file                  | What it owns                                                        |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------- |
-| **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else                                 |
-| **Backup storage** | `llmaven-backup-config.yaml` | Storage account and `pg-backups` container in an existing backup RG |
+| Stack              | Config file                  | What it owns                                |
+| ------------------ | ---------------------------- | ------------------------------------------- |
+| **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else         |
+| **Backup storage** | `llmaven-backup-config.yaml` | Storage account, `pg-backups` container     |
 
-Keeping the storage account in a separate stack means destroying the main stack
-(e.g. tearing down a dev environment) does not touch the backup data.
+The backup storage stack uses an existing resource group (specified in the
+config) and provisions only the storage account and container within it. Keeping
+the storage account in a separate stack means destroying the main stack (e.g.
+tearing down a dev environment) does not touch the backup data.
 
 ### Authentication
 
@@ -82,8 +84,9 @@ All fields have defaults; set `enabled: true` to activate.
 llmaven backup-infra deploy --config llmaven-backup-config.yaml
 ```
 
-This creates the resource group, storage account, and `pg-backups` container in
-the isolated backup stack. On completion, the stack prints its outputs including
+This provisions the storage account and `pg-backups` container in the isolated
+backup stack (using the existing resource group specified in the config). On
+completion, the stack prints its outputs including
 `backup_storage_connection_string` (shown as `(secret)`).
 
 **Step 2 — Retrieve the connection string**
