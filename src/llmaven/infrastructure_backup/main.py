@@ -1,8 +1,8 @@
 """Pulumi program for the LLMaven backup storage stack.
 
-Provisions a dedicated resource group and storage account for PostgreSQL backup
-dumps. Intentionally minimal — isolated from the main stack so that a main-stack
-destroy does not affect backup data.
+Uses an existing resource group and provisions a storage account for PostgreSQL
+backup dumps. Intentionally minimal — isolated from the main stack so that a
+main-stack destroy does not affect backup data.
 
 Outputs:
     backup_storage_connection_string  — storage account key-based connection
