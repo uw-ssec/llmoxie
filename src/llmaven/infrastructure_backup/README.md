@@ -33,10 +33,10 @@ are written to local disk.
 
 ### Two Pulumi stacks, intentionally separated
 
-| Stack              | Config file                  | What it owns                                |
-| ------------------ | ---------------------------- | ------------------------------------------- |
-| **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else         |
-| **Backup storage** | `llmaven-backup-config.yaml` | Storage account, `pg-backups` container     |
+| Stack              | Config file                  | What it owns                            |
+| ------------------ | ---------------------------- | --------------------------------------- |
+| **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else     |
+| **Backup storage** | `llmaven-backup-config.yaml` | Storage account, `pg-backups` container |
 
 The backup storage stack uses an existing resource group (specified in the
 config) and provisions only the storage account and container within it. Keeping

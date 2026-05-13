@@ -33,7 +33,9 @@ def _storage_options(destination: str) -> dict:
     """Build fsspec storage_options from env vars for Azure Blob."""
     scheme = destination.split("://")[0]
     if scheme not in ("az", "abfs"):
-        raise ValueError(f"Unsupported destination scheme: {scheme}. Only az:// or abfs:// are supported.")
+        raise ValueError(
+            f"Unsupported destination scheme: {scheme}. Only az:// or abfs:// are supported."
+        )
 
     # AZURE_STORAGE_CONNECTION_STRING takes priority — used for Azurite and
     # other non-cloud endpoints where the endpoint URL differs from the default.
