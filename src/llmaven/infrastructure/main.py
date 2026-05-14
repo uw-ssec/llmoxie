@@ -414,7 +414,10 @@ def create_pulumi_program(config_path: Path):
             if not storage_conn_str:
                 pulumi.log.warn(
                     f"backup_job.enabled=true but {config.backup_job.connection_string_env} "
-                    "is not set — skipping backup job"
+                    "is not set"
+                )
+                raise ValueError(
+                    f"{config.backup_job.connection_string_env} must be set in environment variables to deploy the backup job"
                 )
             else:
                 from urllib.parse import urlparse

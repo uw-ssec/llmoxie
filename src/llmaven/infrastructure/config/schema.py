@@ -297,7 +297,7 @@ class BackupJobConfig(BaseModel):
         default=1800, description="Max job runtime in seconds", ge=60
     )
     connection_string_env: str = Field(
-        default="BACKUP_STORAGE_CONNECTION_STRING",
+        default="LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING",
         description="Env var holding the backup storage account connection string",
     )
 
