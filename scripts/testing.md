@@ -13,7 +13,6 @@ Blob emulator).
 brew install libpq
 # libpq is keg-only — add it to PATH for this session (or add to your shell profile)
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"   # Apple Silicon
-# export PATH="/usr/local/opt/libpq/bin:$PATH"    # Intel Mac
 ```
 
 **Linux (Debian/Ubuntu):**
