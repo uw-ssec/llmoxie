@@ -1,6 +1,7 @@
 """Pulumi resource modules for Azure infrastructure."""
 
 from .container_apps import (
+    create_backup_job,
     create_container_app_with_key_vault_secrets,
     create_container_apps_environment,
 )
@@ -56,6 +57,7 @@ __all__ = [
     # Container Apps resources
     "create_container_apps_environment",
     "create_container_app_with_key_vault_secrets",
+    "create_backup_job",
     # Key Vault resources
     "create_key_vault",
     "create_secret",

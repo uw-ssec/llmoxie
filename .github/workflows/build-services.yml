@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "docker/**"
+      - "scripts/backup_postgres.py"
       - ".github/workflows/build-services.yml"
   release:
     types: [published]
@@ -27,8 +28,13 @@ jobs:
         service:
           - name: mlflow
             dockerfile: mlflow.dockerfile
+            context: ./docker
           - name: litellm
             dockerfile: litellm.dockerfile
+            context: ./docker
+          - name: backup
+            dockerfile: backup.dockerfile
+            context: .
 
     steps:
       - name: Checkout repository
@@ -62,7 +68,7 @@ jobs:
       - name: Build and push ${{ matrix.service.name }} image
         uses: docker/build-push-action@v7
         with:
-          context: ./docker
+          context: ${{ matrix.service.context }}
           file: ./docker/dockerfiles/${{ matrix.service.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -84,6 +90,7 @@ jobs:
           echo "### Images Built" >> $GITHUB_STEP_SUMMARY
           echo "- 🐳 MLflow: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-mlflow\`" >> $GITHUB_STEP_SUMMARY
           echo "- 🐳 LiteLLM: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-litellm\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Backup: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backup\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Registry" >> $GITHUB_STEP_SUMMARY
           echo "Images are available at: [\`${{ env.REGISTRY }}/${{ github.repository }}\`](https://${{ env.REGISTRY }}/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
@@ -92,4 +99,5 @@ jobs:
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-mlflow:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-litellm:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backup:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
