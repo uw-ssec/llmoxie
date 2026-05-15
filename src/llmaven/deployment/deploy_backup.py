@@ -1,8 +1,8 @@
 """Deploy LLMaven backup storage infrastructure to Azure.
 
-Uses an existing resource group and provisions the isolated backup storage stack
-(storage account + pg-backups container). Intended to be deployed once,
-independently of the main stack, so that the backups survive a main-stack destroy.
+Provisions the isolated backup storage stack (resource group, storage account,
+and pg-backups container). Intended to be deployed once, independently of the
+main stack, so that the backups survive a main-stack destroy.
 
 After deployment, copy the `backup_storage_connection_string` output value into
 the BACKUP_STORAGE_CONNECTION_STRING environment variable before deploying the

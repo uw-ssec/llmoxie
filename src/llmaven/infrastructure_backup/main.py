@@ -41,12 +41,18 @@ def create_backup_storage_program(config_path: Path):
         region_suffix = location[:4].replace("-", "").lower()
         sa_name = f"{project_name.replace('-', '')}{environment}{region_suffix}bk"[:24]
 
-        # Resource Group should already exist (created by initialize_azure_infra())
+        # Resource Group — created here so it survives a main-stack destroy
+        rg = azure_native.resources.ResourceGroup(
+            "backup-resource-group",
+            resource_group_name=rg_name,
+            location=location,
+            tags=tags,
+        )
 
         # Storage Account — Standard LRS, no ADLS Gen2 (plain blob storage)
         sa = azure_native.storage.StorageAccount(
             f"backup-storage-{environment}",
-            resource_group_name=rg_name,
+            resource_group_name=rg.name,
             account_name=sa_name,
             location=location,
             tags=tags,
@@ -63,7 +69,7 @@ def create_backup_storage_program(config_path: Path):
         # 3. Blob container for pg_dump files
         azure_native.storage.BlobContainer(
             f"pg-backups-container-{environment}",
-            resource_group_name=rg_name,
+            resource_group_name=rg.name,
             account_name=sa.name,
             container_name="pg-backups",
             public_access=azure_native.storage.PublicAccess.NONE,
@@ -72,7 +78,7 @@ def create_backup_storage_program(config_path: Path):
         # 4. Output: connection string (secret) — operator copies this into
         #    BACKUP_STORAGE_CONNECTION_STRING before deploying the main stack.
         key = get_storage_account_key(
-            resource_group_name=rg_name,
+            resource_group_name=rg.name,
             storage_account_name=sa.name,
         )
         conn_str = get_blob_connection_string(
@@ -81,7 +87,7 @@ def create_backup_storage_program(config_path: Path):
         )
 
         pulumi.export("backup_storage_account_name", sa.name)
-        pulumi.export("backup_resource_group", rg_name)
+        pulumi.export("backup_resource_group", rg.name)
         pulumi.export(
             "backup_storage_connection_string", pulumi.Output.secret(conn_str)
         )

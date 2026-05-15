@@ -38,10 +38,10 @@ are written to local disk.
 | **Main**           | `llmaven-config.yaml`        | Container Apps Job, everything else     |
 | **Backup storage** | `llmaven-backup-config.yaml` | Storage account, `pg-backups` container |
 
-The backup storage stack uses an existing resource group (specified in the
-config) and provisions only the storage account and container within it. Keeping
-the storage account in a separate stack means destroying the main stack (e.g.
-tearing down a dev environment) does not touch the backup data.
+The backup storage stack creates its own resource group and provisions the
+storage account and container within it. Keeping everything in a separate stack
+means destroying the main stack (e.g. tearing down a dev environment) does not
+touch the backup data.
 
 ### Authentication
 
