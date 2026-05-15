@@ -30,8 +30,10 @@ def create_pulumi_program(config_path: Path):
     def llmaven_infra():
         """Main Pulumi program that deploys all LLMaven infrastructure resources.
 
+        Note that this assumes the resource group already exists. It is created as part of initialize_azure_infra() in src/llmaven/deployment/deploy.py
+
         This function orchestrates the deployment of Azure resources in the following order:
-        1. Resource Group and Virtual Network with subnets
+        1. The Virtual Network with subnets
         2. Key Vault for secrets management
         3. Secrets Manager initialization
         4. PostgreSQL Flexible Server and databases
@@ -41,12 +43,16 @@ def create_pulumi_program(config_path: Path):
         8. Managed Identities for services
         9. Container Apps (MLflow and LiteLLM)
         """
+
+        import os
+
         import pulumi
         import pulumi_azure_native as azure_native
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
         from llmaven.infrastructure.resources import (
             SecretsManager,
+            create_backup_job,
             create_container_apps_environment,
             create_databases,
             create_key_vault,
@@ -400,6 +406,41 @@ def create_pulumi_program(config_path: Path):
                     lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
                 ),
             )
+
+        # 9. Backup Container Apps Job
+        if config.backup_job and config.backup_job.enabled:
+            pulumi.log.info("Creating backup Container Apps Job...")
+            storage_conn_str = os.environ.get(config.backup_job.connection_string_env)
+            if not storage_conn_str:
+                pulumi.log.warn(
+                    f"backup_job.enabled=true but {config.backup_job.connection_string_env} "
+                    "is not set"
+                )
+                raise ValueError(
+                    f"{config.backup_job.connection_string_env} must be set in environment variables to deploy the backup job"
+                )
+            else:
+                from urllib.parse import urlparse
+
+                from llmaven.infrastructure.resources import get_connection_string
+
+                db_name = urlparse(os.environ.get("DATABASE_URL", "")).path.lstrip("/")
+                pulumi.log.info(f"Backup target database: {db_name!r}")
+                db_url = get_connection_string(
+                    postgres_server.fully_qualified_domain_name,
+                    db_name,
+                    config.database.admin_login,
+                    admin_password,
+                )
+                create_backup_job(
+                    resource_group_name=resource_group,
+                    location=location,
+                    managed_environment_id=container_env.id,
+                    db_url=db_url,
+                    storage_conn_str=storage_conn_str,
+                    config=config,
+                    tags=config.tags,
+                )
 
         # Export common outputs
         pulumi.export("resource_group_name", resource_group)

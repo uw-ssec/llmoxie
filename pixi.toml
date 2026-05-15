@@ -80,7 +80,12 @@ streamlit = "*"
 tenacity = "==8.5.0"
 
 [environments]
-llmaven = { features = ["docker", "llmaven", "pulumi", "pre-commit"], no-default-feature = true }
+llmaven = { features = [
+    "docker",
+    "llmaven",
+    "pulumi",
+    "pre-commit",
+], no-default-feature = true }
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -88,11 +93,18 @@ infra = { features = [
 proxy = { features = [
     "proxy",
 ], solve-group = "proxy", no-default-feature = true }
+backup = { features = [
+    "backup",
+], solve-group = "backup", no-default-feature = true }
 
 # === LLMaven API dependencies and tasks ===
 
 [feature.llmaven.pypi-dependencies]
-llmaven = { path = ".", editable = true, extras = ["test", "deploy", "production"]}
+llmaven = { path = ".", editable = true, extras = [
+    "test",
+    "deploy",
+    "production",
+] }
 mlflow = "==3.10.0"
 jsonlines = ">=3.1.0,<4.0.0"
 
@@ -144,3 +156,14 @@ clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 [feature.pre-commit.dependencies]
 pre-commit = ">=3.4.0,<4"
+
+# === Backup dependencies and tasks ===
+
+[feature.backup.dependencies]
+python = "3.12.*"
+fsspec = ">=2024.0.0"
+adlfs = ">=2024.0.0"
+pyyaml = ">=6.0"
+
+[feature.backup.tasks]
+backup = { cmd = "python scripts/backup_postgres.py --config llmaven-backup-config.yaml", description = "Run PostgreSQL backup to cloud storage" }
