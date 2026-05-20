@@ -180,7 +180,7 @@ def create_pulumi_program(config_path: Path):
 
         # 4.2. Create database connection strings
         pulumi.log.info("Creating database connection strings...")
-        secrets_manager.create_database_connection_strings(
+        conn_str_secrets = secrets_manager.create_database_connection_strings(
             postgres_server_fqdn=postgres_server.fully_qualified_domain_name,
             admin_login=config.database.admin_login,
             admin_password=admin_password,
@@ -390,27 +390,32 @@ def create_pulumi_program(config_path: Path):
                 raise ValueError(
                     f"{config.backup_job.connection_string_env} must be set in environment variables to deploy the backup job"
                 )
-            else:
-                db_secret_name = (
-                    f"db-connection-string-{config.backup_job.database}".replace(
-                        "_", "-"
-                    )
+
+            db_secret_name = (
+                f"db-connection-string-{config.backup_job.database}".replace("_", "-")
+            )
+            # fetch the secret to ensure it exists before deploying the job, which depends on it.
+            db_conn_str_secret = conn_str_secrets.get(db_secret_name, None)
+            if not db_conn_str_secret:
+                raise ValueError(
+                    f"Database connection string secret '{db_secret_name}' not found. Check backup_job.database and database.databases in configuration."
                 )
-                pulumi.log.info(
-                    f"Backup target database: {config.backup_job.database!r}"
-                )
-                create_backup_job(
-                    resource_group_name=resource_group,
-                    location=location,
-                    managed_environment_id=container_env.id,
-                    key_vault_uri=key_vault.properties.vault_uri,
-                    key_vault_secret_refs={"DATABASE_URL": db_secret_name},
-                    storage_conn_str=storage_conn_str,
-                    managed_identity_id=shared_managed_identity.id,
-                    config=config,
-                    tags=config.tags,
-                    opts=pulumi.ResourceOptions(depends_on=[shared_kv_access_policy]),
-                )
+
+            pulumi.log.info(f"Backup target database: {config.backup_job.database!r}")
+            create_backup_job(
+                resource_group_name=resource_group,
+                location=location,
+                managed_environment_id=container_env.id,
+                key_vault_uri=key_vault.properties.vault_uri,
+                key_vault_secret_refs={"DATABASE_URL": db_secret_name},
+                storage_conn_str=storage_conn_str,
+                managed_identity_id=shared_managed_identity.id,
+                config=config,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[shared_kv_access_policy, db_conn_str_secret]
+                ),
+            )
 
         # Export common outputs
         pulumi.export("resource_group_name", resource_group)
