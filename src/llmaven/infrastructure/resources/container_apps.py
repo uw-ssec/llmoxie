@@ -432,10 +432,13 @@ def create_backup_job(
                         memory=job_cfg.memory,
                     ),
                     env=[
-                        azure_native.app.EnvironmentVarArgs(
-                            name="DATABASE_URL",
-                            secret_ref=key_vault_secret_refs["DATABASE_URL"],
-                        ),
+                        *[
+                            azure_native.app.EnvironmentVarArgs(
+                                name=env_var_name.upper().replace("-", "_"),
+                                secret_ref=secret_name,
+                            )
+                            for env_var_name, secret_name in key_vault_secret_refs.items()
+                        ],
                         azure_native.app.EnvironmentVarArgs(
                             name="AZURE_STORAGE_CONNECTION_STRING",
                             secret_ref="backup-storage-conn-str",
