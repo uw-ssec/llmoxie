@@ -296,6 +296,9 @@ class BackupJobConfig(BaseModel):
     replica_timeout: int = Field(
         default=1800, description="Max job runtime in seconds", ge=60
     )
+    database: str = Field(
+        description="Name of the PostgreSQL database to back up (must match one of database.databases)",
+    )
     connection_string_env: str = Field(
         default="LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING",
         description="Env var holding the backup storage account connection string",

@@ -214,9 +214,11 @@ def create_pulumi_program(config_path: Path):
         )
 
         pulumi.log.info("Creating storage connection string secret...")
-        secrets_manager.create_storage_connection_string_secret(
-            storage_account_name=storage_account.name,
-            storage_account_key=storage_account_key,
+        storage_conn_str_secret = (
+            secrets_manager.create_storage_connection_string_secret(
+                storage_account_name=storage_account.name,
+                storage_account_key=storage_account_key,
+            )
         )
 
         # 5.2. Create blob containers for storage
@@ -336,7 +338,9 @@ def create_pulumi_program(config_path: Path):
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
                     depends_on=(
-                        [mlflow_kv_access_policy] if mlflow_kv_access_policy else []
+                        [mlflow_kv_access_policy, storage_conn_str_secret]
+                        if mlflow_kv_access_policy
+                        else [storage_conn_str_secret]
                     )
                 ),
             )
@@ -393,7 +397,9 @@ def create_pulumi_program(config_path: Path):
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
                     depends_on=(
-                        [litellm_kv_access_policy] if litellm_kv_access_policy else []
+                        [litellm_kv_access_policy, storage_conn_str_secret]
+                        if litellm_kv_access_policy
+                        else [storage_conn_str_secret]
                     )
                 ),
                 extra_modules=[adl_logger_path],
@@ -420,26 +426,41 @@ def create_pulumi_program(config_path: Path):
                     f"{config.backup_job.connection_string_env} must be set in environment variables to deploy the backup job"
                 )
             else:
-                from urllib.parse import urlparse
+                backup_managed_identity = create_user_assigned_managed_identity(
+                    name=f"{stack_name}-backup-identity",
+                    resource_group_name=resource_group,
+                    location=location,
+                    tags=config.tags,
+                )
 
-                from llmaven.infrastructure.resources import get_connection_string
+                backup_kv_access_policy = grant_key_vault_access(
+                    key_vault=key_vault,
+                    principal_id=backup_managed_identity.principal_id,
+                    resource_group_name=resource_group,
+                    tenant_id=config.azure.tenant_id,
+                    permissions_level="read",
+                    principal_name="backup-identity",
+                )
 
-                db_name = urlparse(os.environ.get("DATABASE_URL", "")).path.lstrip("/")
-                pulumi.log.info(f"Backup target database: {db_name!r}")
-                db_url = get_connection_string(
-                    postgres_server.fully_qualified_domain_name,
-                    db_name,
-                    config.database.admin_login,
-                    admin_password,
+                db_secret_name = (
+                    f"db-connection-string-{config.backup_job.database}".replace(
+                        "_", "-"
+                    )
+                )
+                pulumi.log.info(
+                    f"Backup target database: {config.backup_job.database!r}"
                 )
                 create_backup_job(
                     resource_group_name=resource_group,
                     location=location,
                     managed_environment_id=container_env.id,
-                    db_url=db_url,
+                    key_vault_uri=key_vault.properties.vault_uri,
+                    key_vault_secret_refs={"DATABASE_URL": db_secret_name},
                     storage_conn_str=storage_conn_str,
+                    managed_identity_id=backup_managed_identity.id,
                     config=config,
                     tags=config.tags,
+                    opts=pulumi.ResourceOptions(depends_on=[backup_kv_access_policy]),
                 )
 
         # Export common outputs

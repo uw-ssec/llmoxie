@@ -340,25 +340,33 @@ def create_backup_job(
     resource_group_name: Output[str],
     location: str,
     managed_environment_id: Output[str],
-    db_url: Output[str],
+    key_vault_uri: Output[str],
+    key_vault_secret_refs: Dict[str, str],
     storage_conn_str: str,
     config: LLMavenConfig,
     tags: Dict[str, str],
+    managed_identity_id: Optional[Output[str]] = None,
+    opts: Optional[pulumi.ResourceOptions] = None,
 ) -> azure_native.app.Job:
     """Create a scheduled Container Apps Job that streams pg_dump to blob storage.
 
     The job runs inside the existing VNet, giving it private access to PostgreSQL.
-    Both secrets are stored inline (no Key Vault, no managed identity required).
+    The database connection string is sourced from Key Vault via a managed identity.
+    The backup storage connection string is stored inline (separate storage stack,
+    not accessible via the main Key Vault).
 
     Args:
         resource_group_name: Resource group for the job
         location: Azure region
         managed_environment_id: Existing Container Apps Environment ID
-        db_url: PostgreSQL connection string as a Pulumi Output
+        key_vault_uri: Key Vault URI for secret references
+        key_vault_secret_refs: Map of env var name to Key Vault secret name
         storage_conn_str: Backup storage account connection string (plain string,
                           read from env at deploy time)
         config: LLMaven configuration
         tags: Resource tags
+        managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access
+        opts: Pulumi resource options
 
     Returns:
         Job resource
@@ -367,13 +375,36 @@ def create_backup_job(
     environment = config.project.environment
     job_cfg: BackupJobConfig = config.backup_job
 
+    identity_ref = managed_identity_id if managed_identity_id else "system"
+    kv_secrets = [
+        azure_native.app.SecretArgs(
+            name=secret_name,
+            key_vault_url=key_vault_uri.apply(
+                lambda uri, sn=secret_name: f"{uri.rstrip('/')}/secrets/{sn}"
+            ),
+            identity=identity_ref,
+        )
+        for secret_name in key_vault_secret_refs.values()
+    ]
+
     job = azure_native.app.Job(
         f"backup-job-{environment}",
+        opts=opts,
         resource_group_name=resource_group_name,
         job_name=f"{project_name}-backup-{environment}",
         location=location,
         tags=tags,
         environment_id=managed_environment_id,
+        identity=azure_native.app.ManagedServiceIdentityArgs(
+            type=(
+                azure_native.app.ManagedServiceIdentityType.SYSTEM_ASSIGNED_USER_ASSIGNED
+                if managed_identity_id
+                else azure_native.app.ManagedServiceIdentityType.SYSTEM_ASSIGNED
+            ),
+            user_assigned_identities=(
+                [managed_identity_id] if managed_identity_id else None
+            ),
+        ),
         configuration=azure_native.app.JobConfigurationArgs(
             trigger_type=azure_native.app.TriggerType.SCHEDULE,
             replica_retry_limit=2,
@@ -384,10 +415,7 @@ def create_backup_job(
                 replica_completion_count=1,
             ),
             secrets=[
-                azure_native.app.SecretArgs(
-                    name="database-url",
-                    value=db_url,
-                ),
+                *kv_secrets,
                 azure_native.app.SecretArgs(
                     name="backup-storage-conn-str",
                     value=storage_conn_str,
@@ -406,7 +434,7 @@ def create_backup_job(
                     env=[
                         azure_native.app.EnvironmentVarArgs(
                             name="DATABASE_URL",
-                            secret_ref="database-url",
+                            secret_ref=key_vault_secret_refs["DATABASE_URL"],
                         ),
                         azure_native.app.EnvironmentVarArgs(
                             name="AZURE_STORAGE_CONNECTION_STRING",
