@@ -259,6 +259,43 @@ class TestLiteLLMProvider:
             ):
                 _create_litellm_model()
 
+    @patch("httpx.AsyncClient")
+    @patch("pydantic_ai.models.openai.OpenAIChatModel")
+    @patch("pydantic_ai.providers.openai.OpenAIProvider")
+    def test_create_litellm_model_with_tags(self, mock_provider_class, mock_model_class, mock_http_client_class):
+        """Test that tags are sent via x-litellm-tags header."""
+        with patch("llmaven.agentic.providers.factory.config") as mock_config:
+            mock_config.litellm_api_base = "http://localhost:4000"
+            mock_config.litellm_api_key = "test-key"
+            mock_config.litellm_model_prefix = ""
+            mock_config.llm_model = "gpt-4o-mini"
+            mock_http_client_class.return_value = MagicMock()
+            mock_provider_class.return_value = MagicMock()
+            mock_model_class.return_value = MagicMock()
+
+            _create_litellm_model(tags=["study-xyz", "rubin-lsst"])
+
+            call_kwargs = mock_http_client_class.call_args[1]
+            assert call_kwargs["headers"]["x-litellm-tags"] == "study-xyz,rubin-lsst"
+
+    @patch("httpx.AsyncClient")
+    @patch("pydantic_ai.models.openai.OpenAIChatModel")
+    @patch("pydantic_ai.providers.openai.OpenAIProvider")
+    def test_create_litellm_model_without_tags(self, mock_provider_class, mock_model_class, mock_http_client_class):
+        """Test that no x-litellm-tags header is set when tags is None."""
+        with patch("llmaven.agentic.providers.factory.config") as mock_config:
+            mock_config.litellm_api_base = "http://localhost:4000"
+            mock_config.litellm_api_key = "test-key"
+            mock_config.litellm_model_prefix = ""
+            mock_config.llm_model = "gpt-4o-mini"
+            mock_http_client_class.return_value = MagicMock()
+            mock_provider_class.return_value = MagicMock()
+            mock_model_class.return_value = MagicMock()
+
+            _create_litellm_model(tags=None)
+
+            call_kwargs = mock_http_client_class.call_args[1]
+            assert "x-litellm-tags" not in call_kwargs.get("headers", {})
 
 class TestAzureProvider:
     """Test suite for Azure provider creation."""

@@ -225,6 +225,7 @@ class TestAgenticChatEndpoint:
             collection_name="test-collection",
             llm_provider="openai",
             llm_model="gpt-4o-mini",
+            tags=None,
         )
 
     @patch("llmaven.v1.endpoints.agentic_chat.RAGAgent")
@@ -343,6 +344,35 @@ class TestAgenticChatEndpoint:
         assert response.status_code == 200
         # Conversation ID is logged but not used in agent execution
         # This test verifies it's accepted without error
+
+    @patch("llmaven.v1.endpoints.agentic_chat.RAGAgent")
+    @pytest.mark.asyncio
+    async def test_chat_with_tags(self, mock_agent_cls):
+        """Test chat with tags for request filtering and analysis."""
+        mock_agent_instance = Mock()
+        mock_agent_instance.run = AsyncMock(
+        return_value=RAGResponse(
+        answer="Test answer", citations=[], confidence=0.8, sources_used=0
+        )
+        )
+        mock_agent_cls.return_value = mock_agent_instance
+
+        payload = {
+        "query": "test question",
+        "tags": ["study-xyz", "rubin-lsst"],
+        }
+
+        response = client.post("/v1/agentic/chat", json=payload)
+
+        assert response.status_code == 200
+
+        # Verify tags were forwarded to the agent
+        mock_agent_cls.assert_called_once_with(
+        collection_name=None,
+        llm_provider=None,
+        llm_model=None,
+        tags=["study-xyz", "rubin-lsst"],
+        )
 
 
 class TestAgenticEndpointsIntegration:
