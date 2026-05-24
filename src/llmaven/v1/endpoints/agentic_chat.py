@@ -50,6 +50,7 @@ class AgenticChatRequest(BaseModel):
         None, description="Tags for request filtering and analysis in log data"
     )
 
+
 @router.post("", response_model=RAGResponse)
 async def agentic_chat(request: AgenticChatRequest):
     """Execute RAG chat with structured response and citations.

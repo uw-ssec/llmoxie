@@ -262,7 +262,9 @@ class TestLiteLLMProvider:
     @patch("httpx.AsyncClient")
     @patch("pydantic_ai.models.openai.OpenAIChatModel")
     @patch("pydantic_ai.providers.openai.OpenAIProvider")
-    def test_create_litellm_model_with_tags(self, mock_provider_class, mock_model_class, mock_http_client_class):
+    def test_create_litellm_model_with_tags(
+        self, mock_provider_class, mock_model_class, mock_http_client_class
+    ):
         """Test that tags are sent via x-litellm-tags header."""
         with patch("llmaven.agentic.providers.factory.config") as mock_config:
             mock_config.litellm_api_base = "http://localhost:4000"
@@ -281,7 +283,9 @@ class TestLiteLLMProvider:
     @patch("httpx.AsyncClient")
     @patch("pydantic_ai.models.openai.OpenAIChatModel")
     @patch("pydantic_ai.providers.openai.OpenAIProvider")
-    def test_create_litellm_model_without_tags(self, mock_provider_class, mock_model_class, mock_http_client_class):
+    def test_create_litellm_model_without_tags(
+        self, mock_provider_class, mock_model_class, mock_http_client_class
+    ):
         """Test that no x-litellm-tags header is set when tags is None."""
         with patch("llmaven.agentic.providers.factory.config") as mock_config:
             mock_config.litellm_api_base = "http://localhost:4000"
@@ -296,6 +300,7 @@ class TestLiteLLMProvider:
 
             call_kwargs = mock_http_client_class.call_args[1]
             assert "x-litellm-tags" not in call_kwargs.get("headers", {})
+
 
 class TestAzureProvider:
     """Test suite for Azure provider creation."""

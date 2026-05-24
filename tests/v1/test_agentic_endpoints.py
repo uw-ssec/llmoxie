@@ -351,15 +351,15 @@ class TestAgenticChatEndpoint:
         """Test chat with tags for request filtering and analysis."""
         mock_agent_instance = Mock()
         mock_agent_instance.run = AsyncMock(
-        return_value=RAGResponse(
-        answer="Test answer", citations=[], confidence=0.8, sources_used=0
-        )
+            return_value=RAGResponse(
+                answer="Test answer", citations=[], confidence=0.8, sources_used=0
+            )
         )
         mock_agent_cls.return_value = mock_agent_instance
 
         payload = {
-        "query": "test question",
-        "tags": ["study-xyz", "rubin-lsst"],
+            "query": "test question",
+            "tags": ["study-xyz", "rubin-lsst"],
         }
 
         response = client.post("/v1/agentic/chat", json=payload)
@@ -368,10 +368,10 @@ class TestAgenticChatEndpoint:
 
         # Verify tags were forwarded to the agent
         mock_agent_cls.assert_called_once_with(
-        collection_name=None,
-        llm_provider=None,
-        llm_model=None,
-        tags=["study-xyz", "rubin-lsst"],
+            collection_name=None,
+            llm_provider=None,
+            llm_model=None,
+            tags=["study-xyz", "rubin-lsst"],
         )
 
 
