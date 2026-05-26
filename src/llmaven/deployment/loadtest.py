@@ -3,11 +3,27 @@ from __future__ import annotations
 import csv
 import dataclasses
 import json
+import logging
 import random
-import warnings
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+@dataclass
+class PreflightResult:
+    url: str
+    status_code: int | None
+    response_body: str
+    error: str | None
+
+    @property
+    def ok(self) -> bool:
+        return self.status_code == 200
 
 
 class LoadTestError(Exception):
@@ -18,6 +34,7 @@ class LoadTestError(Exception):
 class LoadTestResults:
     total_requests: int
     failed_requests: int
+    content_policy_errors: int
     error_rate_pct: float
     throughput_rps: float
     latency_p50_ms: float
@@ -33,7 +50,93 @@ class LoadTestResults:
     dataset_size: int
 
 
-def _load_requests(requests_file: Path) -> list[dict[str, Any]]:
+_USER_ROLES = {"user", "person"}
+
+_OPERATIONAL_TAG_RE = re.compile(
+    r"<([a-z][a-z0-9_-]*)(?:\s[^>]*)?>.*?</\1>",
+    re.DOTALL,
+)
+
+
+def _strip_operational_tags(text: str) -> str:
+    """Remove XML-like operational context tags (e.g. <system-reminder>) injected by agent frameworks."""
+    return _OPERATIONAL_TAG_RE.sub("", text).strip()
+
+
+def _extract_user_text(messages: list[Any]) -> str | None:
+    """Return the text of the most recent human turn that contains text.
+
+    Iterates backwards so that in multi-turn tool-use conversations (where the
+    last user message is a tool_result block with no text) we fall through to
+    the earlier turn that contains the actual prompt.
+
+    Handles ``role: "user"`` and the non-standard ``role: "person"`` variant.
+    Content may be a plain string or a list of content blocks; only
+    ``type: "text"`` blocks are extracted.
+    """
+    for msg in reversed(messages):
+        if not isinstance(msg, dict) or msg.get("role") not in _USER_ROLES:
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            text = _strip_operational_tags(content)
+            if text:
+                return text
+        if isinstance(content, list):
+            parts = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            text = _strip_operational_tags(" ".join(p for p in parts if p))
+            if text:
+                return text
+        # this user turn has no text (e.g. tool_result only) — keep looking
+    return None
+
+
+def _to_openai_request(
+    raw: dict[str, Any],
+    log_entry: dict[str, Any],
+    model: str,
+) -> dict[str, Any] | None:
+    """Build a minimal OpenAI chat/completions request from a log entry.
+
+    Handles two proxy_server_request shapes:
+    - Standard chat (``messages`` list) — anthropic_messages, acompletion
+    - Responses API (``input`` list)     — aresponses
+
+    Only the last user message text is kept; system prompts, tools, and
+    provider-specific fields are discarded so the same dataset works against
+    any model via any OpenAI-compatible endpoint.
+
+    Returns None if no user message text can be extracted.
+    """
+    # Responses API uses "input" instead of "messages"
+    msgs = raw.get("messages") or raw.get("input") or []
+    if not isinstance(msgs, list):
+        return None
+
+    user_text = _extract_user_text(msgs)
+    if not user_text:
+        return None
+
+    max_tokens = (
+        raw.get("max_tokens")
+        or raw.get("max_output_tokens")  # Responses API field name
+        or log_entry.get("max_tokens")
+        or 1024
+    )
+
+    return {
+        "model": model,
+        "messages": [{"role": "user", "content": user_text}],
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+
+
+def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
     requests: list[dict[str, Any]] = []
     skipped = 0
     with requests_file.open() as fh:
@@ -44,39 +147,82 @@ def _load_requests(requests_file: Path) -> list[dict[str, Any]]:
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
-                warnings.warn(f"Line {lineno}: invalid JSON, skipping", stacklevel=2)
+                logger.warning("Line %s: invalid JSON, skipping", lineno)
                 skipped += 1
                 continue
 
-            req = entry.get("proxy_server_request")
-            if not req:
-                warnings.warn(
-                    f"Line {lineno}: missing 'proxy_server_request', skipping",
-                    stacklevel=2,
-                )
+            raw_req = entry.get("proxy_server_request")
+            if not raw_req:
                 skipped += 1
                 continue
 
-            # Force non-streaming so the full response body is available for token counting.
-            req = dict(req)
-            req["stream"] = False
+            req = _to_openai_request(raw_req, entry, model)
+            if req is None:
+                # logger.warning("Line %s: no user message found, skipping", lineno)
+                skipped += 1
+                continue
+
             requests.append(req)
 
     if skipped:
-        warnings.warn(
-            f"Skipped {skipped} malformed line(s) in {requests_file}", stacklevel=2
-        )
+        logger.warning("Skipped %s line(s) in %s", skipped, requests_file)
     return requests
+
+
+def preflight_check(
+    base_url: str,
+    api_key: str,
+    api_path: str,
+    sample_request: dict[str, Any],
+) -> PreflightResult:
+    """Fire a single request and return diagnostic info without touching Locust."""
+    import httpx
+
+    url = base_url.rstrip("/") + api_path
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(url, json=sample_request, headers=headers)
+        return PreflightResult(
+            url=url,
+            status_code=resp.status_code,
+            response_body=resp.text[:2000],
+            error=None,
+        )
+    except httpx.ConnectError as exc:
+        return PreflightResult(
+            url=url,
+            status_code=None,
+            response_body="",
+            error=f"Connection refused: {exc}",
+        )
+    except httpx.TimeoutException as exc:
+        return PreflightResult(
+            url=url,
+            status_code=None,
+            response_body="",
+            error=f"Request timed out: {exc}",
+        )
+    except Exception as exc:
+        return PreflightResult(
+            url=url, status_code=None, response_body="", error=str(exc)
+        )
 
 
 def run_load_test(
     requests_file: Path,
     base_url: str,
     api_key: str,
+    model: str,
     workers: int,
     duration: int,
     ramp_up: int,
-    api_path: str = "/v1/messages",
+    api_path: str = "/chat/completions",
+    error_log: Path | None = None,
+    max_errors_logged: int = 50,
 ) -> LoadTestResults:
     """Run a headless Locust load test against a LiteLLM proxy.
 
@@ -103,28 +249,34 @@ def run_load_test(
     """
     try:
         import gevent
-        from locust import HttpUser, between, task
+        from locust import HttpUser, constant, task
         from locust.env import Environment
     except ImportError as exc:
         raise LoadTestError(
             "locust is not installed. Install it with: pip install 'llmaven[loadtest]'"
         ) from exc
 
-    dataset = _load_requests(requests_file)
+    dataset = _load_requests(requests_file, model=model)
     if not dataset:
         raise LoadTestError(f"No valid requests found in {requests_file}")
 
     # Shared accumulators — safe under gevent's cooperative multitasking.
     token_acc: dict[str, int] = {"in": 0, "out": 0, "n": 0}
+    error_acc: dict[str, int] = {"n": 0}
+    content_policy_acc: dict[str, int] = {"n": 0}
 
     # Capture locals for use inside the inner class.
     _dataset = dataset
     _api_key = api_key
     _api_path = api_path
     _token_acc = token_acc
+    _error_acc = error_acc
+    _content_policy_acc = content_policy_acc
+    _error_log = error_log
+    _max_errors = max_errors_logged
 
     class LiteLLMUser(HttpUser):
-        wait_time = between(0, 0)
+        wait_time = constant(0)
 
         @task
         def replay(self) -> None:
@@ -149,9 +301,31 @@ def run_load_test(
                         pass
                     resp.success()
                 else:
+                    if (
+                        resp.status_code == 400
+                        and "ContentPolicyViolationError" in resp.text
+                    ):
+                        _content_policy_acc["n"] += 1
                     resp.failure(f"HTTP {resp.status_code}: {resp.text[:200]}")
+                    if _error_log is not None and _error_acc["n"] < _max_errors:
+                        import datetime
 
-    env = Environment(user_classes=[LiteLLMUser], host=base_url)
+                        _error_acc["n"] += 1
+                        entry = {
+                            "ts": datetime.datetime.now(
+                                datetime.timezone.utc
+                            ).isoformat(),
+                            "status_code": resp.status_code,
+                            "model": req.get("model"),
+                            "request_preview": str(
+                                (req.get("messages") or [{}])[0].get("content", "")
+                            )[:200],
+                            "response": resp.text[:500],
+                        }
+                        with _error_log.open("a") as fh:
+                            fh.write(json.dumps(entry) + "\n")
+
+    env = Environment(user_classes=[LiteLLMUser], host=base_url.rstrip("/"))
     runner = env.create_local_runner()
 
     spawn_rate = workers / max(ramp_up, 1)
@@ -167,6 +341,7 @@ def run_load_test(
     return LoadTestResults(
         total_requests=total,
         failed_requests=failed,
+        content_policy_errors=content_policy_acc["n"],
         error_rate_pct=(failed / total * 100) if total else 0.0,
         throughput_rps=stats.total_rps,
         latency_p50_ms=stats.get_response_time_percentile(0.50) or 0.0,

@@ -1116,6 +1116,7 @@ def _print_loadtest_results(results: "LoadTestResults") -> None:
         ("Dataset size", f"{results.dataset_size:,} request(s)"),
         ("Total requests sent", f"{results.total_requests:,}"),
         ("Failed requests", f"{results.failed_requests:,}"),
+        ("  Content policy (400)", f"{results.content_policy_errors:,}"),
         ("Error rate", f"{results.error_rate_pct:.2f}%"),
         ("Throughput", f"{results.throughput_rps:.1f} req/s"),
         ("Latency p50", f"{results.latency_p50_ms:.0f} ms"),
@@ -1153,9 +1154,15 @@ def loadtest(
         10, "--ramp-up", min=0, help="Seconds to ramp up to full concurrency"
     ),
     api_path: str = typer.Option(
-        "/v1/messages",
+        "/chat/completions",
         "--api-path",
-        help="Proxy API endpoint path",
+        help="OpenAI-compatible proxy endpoint path",
+    ),
+    model: str = typer.Option(
+        ...,
+        "--model",
+        "-m",
+        help="Model name to test (e.g. claude-haiku-4-5-20251001, gpt-4o). Must match a model configured on the proxy.",
     ),
     output: Optional[Path] = typer.Option(
         None,
@@ -1165,31 +1172,77 @@ def loadtest(
         dir_okay=False,
         resolve_path=True,
     ),
+    error_log: Optional[Path] = typer.Option(
+        None,
+        "--error-log",
+        help="Append failed request details to this file (JSONL, capped at 50 entries)",
+        dir_okay=False,
+        resolve_path=True,
+    ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
-    """Load test the LiteLLM proxy by replaying historical requests.
+    """Load test the LiteLLM proxy using user messages from historical requests.
 
     Reads LLMAVEN_SECRETS_LITELLM_BASE_URL and LLMAVEN_SECRETS_LITELLM_MASTER_KEY
-    from the environment (or --env-file).  Each request is randomly sampled from
-    the JSONL dataset and sent with streaming disabled so that token usage can be
-    read from the response body.
+    from the environment (or --env-file).  Only the user message text is extracted
+    from each log entry and sent as a plain OpenAI chat/completions request, so
+    the same JSONL file (which may contain mixed providers) works against any model.
 
     Examples:
         Quick smoke test (10 workers, 30 s):
-            llmaven infra loadtest requests.jsonl --workers 10 --duration 30
+            llmaven infra loadtest requests.jsonl --model claude-haiku-4-5-20251001 --workers 10 --duration 30
 
         Full concurrency test with results saved:
             llmaven infra loadtest requests.jsonl \\
+                --model claude-haiku-4-5-20251001 \\
                 --workers 150 --duration 120 --ramp-up 30 \\
                 --output results.json --env-file .env
     """
-    from llmaven.deployment.loadtest import LoadTestError, run_load_test, save_results
+    from llmaven.deployment.loadtest import (
+        LoadTestError,
+        _load_requests,
+        preflight_check,
+        run_load_test,
+        save_results,
+    )
 
     base_url, api_key = _get_litellm_credentials(env_file)
 
+    # ── Preflight: fire one request so failures are immediately visible ──────
+    console.print(
+        f"[blue]→[/blue] Preflight check against {base_url.rstrip('/')}{api_path}"
+    )
+    try:
+        sample_dataset = _load_requests(requests_file, model=model)
+    except Exception as e:
+        console_err.print(f"[red]✗[/red] Failed to load requests file: {e}")
+        raise typer.Exit(code=1)
+    console.print(
+        f"[blue]→[/blue] Loaded {len(sample_dataset):,} request(s) from {requests_file.name}"
+    )
+
+    if not sample_dataset:
+        console_err.print("[red]✗[/red] No valid requests found in JSONL file")
+        raise typer.Exit(code=1)
+
+    pf = preflight_check(base_url, api_key, api_path, sample_dataset[0])
+    if pf.error:
+        console_err.print(f"[red]✗[/red] Preflight failed — {pf.error}")
+        console_err.print(f"  URL: {pf.url}")
+        raise typer.Exit(code=1)
+    elif not pf.ok:
+        console_err.print(
+            f"[red]✗[/red] Preflight got HTTP {pf.status_code} — aborting load test"
+        )
+        console_err.print(f"  URL:      {pf.url}")
+        console_err.print(f"  Response: {pf.response_body}")
+        raise typer.Exit(code=1)
+    else:
+        console.print("[green]✓[/green] Preflight OK (HTTP 200)")
+
     console.print(
         f"[blue]→[/blue] Starting load test: {workers} workers × {duration}s "
-        f"(ramp-up {ramp_up}s) against {base_url}{api_path}"
+        f"(ramp-up {ramp_up}s)"
     )
 
     try:
@@ -1197,10 +1250,12 @@ def loadtest(
             requests_file=requests_file,
             base_url=base_url,
             api_key=api_key,
+            model=model,
             workers=workers,
             duration=duration,
             ramp_up=ramp_up,
             api_path=api_path,
+            error_log=error_log,
         )
     except LoadTestError as e:
         console_err.print(f"[red]✗[/red] Load test failed: {e}")
@@ -1211,6 +1266,10 @@ def loadtest(
     if output:
         save_results(results, output)
         console.print(f"[green]✓[/green] Results saved to {output}")
+
+    if error_log and error_log.exists():
+        n = sum(1 for _ in error_log.open())
+        console.print(f"[yellow]![/yellow] {n} error(s) logged to {error_log}")
 
 
 @agentic_app.command()
