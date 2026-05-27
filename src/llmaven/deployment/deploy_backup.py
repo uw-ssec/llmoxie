@@ -47,7 +47,8 @@ def get_backup_stack(config_path: Path) -> auto.Stack:
     rg_name = cfg["azure"]["resource_group"]
     state_store = cfg["project"]["pulumi_state_store"]
     environment = cfg["project"]["environment"]
-    stack_name = f"{BACKUP_PROJECT_NAME}-{environment}"
+    project_name = cfg["project"]["name"]
+    stack_name = f"{project_name}-{environment}"
 
     if not rg_name or not state_store:
         raise DeploymentError(
@@ -70,7 +71,7 @@ def get_backup_stack(config_path: Path) -> auto.Stack:
     try:
         stack = auto.create_or_select_stack(
             stack_name=stack_name,
-            project_name=BACKUP_PROJECT_NAME,
+            project_name=project_name,
             program=program,
         )
     except Exception as e:
@@ -102,7 +103,7 @@ def deploy_backup_storage(
         os.environ.setdefault("PULUMI_CONFIG_PASSPHRASE", "")
 
     environment = cfg["project"]["environment"]
-    stack_name = f"{BACKUP_PROJECT_NAME}-{environment}"
+    stack_name = f"{cfg['project']['name']}-{environment}"
 
     print(f"Stack:    {stack_name}")
     print(f"Location: {cfg['project']['location']}")
