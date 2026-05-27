@@ -249,6 +249,10 @@ class KeyVaultConfig(BaseModel):
     soft_delete_retention_days: int = Field(
         default=90, description="Soft delete retention days", ge=7, le=90
     )
+    enable_soft_delete: bool = Field(default=False, description="Enable soft delete")
+    enable_purge_protection: Optional[bool] = Field(
+        default=None, description="Enable purge protection"
+    )
 
 
 class NetworkSecurityConfig(BaseModel):
