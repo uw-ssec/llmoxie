@@ -51,7 +51,7 @@ def create_backup_storage_program(config_path: Path):
 
         # Storage Account — Standard LRS, no ADLS Gen2 (plain blob storage)
         sa = azure_native.storage.StorageAccount(
-            f"backup-storage-{environment}",
+            f"{project_name}-{environment}",
             resource_group_name=rg.name,
             account_name=sa_name,
             location=location,
@@ -68,7 +68,7 @@ def create_backup_storage_program(config_path: Path):
 
         # 3. Blob container for pg_dump files
         azure_native.storage.BlobContainer(
-            f"pg-backups-container-{environment}",
+            f"pg-{project_name}-{environment}",
             resource_group_name=rg.name,
             account_name=sa.name,
             container_name="pg-backups",

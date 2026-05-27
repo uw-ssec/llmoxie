@@ -180,7 +180,7 @@ def create_pulumi_program(config_path: Path):
 
         # 4.2. Create database connection strings
         pulumi.log.info("Creating database connection strings...")
-        secrets_manager.create_database_connection_strings(
+        conn_str_secrets = secrets_manager.create_database_connection_strings(
             postgres_server_fqdn=postgres_server.fully_qualified_domain_name,
             admin_login=config.database.admin_login,
             admin_password=admin_password,
@@ -214,9 +214,11 @@ def create_pulumi_program(config_path: Path):
         )
 
         pulumi.log.info("Creating storage connection string secret...")
-        secrets_manager.create_storage_connection_string_secret(
-            storage_account_name=storage_account.name,
-            storage_account_key=storage_account_key,
+        storage_conn_str_secret = (
+            secrets_manager.create_storage_connection_string_secret(
+                storage_account_name=storage_account.name,
+                storage_account_key=storage_account_key,
+            )
         )
 
         # 5.2. Create blob containers for storage
@@ -261,54 +263,31 @@ def create_pulumi_program(config_path: Path):
             tags=config.tags,
         )
 
-        # 7.1. Create User-Assigned Managed Identities for Key Vault access
+        # 7.1. Create a single shared managed identity for all container apps.
+        # Using one identity (and therefore one AccessPolicy) avoids the known issue
+        # where multiple concurrent AccessPolicy resources on the same vault can cause
+        # the Azure updateAccessPolicy(replace) operation to wipe out other policies.
         pulumi.log.info("Creating user-assigned managed identities...")
         from llmaven.infrastructure.resources import (
             create_user_assigned_managed_identity,
             grant_key_vault_access,
         )
 
-        # 7.1.1. Create managed identity for MLflow
-        mlflow_managed_identity = None
-        mlflow_kv_access_policy = None
-        if config.mlflow and config.mlflow.enabled:
-            mlflow_managed_identity = create_user_assigned_managed_identity(
-                name=f"{stack_name}-mlflow-identity",
-                resource_group_name=resource_group,
-                location=location,
-                tags=config.tags,
-            )
+        shared_managed_identity = create_user_assigned_managed_identity(
+            name=f"{stack_name}-apps-identity",
+            resource_group_name=resource_group,
+            location=location,
+            tags=config.tags,
+        )
 
-            # Grant Key Vault access to the managed identity
-            mlflow_kv_access_policy = grant_key_vault_access(
-                key_vault=key_vault,
-                principal_id=mlflow_managed_identity.principal_id,
-                resource_group_name=resource_group,
-                tenant_id=config.azure.tenant_id,
-                permissions_level="read",
-                principal_name="mlflow-identity",
-            )
-
-        # 7.1.2. Create managed identity for LiteLLM
-        litellm_managed_identity = None
-        litellm_kv_access_policy = None
-        if config.litellm and config.litellm.enabled:
-            litellm_managed_identity = create_user_assigned_managed_identity(
-                name=f"{stack_name}-litellm-identity",
-                resource_group_name=resource_group,
-                location=location,
-                tags=config.tags,
-            )
-
-            # Grant Key Vault access to the managed identity
-            litellm_kv_access_policy = grant_key_vault_access(
-                key_vault=key_vault,
-                principal_id=litellm_managed_identity.principal_id,
-                resource_group_name=resource_group,
-                tenant_id=config.azure.tenant_id,
-                permissions_level="read",
-                principal_name="litellm-identity",
-            )
+        shared_kv_access_policy = grant_key_vault_access(
+            key_vault=key_vault,
+            principal_id=shared_managed_identity.principal_id,
+            resource_group_name=resource_group,
+            tenant_id=config.azure.tenant_id,
+            permissions_level="read",
+            principal_name="apps-identity",
+        )
 
         # 8. Deploy Container Apps
 
@@ -330,14 +309,10 @@ def create_pulumi_program(config_path: Path):
                 env_vars=config.mlflow.env_vars,
                 key_vault=key_vault,
                 key_vault_secret_refs=config.mlflow.key_vault_secret_refs,
-                managed_identity_id=(
-                    mlflow_managed_identity.id if mlflow_managed_identity else None
-                ),
+                managed_identity_id=shared_managed_identity.id,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=(
-                        [mlflow_kv_access_policy] if mlflow_kv_access_policy else []
-                    )
+                    depends_on=[shared_kv_access_policy, storage_conn_str_secret]
                 ),
             )
 
@@ -387,14 +362,10 @@ def create_pulumi_program(config_path: Path):
                 key_vault=key_vault,
                 key_vault_secret_refs=config.litellm.key_vault_secret_refs,
                 config_file=config_file_path,
-                managed_identity_id=(
-                    litellm_managed_identity.id if litellm_managed_identity else None
-                ),
+                managed_identity_id=shared_managed_identity.id,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=(
-                        [litellm_kv_access_policy] if litellm_kv_access_policy else []
-                    )
+                    depends_on=[shared_kv_access_policy, storage_conn_str_secret]
                 ),
                 extra_modules=[adl_logger_path],
             )
@@ -419,28 +390,32 @@ def create_pulumi_program(config_path: Path):
                 raise ValueError(
                     f"{config.backup_job.connection_string_env} must be set in environment variables to deploy the backup job"
                 )
-            else:
-                from urllib.parse import urlparse
 
-                from llmaven.infrastructure.resources import get_connection_string
+            db_secret_name = (
+                f"db-connection-string-{config.backup_job.database}".replace("_", "-")
+            )
+            # fetch the secret to ensure it exists before deploying the job, which depends on it.
+            db_conn_str_secret = conn_str_secrets.get(db_secret_name, None)
+            if not db_conn_str_secret:
+                raise ValueError(
+                    f"Database connection string secret '{db_secret_name}' not found. Check backup_job.database and database.databases in configuration."
+                )
 
-                db_name = urlparse(os.environ.get("DATABASE_URL", "")).path.lstrip("/")
-                pulumi.log.info(f"Backup target database: {db_name!r}")
-                db_url = get_connection_string(
-                    postgres_server.fully_qualified_domain_name,
-                    db_name,
-                    config.database.admin_login,
-                    admin_password,
-                )
-                create_backup_job(
-                    resource_group_name=resource_group,
-                    location=location,
-                    managed_environment_id=container_env.id,
-                    db_url=db_url,
-                    storage_conn_str=storage_conn_str,
-                    config=config,
-                    tags=config.tags,
-                )
+            pulumi.log.info(f"Backup target database: {config.backup_job.database!r}")
+            create_backup_job(
+                resource_group_name=resource_group,
+                location=location,
+                managed_environment_id=container_env.id,
+                key_vault_uri=key_vault.properties.vault_uri,
+                key_vault_secret_refs={"DATABASE_URL": db_secret_name},
+                storage_conn_str=storage_conn_str,
+                managed_identity_id=shared_managed_identity.id,
+                config=config,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[shared_kv_access_policy, db_conn_str_secret]
+                ),
+            )
 
         # Export common outputs
         pulumi.export("resource_group_name", resource_group)
