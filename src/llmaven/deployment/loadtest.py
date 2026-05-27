@@ -32,6 +32,7 @@ class LoadTestError(Exception):
 
 @dataclass
 class LoadTestResults:
+    model: str
     total_requests: int
     failed_requests: int
     content_policy_errors: int
@@ -339,6 +340,7 @@ def run_load_test(
     n_tokens = token_acc["n"]
 
     return LoadTestResults(
+        model=model,
         total_requests=total,
         failed_requests=failed,
         content_policy_errors=content_policy_acc["n"],
@@ -359,12 +361,18 @@ def run_load_test(
 
 
 def save_results(results: LoadTestResults, output: Path) -> None:
-    """Persist *results* to *output* as JSON or CSV based on file extension."""
+    """Persist *results* to *output* as JSON or CSV based on file extension.
+
+    CSV files are appended to on every run; the header row is written only when
+    the file does not yet exist (or is empty).
+    """
     data = dataclasses.asdict(results)
     if output.suffix.lower() == ".csv":
-        with output.open("w", newline="") as fh:
+        write_header = not output.exists() or output.stat().st_size == 0
+        with output.open("a", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=list(data.keys()))
-            writer.writeheader()
+            if write_header:
+                writer.writeheader()
             writer.writerow(data)
     else:
         with output.open("w") as fh:

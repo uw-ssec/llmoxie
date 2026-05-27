@@ -5,10 +5,11 @@ This module provides command-line interface functionality for the LLMaven projec
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
 import sys
 from enum import Enum
 from datetime import datetime, time, timezone, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn, Optional
 
 import typer
@@ -1172,13 +1173,6 @@ def loadtest(
         dir_okay=False,
         resolve_path=True,
     ),
-    error_log: Optional[Path] = typer.Option(
-        None,
-        "--error-log",
-        help="Append failed request details to this file (JSONL, capped at 50 entries)",
-        dir_okay=False,
-        resolve_path=True,
-    ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
     """Load test the LiteLLM proxy using user messages from historical requests.
@@ -1245,6 +1239,10 @@ def loadtest(
         f"(ramp-up {ramp_up}s)"
     )
 
+    _ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    _safe_model = re.sub(r"[^a-zA-Z0-9_-]", "_", model)
+    error_log = Path(f"errors-{_safe_model}-{workers}-{duration}-{_ts}.log")
+
     try:
         results = run_load_test(
             requests_file=requests_file,
@@ -1267,7 +1265,7 @@ def loadtest(
         save_results(results, output)
         console.print(f"[green]✓[/green] Results saved to {output}")
 
-    if error_log and error_log.exists():
+    if error_log.exists():
         n = sum(1 for _ in error_log.open())
         console.print(f"[yellow]![/yellow] {n} error(s) logged to {error_log}")
 
