@@ -7,10 +7,8 @@ name = "llmaven"
 description = "REST API for LLMaven project"
 readme = "README.md"
 requires-python = ">=3.12"
-license = {file = "LICENSE"}
-authors = [
-    {name = "SSEC Team"},
-]
+license = { file = "LICENSE" }
+authors = [{ name = "SSEC Team" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -48,9 +46,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-production = [
-    "gunicorn>=21.0.0",
-]
+production = ["gunicorn>=21.0.0"]
 test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -64,8 +60,10 @@ deploy = [
     "pulumi-random>=4.0.0",
     "pyyaml>=6.0.0",
     "grpcio>=1.66.2",
-    "grpcio-status==1.60.1"
+    "grpcio-status==1.60.1",
 ]
+
+loadtest = ["locust>=2.31.0"]
 
 [project.scripts]
 llmaven = "llmaven.cli:main"
