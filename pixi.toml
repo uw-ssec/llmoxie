@@ -96,6 +96,9 @@ proxy = { features = [
 backup = { features = [
     "backup",
 ], solve-group = "backup", no-default-feature = true }
+loadtest = { features = [
+    "loadtest",
+], solve-group = "loadtest", no-default-feature = true }
 
 # === LLMaven API dependencies and tasks ===
 
@@ -156,6 +159,13 @@ clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 [feature.pre-commit.dependencies]
 pre-commit = ">=3.4.0,<4"
+
+
+[feature.loadtest.dependencies]
+python = "3.12.*"
+
+[feature.loadtest.pypi-dependencies]
+llmaven = { path = ".", editable = true, extras = ["loadtest"] }
 
 # === Backup dependencies and tasks ===
 
