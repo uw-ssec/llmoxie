@@ -1121,8 +1121,9 @@ def _print_loadtest_results(results: "LoadTestResults") -> None:
 
     rows = [
         ("Workers", str(results.workers)),
-        ("Duration", f"{results.duration_s}s"),
         ("Dataset size", f"{results.dataset_size:,} request(s)"),
+        ("  Anthropic format", f"{results.anthropic_requests:,}"),
+        ("  OpenAI format", f"{results.openai_requests:,}"),
         ("Total requests sent", f"{results.total_requests:,}"),
         ("Failed requests", f"{results.failed_requests:,}"),
         ("  Content policy (400)", f"{results.content_policy_errors:,}"),
@@ -1156,16 +1157,8 @@ def loadtest(
     workers: int = typer.Option(
         50, "--workers", "-w", min=1, help="Number of concurrent virtual users"
     ),
-    duration: int = typer.Option(
-        60, "--duration", "-d", min=5, help="Test duration in seconds (after ramp-up)"
-    ),
     ramp_up: int = typer.Option(
         10, "--ramp-up", min=0, help="Seconds to ramp up to full concurrency"
-    ),
-    api_path: str = typer.Option(
-        "/chat/completions",
-        "--api-path",
-        help="OpenAI-compatible proxy endpoint path",
     ),
     model: str = typer.Option(
         ...,
@@ -1183,16 +1176,16 @@ def loadtest(
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
-    """Load test the LiteLLM proxy using user messages from historical requests.
+    """Load test the LiteLLM proxy using historical requests.
 
     Reads LLMAVEN_SECRETS_LITELLM_BASE_URL and LLMAVEN_SECRETS_LITELLM_MASTER_KEY
-    from the environment (or --env-file).  Only the user message text is extracted
-    from each log entry and sent as a plain OpenAI chat/completions request, so
-    the same JSONL file (which may contain mixed providers) works against any model.
+    from the environment (or --env-file).  Each request is replayed to the same
+    endpoint type it was originally sent to (determined by call_type), so no format
+    conversion is needed.
 
     Examples:
         Quick smoke test (10 workers, 30 s):
-            llmaven infra loadtest requests.jsonl --model claude-haiku-4-5-20251001 --workers 10 --duration 30
+            llmaven infra loadtest requests.jsonl --model claude-haiku-4-5-20251001 --workers 10
 
         Full concurrency test with results saved:
             llmaven infra loadtest requests.jsonl \\
@@ -1211,9 +1204,6 @@ def loadtest(
     base_url, api_key = _get_litellm_credentials(env_file)
 
     # ── Preflight: fire one request so failures are immediately visible ──────
-    console.print(
-        f"[blue]→[/blue] Preflight check against {base_url.rstrip('/')}{api_path}"
-    )
     try:
         sample_dataset = _load_requests(requests_file, model=model)
     except Exception as e:
@@ -1227,7 +1217,11 @@ def loadtest(
         console_err.print("[red]✗[/red] No valid requests found in JSONL file")
         raise typer.Exit(code=1)
 
-    pf = preflight_check(base_url, api_key, api_path, sample_dataset[0])
+    first_path, first_req = sample_dataset[0]
+    console.print(
+        f"[blue]→[/blue] Preflight check against {base_url.rstrip('/')}{first_path}"
+    )
+    pf = preflight_check(base_url, api_key, first_path, first_req)
     if pf.error:
         console_err.print(f"[red]✗[/red] Preflight failed — {pf.error}")
         console_err.print(f"  URL: {pf.url}")
@@ -1243,13 +1237,12 @@ def loadtest(
         console.print("[green]✓[/green] Preflight OK (HTTP 200)")
 
     console.print(
-        f"[blue]→[/blue] Starting load test: {workers} workers × {duration}s "
-        f"(ramp-up {ramp_up}s)"
+        f"[blue]→[/blue] Starting load test: {workers} workers(ramp-up {ramp_up}s)"
     )
 
     _ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     _safe_model = re.sub(r"[^a-zA-Z0-9_-]", "_", model)
-    error_log = Path(f"errors-{_safe_model}-{workers}-{duration}-{_ts}.log")
+    error_log = Path(f"errors-{_safe_model}-{workers}-{_ts}.log")
 
     try:
         results = run_load_test(
@@ -1258,9 +1251,6 @@ def loadtest(
             api_key=api_key,
             model=model,
             workers=workers,
-            duration=duration,
-            ramp_up=ramp_up,
-            api_path=api_path,
             error_log=error_log,
         )
     except LoadTestError as e:

@@ -4,8 +4,6 @@ import csv
 import dataclasses
 import json
 import logging
-import random
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,98 +45,126 @@ class LoadTestResults:
     tokens_in_avg: float
     tokens_out_avg: float
     workers: int
-    duration_s: int
     dataset_size: int
+    anthropic_requests: int
+    openai_requests: int
 
 
-_USER_ROLES = {"user", "person"}
+# Maps LiteLLM call_type → the proxy endpoint that originally handled the request.
+_OPENAI_API_PATH = "/chat/completions"
+_ANTHROPIC_API_PATH = "/v1/messages"
 
-_OPERATIONAL_TAG_RE = re.compile(
-    r"<([a-z][a-z0-9_-]*)(?:\s[^>]*)?>.*?</\1>",
-    re.DOTALL,
-)
+_CALL_TYPE_PATH: dict[str, str] = {
+    "acompletion": _OPENAI_API_PATH,
+    "anthropic_messages": _ANTHROPIC_API_PATH,
+}
 
+# Fields safe to pass through for each endpoint type.
+_OPENAI_SAFE_FIELDS = {
+    "model",
+    "messages",
+    "max_tokens",
+    "temperature",
+    "top_p",
+    "top_k",
+    "frequency_penalty",
+    "presence_penalty",
+    "stop",
+    "tools",
+    "tool_choice",
+    "seed",
+}
 
-def _strip_operational_tags(text: str) -> str:
-    """Remove XML-like operational context tags (e.g. <system-reminder>) injected by agent frameworks."""
-    return _OPERATIONAL_TAG_RE.sub("", text).strip()
-
-
-def _extract_user_text(messages: list[Any]) -> str | None:
-    """Return the text of the most recent human turn that contains text.
-
-    Iterates backwards so that in multi-turn tool-use conversations (where the
-    last user message is a tool_result block with no text) we fall through to
-    the earlier turn that contains the actual prompt.
-
-    Handles ``role: "user"`` and the non-standard ``role: "person"`` variant.
-    Content may be a plain string or a list of content blocks; only
-    ``type: "text"`` blocks are extracted.
-    """
-    for msg in reversed(messages):
-        if not isinstance(msg, dict) or msg.get("role") not in _USER_ROLES:
-            continue
-        content = msg.get("content")
-        if isinstance(content, str):
-            text = _strip_operational_tags(content)
-            if text:
-                return text
-        if isinstance(content, list):
-            parts = [
-                block.get("text", "")
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            ]
-            text = _strip_operational_tags(" ".join(p for p in parts if p))
-            if text:
-                return text
-        # this user turn has no text (e.g. tool_result only) — keep looking
-    return None
+_ANTHROPIC_SAFE_FIELDS = {
+    "model",
+    "messages",
+    "system",
+    "max_tokens",
+    "temperature",
+    "top_p",
+    "top_k",
+    "tools",
+    "tool_choice",
+}
 
 
-def _to_openai_request(
+def _is_anthropic_path(api_path: str) -> bool:
+    return api_path == _ANTHROPIC_API_PATH
+
+
+def _count_requests_by_endpoint(
+    dataset: list[tuple[str, dict[str, Any]]],
+) -> tuple[int, int]:
+    anthropic_count = sum(1 for api_path, _ in dataset if _is_anthropic_path(api_path))
+    openai_count = len(dataset) - anthropic_count
+    return anthropic_count, openai_count
+
+
+def _extract_request(
     raw: dict[str, Any],
     log_entry: dict[str, Any],
     model: str,
-) -> dict[str, Any] | None:
-    """Build a minimal OpenAI chat/completions request from a log entry.
+) -> tuple[str, dict[str, Any]] | None:
+    """Extract a replayable request from a LiteLLM proxy log entry.
 
-    Handles two proxy_server_request shapes:
-    - Standard chat (``messages`` list) — anthropic_messages, acompletion
-    - Responses API (``input`` list)     — aresponses
+    Filters ``proxy_server_request`` to only safe fields for the target endpoint,
+    ensuring no unknown fields cause rejections. The ``model`` field is overridden
+    with *model* so the same dataset can be used to benchmark different models.
 
-    Only the last user message text is kept; system prompts, tools, and
-    provider-specific fields are discarded so the same dataset works against
-    any model via any OpenAI-compatible endpoint.
+    The LiteLLM ``call_type`` field determines which proxy endpoint to target,
+    ensuring the request arrives at the same handler that processed it originally.
 
-    Returns None if no user message text can be extracted.
+    For OpenAI endpoints, removes thinking content blocks from messages since they
+    are Anthropic-specific and cause validation errors.
+
+    Returns ``(api_path, request_body)`` or ``None`` if the entry cannot be
+    replayed (unknown call_type, missing messages).
     """
-    # Responses API uses "input" instead of "messages"
+    call_type = log_entry.get("call_type", "")
+    api_path = _CALL_TYPE_PATH.get(call_type)
+    if api_path is None:
+        return None
+
     msgs = raw.get("messages") or raw.get("input") or []
-    if not isinstance(msgs, list):
+    if not isinstance(msgs, list) or not msgs:
         return None
 
-    user_text = _extract_user_text(msgs)
-    if not user_text:
-        return None
+    # Select safe fields based on endpoint type.
+    is_anthropic = _is_anthropic_path(api_path)
+    safe_fields = _ANTHROPIC_SAFE_FIELDS if is_anthropic else _OPENAI_SAFE_FIELDS
 
-    max_tokens = (
-        raw.get("max_tokens")
-        or raw.get("max_output_tokens")  # Responses API field name
-        or log_entry.get("max_tokens")
-        or 1024
-    )
+    request = {k: v for k, v in raw.items() if k in safe_fields}
 
-    return {
-        "model": model,
-        "messages": [{"role": "user", "content": user_text}],
-        "max_tokens": max_tokens,
-        "stream": False,
-    }
+    # For OpenAI endpoints, strip thinking content blocks from messages.
+    if not is_anthropic:
+        filtered_msgs = []
+        for msg in msgs:
+            if not isinstance(msg, dict):
+                filtered_msgs.append(msg)
+                continue
+            msg_copy = {**msg}
+            content = msg_copy.get("content")
+            if isinstance(content, list):
+                # Remove thinking blocks from content arrays.
+                msg_copy["content"] = [
+                    block
+                    for block in content
+                    if not (isinstance(block, dict) and block.get("type") == "thinking")
+                ]
+            filtered_msgs.append(msg_copy)
+        request["messages"] = filtered_msgs
+    else:
+        request["messages"] = msgs
+
+    request["model"] = model
+    # Drop stream so token usage is always present in the response body.
+    request.pop("stream", None)
+
+    return api_path, request
 
 
-def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
-    requests: list[dict[str, Any]] = []
+def _load_requests(requests_file: Path, model: str) -> list[tuple[str, dict[str, Any]]]:
+    dataset: list[tuple[str, dict[str, Any]]] = []
     skipped = 0
     with requests_file.open() as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -157,17 +183,16 @@ def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
                 skipped += 1
                 continue
 
-            req = _to_openai_request(raw_req, entry, model)
-            if req is None:
-                # logger.warning("Line %s: no user message found, skipping", lineno)
+            result = _extract_request(raw_req, entry, model)
+            if result is None:
                 skipped += 1
                 continue
 
-            requests.append(req)
+            dataset.append(result)
 
     if skipped:
         logger.warning("Skipped %s line(s) in %s", skipped, requests_file)
-    return requests
+    return dataset
 
 
 def preflight_check(
@@ -219,27 +244,26 @@ def run_load_test(
     api_key: str,
     model: str,
     workers: int,
-    duration: int,
-    ramp_up: int,
-    api_path: str = "/chat/completions",
     error_log: Path | None = None,
     max_errors_logged: int = 50,
 ) -> LoadTestResults:
     """Run a headless Locust load test against a LiteLLM proxy.
 
-    Requests are randomly sampled from *requests_file* (JSONL of LiteLLM proxy
-    log entries).  Each request is extracted from the ``proxy_server_request``
-    field and replayed against ``{base_url}{api_path}``.  Streaming is always
-    disabled so that token usage can be read directly from the response body.
+    Each request from *requests_file* (JSONL of LiteLLM proxy log entries) is
+    sent exactly once. Requests are pulled from a shared queue by workers,
+    ensuring full replay. Requests are replayed against the same endpoint type
+    they were originally sent to, as determined by each entry's ``call_type``
+    field. Streaming is always disabled so token usage can be read from the
+    response.
 
     Args:
         requests_file: Path to the JSONL file of proxy log entries.
         base_url: LiteLLM proxy base URL (e.g. ``http://proxy:4000``).
         api_key: Proxy API key (``LLMAVEN_SECRETS_LITELLM_MASTER_KEY``).
+        model: Model to use for replay.
         workers: Number of concurrent virtual users.
-        duration: Test duration in seconds (excluding ramp-up).
-        ramp_up: Seconds to ramp up to full concurrency.
-        api_path: API endpoint path to send requests to.
+        error_log: Optional path to log errors to.
+        max_errors_logged: Maximum number of errors to log.
 
     Returns:
         A :class:`LoadTestResults` dataclass with throughput, latency, and
@@ -248,28 +272,30 @@ def run_load_test(
     Raises:
         LoadTestError: If no valid requests are found or the runner fails.
     """
-    try:
-        import gevent
-        from locust import HttpUser, constant, task
-        from locust.env import Environment
-    except ImportError as exc:
-        raise LoadTestError(
-            "locust is not installed. Install it with: pip install 'llmaven[loadtest]'"
-        ) from exc
+    import gevent
+    import gevent.queue
+    from locust import HttpUser, constant, task
+    from locust.env import Environment
 
     dataset = _load_requests(requests_file, model=model)
     if not dataset:
         raise LoadTestError(f"No valid requests found in {requests_file}")
 
-    # Shared accumulators — safe under gevent's cooperative multitasking.
+    # Count requests by endpoint type.
+    anthropic_count, openai_count = _count_requests_by_endpoint(dataset)
+
+    # Shared queue and accumulators — safe under gevent's cooperative multitasking.
+    request_queue: gevent.queue.Queue = gevent.queue.Queue()
+    for item in dataset:
+        request_queue.put(item)
+
     token_acc: dict[str, int] = {"in": 0, "out": 0, "n": 0}
     error_acc: dict[str, int] = {"n": 0}
     content_policy_acc: dict[str, int] = {"n": 0}
 
     # Capture locals for use inside the inner class.
-    _dataset = dataset
+    _request_queue = request_queue
     _api_key = api_key
-    _api_path = api_path
     _token_acc = token_acc
     _error_acc = error_acc
     _content_policy_acc = content_policy_acc
@@ -281,13 +307,23 @@ def run_load_test(
 
         @task
         def replay(self) -> None:
-            req = random.choice(_dataset)
+
+            item = None
+            try:
+                item = _request_queue.get_nowait()
+            except gevent.queue.Empty:
+                self.stop()
+                return
+
+            assert item is not None
+            api_path, req = item
+
             headers = {
                 "Authorization": f"Bearer {_api_key}",
                 "Content-Type": "application/json",
             }
             with self.client.post(
-                _api_path,
+                api_path,
                 json=req,
                 headers=headers,
                 catch_response=True,
@@ -295,8 +331,13 @@ def run_load_test(
                 if resp.status_code == 200:
                     try:
                         usage = resp.json().get("usage", {})
-                        _token_acc["in"] += usage.get("prompt_tokens", 0)
-                        _token_acc["out"] += usage.get("completion_tokens", 0)
+                        # Handle both OpenAI and Anthropic response shapes.
+                        _token_acc["in"] += usage.get("prompt_tokens") or usage.get(
+                            "input_tokens", 0
+                        )
+                        _token_acc["out"] += usage.get(
+                            "completion_tokens"
+                        ) or usage.get("output_tokens", 0)
                         _token_acc["n"] += 1
                     except Exception:
                         pass
@@ -328,19 +369,16 @@ def run_load_test(
 
     env = Environment(user_classes=[LiteLLMUser], host=base_url.rstrip("/"))
     runner = env.create_local_runner()
-
-    spawn_rate = workers / max(ramp_up, 1)
-    runner.start(user_count=workers, spawn_rate=spawn_rate)
-    gevent.sleep(ramp_up + duration)
-    runner.quit()
-
-    # Explicitly destroy the gevent hub to prevent RuntimeError during interpreter
-    # shutdown where logging tries to acquire a gevent-patched lock on a finalized
-    # greenlet ("greenlet is being finalized").
-    try:
-        gevent.get_hub().destroy(destroy_loop=True)
-    except Exception:
-        pass
+    runner.start(user_count=workers, spawn_rate=workers, wait=True)
+    gevent.sleep(2)
+    n = 0  # Wait for ramp-up to finish
+    while runner.user_count > 0:
+        if n % 20 == 0:
+            left = len(_request_queue)
+            print(f"{left} requests left...")
+        n += 1
+        gevent.sleep(0.1)
+    runner.stop()
 
     stats = env.stats.total
     total = stats.num_requests
@@ -363,8 +401,9 @@ def run_load_test(
         tokens_in_avg=token_acc["in"] / n_tokens if n_tokens else 0.0,
         tokens_out_avg=token_acc["out"] / n_tokens if n_tokens else 0.0,
         workers=workers,
-        duration_s=duration,
         dataset_size=len(dataset),
+        anthropic_requests=anthropic_count,
+        openai_requests=openai_count,
     )
 
 
