@@ -1122,8 +1122,6 @@ def _print_loadtest_results(results: "LoadTestResults") -> None:
     rows = [
         ("Workers", str(results.workers)),
         ("Dataset size", f"{results.dataset_size:,} request(s)"),
-        ("  Anthropic format", f"{results.anthropic_requests:,}"),
-        ("  OpenAI format", f"{results.openai_requests:,}"),
         ("Total requests sent", f"{results.total_requests:,}"),
         ("Failed requests", f"{results.failed_requests:,}"),
         ("  Content policy (400)", f"{results.content_policy_errors:,}"),
@@ -1156,9 +1154,6 @@ def loadtest(
     ),
     workers: int = typer.Option(
         50, "--workers", "-w", min=1, help="Number of concurrent virtual users"
-    ),
-    ramp_up: int = typer.Option(
-        10, "--ramp-up", min=0, help="Seconds to ramp up to full concurrency"
     ),
     model: str = typer.Option(
         ...,
@@ -1195,6 +1190,7 @@ def loadtest(
     """
     from llmaven.deployment.loadtest import (
         LoadTestError,
+        _ANTHROPIC_API_PATH,
         _load_requests,
         preflight_check,
         run_load_test,
@@ -1206,6 +1202,9 @@ def loadtest(
     # ── Preflight: fire one request so failures are immediately visible ──────
     try:
         sample_dataset = _load_requests(requests_file, model=model)
+    except LoadTestError as e:
+        console_err.print(f"[red]✗[/red] {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
         console_err.print(f"[red]✗[/red] Failed to load requests file: {e}")
         raise typer.Exit(code=1)
@@ -1217,11 +1216,11 @@ def loadtest(
         console_err.print("[red]✗[/red] No valid requests found in JSONL file")
         raise typer.Exit(code=1)
 
-    first_path, first_req = sample_dataset[0]
+    first_req = sample_dataset[0]
     console.print(
-        f"[blue]→[/blue] Preflight check against {base_url.rstrip('/')}{first_path}"
+        f"[blue]→[/blue] Preflight check against {base_url.rstrip('/')}{_ANTHROPIC_API_PATH}"
     )
-    pf = preflight_check(base_url, api_key, first_path, first_req)
+    pf = preflight_check(base_url, api_key, _ANTHROPIC_API_PATH, first_req)
     if pf.error:
         console_err.print(f"[red]✗[/red] Preflight failed — {pf.error}")
         console_err.print(f"  URL: {pf.url}")
@@ -1236,9 +1235,7 @@ def loadtest(
     else:
         console.print("[green]✓[/green] Preflight OK (HTTP 200)")
 
-    console.print(
-        f"[blue]→[/blue] Starting load test: {workers} workers(ramp-up {ramp_up}s)"
-    )
+    console.print(f"[blue]→[/blue] Starting load test: {workers} workers")
 
     _ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     _safe_model = re.sub(r"[^a-zA-Z0-9_-]", "_", model)
