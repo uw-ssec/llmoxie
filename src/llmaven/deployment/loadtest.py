@@ -135,26 +135,37 @@ def _extract_request(
 
     request = {k: v for k, v in raw.items() if k in safe_fields}
 
-    # For OpenAI endpoints, strip thinking content blocks from messages.
-    if not is_anthropic:
-        filtered_msgs = []
-        for msg in msgs:
-            if not isinstance(msg, dict):
-                filtered_msgs.append(msg)
-                continue
-            msg_copy = {**msg}
-            content = msg_copy.get("content")
-            if isinstance(content, list):
-                # Remove thinking blocks from content arrays.
-                msg_copy["content"] = [
-                    block
-                    for block in content
-                    if not (isinstance(block, dict) and block.get("type") == "thinking")
-                ]
-            filtered_msgs.append(msg_copy)
-        request["messages"] = filtered_msgs
-    else:
-        request["messages"] = msgs
+    # Strip thinking content blocks (signatures are time-limited and invalid on
+    # replay) and image blocks from tool_result content (base64 data is often
+    # corrupt or truncated in logs).
+    filtered_msgs = []
+    for msg in msgs:
+        if not isinstance(msg, dict):
+            filtered_msgs.append(msg)
+            continue
+        msg_copy = {**msg}
+        content = msg_copy.get("content")
+        if isinstance(content, list):
+            cleaned = []
+            for block in content:
+                if not isinstance(block, dict):
+                    cleaned.append(block)
+                    continue
+                if block.get("type") == "thinking":
+                    continue
+                if block.get("type") == "tool_result":
+                    block = {**block}
+                    inner = block.get("content")
+                    if isinstance(inner, list):
+                        block["content"] = [
+                            b
+                            for b in inner
+                            if not (isinstance(b, dict) and b.get("type") == "image")
+                        ]
+                cleaned.append(block)
+            msg_copy["content"] = cleaned
+        filtered_msgs.append(msg_copy)
+    request["messages"] = filtered_msgs
 
     request["model"] = model
     # Drop stream so token usage is always present in the response body.
