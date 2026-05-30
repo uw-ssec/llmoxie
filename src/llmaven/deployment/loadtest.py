@@ -46,41 +46,15 @@ class LoadTestResults:
     tokens_out_avg: float
     workers: int
     dataset_size: int
-    anthropic_requests: int
-    openai_requests: int
 
 
-# Maps LiteLLM call_type → the proxy endpoint that originally handled the request.
-_OPENAI_API_PATH = "/chat/completions"
 _ANTHROPIC_API_PATH = "/v1/messages"
-
-_CALL_TYPE_PATH: dict[str, str] = {
-    "acompletion": _OPENAI_API_PATH,
-    "anthropic_messages": _ANTHROPIC_API_PATH,
-}
-
-# Fields safe to pass through for each endpoint type.
-_OPENAI_SAFE_FIELDS = {
-    "model",
-    "messages",
-    "max_tokens",
-    "temperature",
-    "top_p",
-    "top_k",
-    "frequency_penalty",
-    "presence_penalty",
-    "stop",
-    "tools",
-    "tool_choice",
-    "seed",
-}
 
 _ANTHROPIC_SAFE_FIELDS = {
     "model",
     "messages",
     "system",
     "max_tokens",
-    "temperature",
     "top_p",
     "top_k",
     "tools",
@@ -88,52 +62,25 @@ _ANTHROPIC_SAFE_FIELDS = {
 }
 
 
-def _is_anthropic_path(api_path: str) -> bool:
-    return api_path == _ANTHROPIC_API_PATH
-
-
-def _count_requests_by_endpoint(
-    dataset: list[tuple[str, dict[str, Any]]],
-) -> tuple[int, int]:
-    anthropic_count = sum(1 for api_path, _ in dataset if _is_anthropic_path(api_path))
-    openai_count = len(dataset) - anthropic_count
-    return anthropic_count, openai_count
+def _is_anthropic_call_type(call_type: str) -> bool:
+    return call_type == "anthropic_messages"
 
 
 def _extract_request(
     raw: dict[str, Any],
-    log_entry: dict[str, Any],
     model: str,
-) -> tuple[str, dict[str, Any]] | None:
-    """Extract a replayable request from a LiteLLM proxy log entry.
+) -> dict[str, Any] | None:
+    """Extract a replayable Anthropic request from a LiteLLM proxy log entry.
 
-    Filters ``proxy_server_request`` to only safe fields for the target endpoint,
-    ensuring no unknown fields cause rejections. The ``model`` field is overridden
-    with *model* so the same dataset can be used to benchmark different models.
-
-    The LiteLLM ``call_type`` field determines which proxy endpoint to target,
-    ensuring the request arrives at the same handler that processed it originally.
-
-    For OpenAI endpoints, removes thinking content blocks from messages since they
-    are Anthropic-specific and cause validation errors.
-
-    Returns ``(api_path, request_body)`` or ``None`` if the entry cannot be
-    replayed (unknown call_type, missing messages).
+    Filters ``proxy_server_request`` to safe Anthropic fields. The ``model``
+    field is overridden with *model* so the same dataset can be used to
+    benchmark different models. Returns ``None`` if the entry has no messages.
     """
-    call_type = log_entry.get("call_type", "")
-    api_path = _CALL_TYPE_PATH.get(call_type)
-    if api_path is None:
-        return None
-
     msgs = raw.get("messages") or raw.get("input") or []
     if not isinstance(msgs, list) or not msgs:
         return None
 
-    # Select safe fields based on endpoint type.
-    is_anthropic = _is_anthropic_path(api_path)
-    safe_fields = _ANTHROPIC_SAFE_FIELDS if is_anthropic else _OPENAI_SAFE_FIELDS
-
-    request = {k: v for k, v in raw.items() if k in safe_fields}
+    request = {k: v for k, v in raw.items() if k in _ANTHROPIC_SAFE_FIELDS}
 
     # Strip thinking content blocks (signatures are time-limited and invalid on
     # replay) and image blocks from tool_result content (base64 data is often
@@ -157,25 +104,44 @@ def _extract_request(
                     block = {**block}
                     inner = block.get("content")
                     if isinstance(inner, list):
-                        block["content"] = [
+                        stripped = [
                             b
                             for b in inner
                             if not (isinstance(b, dict) and b.get("type") == "image")
+                        ]
+                        # Keep at least a text placeholder so the tool_result is
+                        # never empty — an empty result is rejected as "no tool
+                        # output found".
+                        block["content"] = stripped or [
+                            {"type": "text", "text": "[image removed]"}
                         ]
                 cleaned.append(block)
             msg_copy["content"] = cleaned
         filtered_msgs.append(msg_copy)
     request["messages"] = filtered_msgs
 
+    # Strip cache_control from tool definitions — it's a prompt-caching
+    # annotation that is rejected when replaying against some configurations.
+    tools = request.get("tools")
+    if isinstance(tools, list):
+        request["tools"] = [
+            (
+                {k: v for k, v in t.items() if k != "cache_control"}
+                if isinstance(t, dict)
+                else t
+            )
+            for t in tools
+        ]
+
     request["model"] = model
     # Drop stream so token usage is always present in the response body.
     request.pop("stream", None)
 
-    return api_path, request
+    return request
 
 
-def _load_requests(requests_file: Path, model: str) -> list[tuple[str, dict[str, Any]]]:
-    dataset: list[tuple[str, dict[str, Any]]] = []
+def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
+    dataset: list[dict[str, Any]] = []
     skipped = 0
     with requests_file.open() as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -189,12 +155,24 @@ def _load_requests(requests_file: Path, model: str) -> list[tuple[str, dict[str,
                 skipped += 1
                 continue
 
+            call_type = entry.get("call_type", "")
+            if not _is_anthropic_call_type(call_type):
+                # raise LoadTestError(
+
+                logger.warning(
+                    f"Line {lineno}: expected Anthropic data (call_type='anthropic_messages')"
+                    f" but got call_type={call_type!r}. Only Anthropic requests are supported."
+                )
+                skipped += 1
+                continue
+                # )
+
             raw_req = entry.get("proxy_server_request")
             if not raw_req:
                 skipped += 1
                 continue
 
-            result = _extract_request(raw_req, entry, model)
+            result = _extract_request(raw_req, model)
             if result is None:
                 skipped += 1
                 continue
@@ -292,11 +270,8 @@ def run_load_test(
     if not dataset:
         raise LoadTestError(f"No valid requests found in {requests_file}")
 
-    # Count requests by endpoint type.
-    anthropic_count, openai_count = _count_requests_by_endpoint(dataset)
-
     # Shared queue and accumulators — safe under gevent's cooperative multitasking.
-    request_queue: gevent.queue.Queue = gevent.queue.Queue()
+    request_queue: gevent.queue.Queue[dict[str, Any] | None] = gevent.queue.Queue()
     for item in dataset:
         request_queue.put(item)
 
@@ -327,14 +302,14 @@ def run_load_test(
                 return
 
             assert item is not None
-            api_path, req = item
+            req = item
 
             headers = {
                 "Authorization": f"Bearer {_api_key}",
                 "Content-Type": "application/json",
             }
             with self.client.post(
-                api_path,
+                _ANTHROPIC_API_PATH,
                 json=req,
                 headers=headers,
                 catch_response=True,
@@ -342,13 +317,8 @@ def run_load_test(
                 if resp.status_code == 200:
                     try:
                         usage = resp.json().get("usage", {})
-                        # Handle both OpenAI and Anthropic response shapes.
-                        _token_acc["in"] += usage.get("prompt_tokens") or usage.get(
-                            "input_tokens", 0
-                        )
-                        _token_acc["out"] += usage.get(
-                            "completion_tokens"
-                        ) or usage.get("output_tokens", 0)
+                        _token_acc["in"] += usage.get("input_tokens", 0)
+                        _token_acc["out"] += usage.get("output_tokens", 0)
                         _token_acc["n"] += 1
                     except Exception:
                         pass
@@ -386,7 +356,7 @@ def run_load_test(
     while runner.user_count > 0:
         if n % 20 == 0:
             left = len(_request_queue)
-            print(f"{left} requests left...")
+            print(f"{left} requests left... {runner.user_count} users active")
         n += 1
         gevent.sleep(0.1)
     runner.stop()
@@ -413,8 +383,6 @@ def run_load_test(
         tokens_out_avg=token_acc["out"] / n_tokens if n_tokens else 0.0,
         workers=workers,
         dataset_size=len(dataset),
-        anthropic_requests=anthropic_count,
-        openai_requests=openai_count,
     )
 
 
