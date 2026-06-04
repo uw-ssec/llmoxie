@@ -1,5 +1,9 @@
 # FastMCP server entry point
 
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastmcp import FastMCP, Context
 from fastmcp.exceptions import ToolError
 from pydantic import Field
@@ -7,8 +11,17 @@ from pydantic import Field
 from llmaven.agentic.exceptions import CollectionNotFoundError, QdrantConnectionError, SearchError
 from llmaven.agentic.settings import config
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
-from llmaven.agentic.mcp.lifespan import lifespan
 from llmaven.agentic.mcp.tools.search import SearchKnowledgeBaseInput, SearchKnowledgeBaseOutput, SearchResultOutput
+
+@asynccontextmanager
+async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
+    """Manage server lifecycle - initialize HybridSearcher on startup."""
+    # Initialize HybridSearcher (lazy loads embedding models on first search)
+    hybrid_searcher = HybridSearcher(collection_name=config.collection_name)
+
+    yield {"hybrid_searcher": hybrid_searcher}
+
+    # Cleanup (if needed)
 
 
 # Create FastMCP server
