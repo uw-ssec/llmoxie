@@ -27,7 +27,9 @@ def mock_hybrid_searcher():
 
 @pytest.mark.asyncio
 async def test_search_knowledge_base_returns_results(mock_hybrid_searcher):
-    with patch("llmaven.agentic.mcp.server.HybridSearcher", return_value=mock_hybrid_searcher):
+    with patch(
+        "llmaven.agentic.mcp.server.HybridSearcher", return_value=mock_hybrid_searcher
+    ):
         async with Client(mcp) as client:
             result = await client.call_tool(
                 "search_knowledge_base",
@@ -47,7 +49,9 @@ async def test_search_knowledge_base_returns_results(mock_hybrid_searcher):
 @pytest.mark.asyncio
 async def test_search_knowledge_base_handles_empty_results(mock_hybrid_searcher):
     mock_hybrid_searcher.search.return_value = []
-    with patch("llmaven.agentic.mcp.server.HybridSearcher", return_value=mock_hybrid_searcher):
+    with patch(
+        "llmaven.agentic.mcp.server.HybridSearcher", return_value=mock_hybrid_searcher
+    ):
         async with Client(mcp) as client:
             result = await client.call_tool(
                 "search_knowledge_base",
@@ -61,13 +65,13 @@ async def test_search_knowledge_base_handles_empty_results(mock_hybrid_searcher)
 
 def test_search_knowledge_base_validates_limit():
     with pytest.raises(ValidationError):
-        SearchKnowledgeBaseInput(query="test", limit=0) # below ge=1
+        SearchKnowledgeBaseInput(query="test", limit=0)  # below ge=1
 
     with pytest.raises(ValidationError):
-        SearchKnowledgeBaseInput(query="test", limit=101) # above le=100
+        SearchKnowledgeBaseInput(query="test", limit=101)  # above le=100
 
     with pytest.raises(ValidationError):
-        SearchKnowledgeBaseInput(query="") # below min_length=1
+        SearchKnowledgeBaseInput(query="")  # below min_length=1
 
 
 @pytest.mark.asyncio
@@ -83,4 +87,3 @@ async def test_search_knowledge_base_uses_custom_collection(mock_hybrid_searcher
 
         # When collection_name is specified, a new HybridSearcher is created with it
         mock_cls.assert_called_with(collection_name="custom-collection")
-

@@ -1606,6 +1606,7 @@ def version() -> None:
 def mcp() -> None:
     """Start the MCP search server."""
     from llmaven.agentic.mcp.server import mcp as mcp_server
+
     mcp_server.run()
 
 

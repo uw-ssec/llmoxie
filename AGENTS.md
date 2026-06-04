@@ -190,10 +190,11 @@ python -m llmaven.agentic.mcp
 llmaven-search-mcp
 ```
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
+Add to your Claude Desktop config
+(`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
 `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
-```json
+````json
 {
  "mcpServers": {
  "llmaven-search": {
@@ -226,7 +227,7 @@ response = agent.run_sync("Explain transformers")
 print(response.answer)
 for citation in response.citations:
     print(f"- {citation.source_file}: {citation.relevance_score}")
-```
+````
 
 ### Configuration Options
 

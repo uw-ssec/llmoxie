@@ -8,10 +8,18 @@ from fastmcp import FastMCP, Context
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from llmaven.agentic.exceptions import CollectionNotFoundError, QdrantConnectionError, SearchError
+from llmaven.agentic.exceptions import (
+    CollectionNotFoundError,
+    QdrantConnectionError,
+    SearchError,
+)
 from llmaven.agentic.settings import config
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
-from llmaven.agentic.mcp.tools.search import SearchKnowledgeBaseInput, SearchKnowledgeBaseOutput, SearchResultOutput
+from llmaven.agentic.mcp.tools.search import (
+    SearchKnowledgeBaseOutput,
+    SearchResultOutput,
+)
+
 
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
@@ -26,8 +34,8 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
 
 # Create FastMCP server
 mcp = FastMCP(
- name="llmaven-search",
- lifespan=lifespan,
+    name="llmaven-search",
+    lifespan=lifespan,
 )
 
 
@@ -55,9 +63,15 @@ async def health_check(ctx: Context) -> str:
 async def search_knowledge_base(
     ctx: Context,
     query: str = Field(description="Search query to find relevant information"),
-    limit: int = Field(default=5, description="Maximum number of results", ge=1, le=100),
-    collection_name: str | None = Field(default=None, description="Collection to search"),
-    enable_rerank: bool | None = Field(default=None, description="Enable ColBERT reranking"),
+    limit: int = Field(
+        default=5, description="Maximum number of results", ge=1, le=100
+    ),
+    collection_name: str | None = Field(
+        default=None, description="Collection to search"
+    ),
+    enable_rerank: bool | None = Field(
+        default=None, description="Enable ColBERT reranking"
+    ),
 ) -> SearchKnowledgeBaseOutput:
     """
     Search the knowledge base for relevant information using hybrid search.
@@ -103,6 +117,3 @@ async def search_knowledge_base(
         raise ToolError(f"Cannot connect to Qdrant: {e}")
     except SearchError as e:
         raise ToolError(f"Search failed: {e}")
-
-
-

@@ -75,7 +75,6 @@ def qdrant_url(qdrant_container):
     return f"http://{qdrant_container.rest_host_address}"
 
 
-
 @pytest.fixture
 def qdrant_grpc_url(qdrant_container):
     """Provide the Qdrant gRPC URL for tests.

@@ -9,9 +9,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 @pytest.mark.asyncio
 async def test_mcp_server_responds_to_tool_list():
     async with stdio_client(
-        StdioServerParameters(
-            command="python", 
-            args=["-m", "llmaven.agentic.mcp"])
+        StdioServerParameters(command="python", args=["-m", "llmaven.agentic.mcp"])
     ) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -33,9 +31,8 @@ async def test_search_returns_valid_results(qdrant_url):
 
     async with stdio_client(
         StdioServerParameters(
-            command="python", 
-            args=["-m", "llmaven.agentic.mcp"], 
-            env=env)
+            command="python", args=["-m", "llmaven.agentic.mcp"], env=env
+        )
     ) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
