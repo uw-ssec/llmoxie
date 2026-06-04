@@ -67,8 +67,14 @@ deploy = [
     "grpcio-status==1.60.1"
 ]
 
+mcp = [
+ "fastmcp>=2.0.0",
+ "mcp>=1.0.0",
+]
+
 [project.scripts]
 llmaven = "llmaven.cli:main"
+llmaven-search-mcp = "llmaven.agentic.mcp:main"
 
 
 [project.urls]

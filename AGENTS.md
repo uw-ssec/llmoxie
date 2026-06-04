@@ -180,6 +180,33 @@ llmaven agentic chat --collection my-docs
 llmaven agentic chat --provider ollama --model llama2
 ```
 
+**MCP Server (for Claude Desktop / Cursor / other MCP clients):**
+
+```bash
+# Start the MCP server directly
+python -m llmaven.agentic.mcp
+
+# Or via the installed entry point
+llmaven-search-mcp
+```
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
+`%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+
+```json
+{
+ "mcpServers": {
+ "llmaven-search": {
+ "command": "python",
+ "args": ["-m", "llmaven.agentic.mcp"],
+ "env": {
+ "AGENTIC_QDRANT_URL": "http://localhost:6333",
+ "AGENTIC_COLLECTION_NAME": "my-knowledge-base"
+ }
+ }
+ }
+}
+
 #### Python API Usage
 
 ```python

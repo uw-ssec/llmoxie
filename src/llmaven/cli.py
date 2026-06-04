@@ -1602,6 +1602,13 @@ def version() -> None:
     typer.echo(f"LLMaven version {__version__}")
 
 
+@agentic_app.command()
+def mcp() -> None:
+    """Start the MCP search server."""
+    from llmaven.agentic.mcp.server import mcp as mcp_server
+    mcp_server.run()
+
+
 def main() -> None:
     """Entry point for the CLI."""
     app()
