@@ -615,7 +615,6 @@ def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
     """Wrapper to keep secrets import local and easy to mock in tests."""
     from llmaven.infrastructure.utils.secrets import get_llmaven_secrets
 
-    # TODO: Deduplicate the get_llmaven_secrets definition method across codebase (https://github.com/uw-ssec/llmaven/issues/89.
     return get_llmaven_secrets(env_file)
 
 
