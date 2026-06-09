@@ -372,7 +372,7 @@ class TestExtractLiteLLMRetry:
     def _status(code):
         resp = Mock()
         resp.status_code = code
-        # raise_for_status only matters if we don't pre-empt with our transient check
+        # raise_for_status only matters if we don't preempt with our transient check
         resp.raise_for_status.side_effect = __import__("httpx").HTTPStatusError(
             f"{code}", request=Mock(), response=Mock(status_code=code)
         )
