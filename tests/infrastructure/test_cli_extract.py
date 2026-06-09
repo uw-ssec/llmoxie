@@ -45,6 +45,7 @@ def invoke_extract(
     source: str | None,
     output_file: Path | None = None,
     input: str | None = None,
+    no_zip: bool = False,
 ) -> Result:
     args = ["infra", "extract"]
     if source is not None:
@@ -52,6 +53,8 @@ def invoke_extract(
     args += ["--from", from_date, "--to", to_date]
     if output_file is not None:
         args += ["--out", str(output_file)]
+    if no_zip:
+        args += ["--no-zip"]
 
     return runner.invoke(app, args, input=input)
 
@@ -69,7 +72,9 @@ class TestInfraExtract:
         assert result.exit_code == 1
         assert "--from must be <= --to" in result.output
 
-    def test_rejects_output_directory(self, runner: CliRunner, tmp_path: Path):
+    def test_rejects_output_directory_in_zip_mode(
+        self, runner: CliRunner, tmp_path: Path
+    ):
         out_dir = tmp_path / "output-dir"
         out_dir.mkdir()
 
@@ -81,8 +86,26 @@ class TestInfraExtract:
             output_file=out_dir,
         )
 
-        assert result.exit_code == 2
-        assert "Invalid value for '--out'" in result.output
+        assert result.exit_code == 1
+        assert "Output path is a directory but zip mode is enabled" in result.output
+
+    def test_rejects_file_output_in_no_zip_mode(
+        self, runner: CliRunner, tmp_path: Path
+    ):
+        out_file = tmp_path / "already-a-file"
+        out_file.write_text("preexisting", encoding="utf-8")
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=out_file,
+            no_zip=True,
+        )
+
+        assert result.exit_code == 1
+        assert "--no-zip writes to a directory" in result.output
 
     def test_mkdir_failure_exits(self, runner: CliRunner, tmp_path: Path):
         base_dir = tmp_path / "no-write"
@@ -233,6 +256,78 @@ class TestInfraExtract:
         assert payload1 == ""
 
         assert "1 total records" in result.output
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("httpx.Client")
+    def test_no_zip_writes_jsonl_files_into_directory(
+        self,
+        mock_httpx_client_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_dir = tmp_path / "spend-logs"
+
+        resp1 = Mock()
+        resp1.raise_for_status.return_value = None
+        resp1.json.return_value = [
+            {"request_id": "a", "startTime": "2026-01-01T00:00:00Z"}
+        ]
+
+        resp2 = Mock()
+        resp2.raise_for_status.return_value = None
+        resp2.json.return_value = []
+
+        http_client = Mock()
+        http_client.get.side_effect = [resp1, resp2]
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-02",
+            source=None,
+            output_file=output_dir,
+            no_zip=True,
+        )
+
+        assert result.exit_code == 0
+        assert output_dir.is_dir()
+
+        day1 = output_dir / "litellm_spend_logs_2026-01-01.jsonl"
+        day2 = output_dir / "litellm_spend_logs_2026-01-02.jsonl"
+        assert day1.exists()
+        assert day2.exists()
+
+        day1_text = day1.read_text(encoding="utf-8")
+        assert '"request_id": "a"' in day1_text
+        assert day2.read_text(encoding="utf-8") == ""
+
+    def test_no_zip_default_path_has_no_zip_suffix(
+        self, runner: CliRunner, tmp_path: Path
+    ):
+        # Force resolution path: we just want the typer-side handling to accept
+        # --no-zip without exploding before any extraction runs.
+        with patch("llmaven.cli._extract_litellm_logs") as mock_litellm, patch(
+            "llmaven.cli._prepare_extract_output_file",
+            return_value=tmp_path / "stub",
+        ) as mock_prepare:
+            result = invoke_extract(
+                runner,
+                from_date="2026-01-01",
+                to_date="2026-01-01",
+                source=None,
+                no_zip=True,
+            )
+
+        assert result.exit_code == 0
+        mock_prepare.assert_called_once()
+        assert mock_prepare.call_args.kwargs["use_zip"] is False
+        mock_litellm.assert_called_once()
+        assert mock_litellm.call_args.kwargs["use_zip"] is False
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
