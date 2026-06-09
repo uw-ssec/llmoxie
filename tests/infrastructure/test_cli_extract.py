@@ -311,10 +311,13 @@ class TestInfraExtract:
     ):
         # Force resolution path: we just want the typer-side handling to accept
         # --no-zip without exploding before any extraction runs.
-        with patch("llmaven.cli._extract_litellm_logs") as mock_litellm, patch(
-            "llmaven.cli._prepare_extract_output_file",
-            return_value=tmp_path / "stub",
-        ) as mock_prepare:
+        with (
+            patch("llmaven.cli._extract_litellm_logs") as mock_litellm,
+            patch(
+                "llmaven.cli._prepare_extract_output_file",
+                return_value=tmp_path / "stub",
+            ) as mock_prepare,
+        ):
             result = invoke_extract(
                 runner,
                 from_date="2026-01-01",
