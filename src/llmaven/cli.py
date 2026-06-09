@@ -703,6 +703,72 @@ def _prepare_extract_output_file(
     return path
 
 
+class _TransientHTTPError(Exception):
+    """Marker raised internally so the retry helper knows a response should be retried."""
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# Retry config for transient HTTP failures (5xx + 429) and connection errors.
+# Exposed at module scope so tests can monkey-patch a no-wait variant.
+_RETRY_MAX_ATTEMPTS = 5
+_RETRY_WAIT_MULTIPLIER = 1.0
+_RETRY_WAIT_MIN_SECONDS = 1.0
+_RETRY_WAIT_MAX_SECONDS = 10.0
+
+
+def _is_transient_http_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
+
+
+def _http_get_with_retry(
+    client,
+    *,
+    url: str,
+    params: dict,
+    headers: dict,
+):
+    """Issue an HTTP GET, retrying on transient HTTP failures and connection errors.
+
+    Retries on:
+      - httpx.RequestError (connect timeouts, DNS failures, etc.)
+      - HTTP 429 (rate limited)
+      - HTTP 5xx (server errors)
+
+    Non-retryable HTTP errors (e.g. 4xx other than 429) surface immediately
+    via raise_for_status().
+    """
+    import httpx
+    import tenacity
+
+    retryer = tenacity.Retrying(
+        retry=tenacity.retry_if_exception_type(
+            (_TransientHTTPError, httpx.RequestError)
+        ),
+        stop=tenacity.stop_after_attempt(_RETRY_MAX_ATTEMPTS),
+        wait=tenacity.wait_exponential(
+            multiplier=_RETRY_WAIT_MULTIPLIER,
+            min=_RETRY_WAIT_MIN_SECONDS,
+            max=_RETRY_WAIT_MAX_SECONDS,
+        ),
+        reraise=True,
+    )
+
+    def _attempt():
+        resp = client.get(url, params=params, headers=headers)
+        if _is_transient_http_status(resp.status_code):
+            raise _TransientHTTPError(
+                f"transient HTTP {resp.status_code} from {url}",
+                status_code=resp.status_code,
+            )
+        resp.raise_for_status()
+        return resp
+
+    return retryer(_attempt)
+
+
 def _extract_litellm_logs(
     start_date_obj: "date",
     end_date_obj: "date",
@@ -730,7 +796,6 @@ def _extract_litellm_logs(
     with zipfile.ZipFile(
         output_file, mode="w", compression=zipfile.ZIP_DEFLATED
     ) as zipf:
-        # TODO: Add retry logic (https://github.com/uw-ssec/llmaven/issues/88).
         with httpx.Client(timeout=30.0) as http_client:
             current_date = start_date_obj
             while current_date <= end_date_obj:
@@ -744,9 +809,13 @@ def _extract_litellm_logs(
                 }
 
                 try:
-                    resp = http_client.get(endpoint, params=params, headers=headers)
-                    resp.raise_for_status()
-                except httpx.HTTPError as exc:
+                    resp = _http_get_with_retry(
+                        http_client,
+                        url=endpoint,
+                        params=params,
+                        headers=headers,
+                    )
+                except (_TransientHTTPError, httpx.HTTPError) as exc:
                     _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
 
                 try:
