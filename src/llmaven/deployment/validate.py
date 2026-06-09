@@ -6,7 +6,7 @@ This module provides the implementation for the 'llmaven validate' command.
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
 from ..infrastructure.config.schema import LLMavenConfig

@@ -235,9 +235,7 @@ def load_env_file(env_file_path: Optional[Path] = None) -> None:
                 loaded_count += 1
                 logger.info("Loaded secret from file: %s", key)
             else:
-                logger.info(
-                    "Skipping %s from file (already set in environment)", key
-                )
+                logger.info("Skipping %s from file (already set in environment)", key)
 
     logger.info("Loaded %d secrets from %s", loaded_count, env_file_path)
 
