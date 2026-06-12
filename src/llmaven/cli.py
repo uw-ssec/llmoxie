@@ -6,7 +6,6 @@ This module provides command-line interface functionality for the LLMaven projec
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from enum import Enum
 from datetime import datetime, time, timezone, timedelta
 from typing import TYPE_CHECKING, NoReturn, Optional
@@ -142,16 +141,15 @@ def serve(
         try:
             import uvicorn
         except ImportError:
-            typer.echo(
-                "Error: uvicorn is not installed. "
-                "Please install it with: pip install uvicorn",
-                err=True,
+            console_err.print(
+                "[red]Error:[/red] uvicorn is not installed. "
+                "Please install it with: pip install uvicorn"
             )
             raise typer.Exit(code=1)
 
-        typer.echo(f"Starting LLMaven API in development mode on {host}:{port}")
+        console.print(f"Starting LLMaven API in development mode on {host}:{port}")
         if reload:
-            typer.echo("Auto-reload enabled - watching for file changes")
+            console.print("Auto-reload enabled - watching for file changes")
 
         uvicorn.run(
             "llmaven.main:app",
@@ -167,17 +165,15 @@ def serve(
         try:
             import gunicorn.app.base
         except ImportError:
-            typer.echo(
-                "Error: gunicorn is not installed. "
-                "Please install it with: pip install gunicorn",
-                err=True,
+            console_err.print(
+                "[red]Error:[/red] gunicorn is not installed. "
+                "Please install it with: pip install gunicorn"
             )
             raise typer.Exit(code=1)
 
         if reload:
-            typer.echo(
-                "Warning: --reload flag is ignored in production mode",
-                err=True,
+            console_err.print(
+                "[yellow]Warning:[/yellow] --reload flag is ignored in production mode"
             )
 
         # Calculate workers if not specified
@@ -186,7 +182,7 @@ def serve(
 
             workers = (multiprocessing.cpu_count() * 2) + 1
 
-        typer.echo(
+        console.print(
             f"Starting LLMaven API in production mode on {host}:{port} "
             f"with {workers} workers"
         )
@@ -262,10 +258,7 @@ def ui(
     frontend_app = Path(__file__).parent / "frontend" / "app.py"
 
     if not frontend_app.exists():
-        typer.echo(
-            f"Error: Streamlit app not found at {frontend_app}",
-            err=True,
-        )
+        console_err.print(f"[red]Error:[/red] Streamlit app not found at {frontend_app}")
         raise typer.Exit(code=1)
 
     # Build streamlit command
@@ -282,20 +275,19 @@ def ui(
     if not browser:
         cmd.extend(["--server.headless", "true"])
 
-    typer.echo(f"Starting LLMaven UI on {host}:{port}")
+    console.print(f"Starting LLMaven UI on {host}:{port}")
     if browser:
-        typer.echo("Opening browser...")
+        console.print("Opening browser...")
 
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        typer.echo(f"Error: Failed to start Streamlit app: {e}", err=True)
+        console_err.print(f"[red]Error:[/red] Failed to start Streamlit app: {e}")
         raise typer.Exit(code=1)
     except FileNotFoundError:
-        typer.echo(
-            "Error: streamlit is not installed. "
-            "Please install it with: pip install streamlit",
-            err=True,
+        console_err.print(
+            "[red]Error:[/red] streamlit is not installed. "
+            "Please install it with: pip install streamlit"
         )
         raise typer.Exit(code=1)
 
@@ -402,10 +394,10 @@ def validate(
             env_file_path=env_file,
         )
     except ValidationError:
-        sys.exit(1)
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Validation failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Validation failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -464,11 +456,11 @@ def deploy(
             env_file_path=env_file,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -514,11 +506,11 @@ def destroy(
     try:
         destroy_infrastructure(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -551,11 +543,11 @@ def status(
     try:
         show_deployment_status(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -599,11 +591,11 @@ def refresh(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
 
 
 class ExtractSource(str, Enum):
@@ -1103,11 +1095,11 @@ def cancel(
     try:
         cancel_stack_operation(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="deploy")
@@ -1162,11 +1154,11 @@ def backup_infra_deploy(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="output")
@@ -1215,13 +1207,11 @@ def backup_infra_output(
     )
 
     if secret is None and name is None:
-        typer.echo(
-            "✗ Provide --secret <output-name> or --name <output-name>.", err=True
-        )
-        sys.exit(1)
+        console_err.print("[red]✗[/red] Provide --secret <output-name> or --name <output-name>.")
+        raise typer.Exit(code=1)
     if secret is not None and name is not None:
-        typer.echo("✗ --secret and --name are mutually exclusive.", err=True)
-        sys.exit(1)
+        console_err.print("[red]✗[/red] --secret and --name are mutually exclusive.")
+        raise typer.Exit(code=1)
 
     config_path = Path(config)
     output_name = secret if secret is not None else name
@@ -1233,13 +1223,13 @@ def backup_infra_output(
             output_name=output_name,
             reveal_secret=reveal,
         )
-        typer.echo(value)
+        console.print(value, markup=False, highlight=False)
     except DeploymentError as e:
-        typer.echo(f"✗ {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Failed to retrieve output: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Failed to retrieve output: {e}")
+        raise typer.Exit(code=1)
 
 
 @agentic_app.command()
@@ -1599,7 +1589,7 @@ def version() -> None:
     """Display the LLMaven version."""
     from llmaven import __version__
 
-    typer.echo(f"LLMaven version {__version__}")
+    console.print(f"LLMaven version {__version__}")
 
 
 def main() -> None:
