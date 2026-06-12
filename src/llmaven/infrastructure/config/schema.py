@@ -301,6 +301,7 @@ class BackupJobConfig(BaseModel):
         default=1800, description="Max job runtime in seconds", ge=60
     )
     database: str = Field(
+        default="llmaven",
         description="Name of the PostgreSQL database to back up (must match one of database.databases)",
     )
     connection_string_env: str = Field(
