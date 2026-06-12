@@ -4,10 +4,11 @@ This module handles loading and parsing llmaven-config.yaml files.
 """
 
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import yaml
 from pydantic import ValidationError
+from ruamel.yaml import YAML
 
 from .schema import LLMavenConfig
 
@@ -121,21 +122,37 @@ def save_config(config: LLMavenConfig, output_path: Union[str, Path]) -> None:
         raise ConfigLoadError(f"Failed to write configuration to {output_path}: {e}")
 
 
+def _coerce_yaml_value(value: Any) -> Any:
+    """Coerce an update value into the type written back to YAML.
+
+    The string ``"null"`` and ``None`` both map to a YAML ``null``. Booleans are
+    written as native YAML booleans (``true``/``false``). Everything else is
+    written as-is; ruamel.yaml adds quoting only when required.
+    """
+    if value is None or value == "null":
+        return None
+    return value
+
+
 def update_config_fields(
     config_path: Union[str, Path], updates: dict[str, str]
 ) -> None:
     """Update specific fields in YAML config while preserving formatting.
 
-    This function updates only the specified fields while preserving all comments,
-    blank lines, and formatting in the YAML file.
+    Uses a ruamel.yaml round-trip (load-modify-dump) so all comments, blank
+    lines, key ordering, and inline annotations are preserved. Field paths are
+    dotted and may be nested to any depth (e.g. ``azure.resource_group`` or
+    ``a.b.c``). Only existing fields are updated; unknown paths raise an error
+    rather than creating new keys, so user settings are never silently added to.
 
     Args:
         config_path: Path to llmaven-config.yaml file
-        updates: Dictionary mapping field paths to new values
+        updates: Dictionary mapping dotted field paths to new values
                  (e.g., {'azure.resource_group': 'rg-name'})
 
     Raises:
-        ConfigLoadError: If file operations fail
+        ConfigLoadError: If the file is missing, any field path does not exist,
+            or file operations fail.
 
     Example:
         update_config_fields('/path/to/llmaven-config.yaml', {
@@ -143,69 +160,60 @@ def update_config_fields(
             'project.pulumi_state_store': 'pulumistate'
         })
     """
-    import re
-
     config_path = Path(config_path)
     if not config_path.exists():
         raise ConfigLoadError(f"Configuration file not found: {config_path}")
 
+    yaml_rt = YAML()
+    yaml_rt.preserve_quotes = True
+    # Prevent ruamel from re-wrapping long scalars/comments onto new lines.
+    yaml_rt.width = 4096
+    # Render None as the explicit literal `null` (matching the template style)
+    # instead of an empty scalar, so existing `null` lines round-trip unchanged.
+    yaml_rt.representer.add_representer(
+        type(None),
+        lambda representer, _: representer.represent_scalar(
+            "tag:yaml.org,2002:null", "null"
+        ),
+    )
+
     try:
         with open(config_path, "r") as f:
-            content = f.read()
+            data = yaml_rt.load(f)
     except Exception as e:
         raise ConfigLoadError(f"Failed to read configuration file {config_path}: {e}")
 
-    lines = content.split("\n")
-    result_lines = []
-    applied_updates = set()
-    current_section = None
+    if data is None:
+        raise ConfigLoadError(
+            f"Configuration file is empty: {config_path}\n"
+            f"Cannot update fields in an empty configuration."
+        )
 
-    for line in lines:
-        section_match = re.match(r"^([a-z_]+):\s*(?:#.*)?$", line)
-        if section_match:
-            current_section = section_match.group(1)
-            result_lines.append(line)
+    not_found = []
+    for path, new_value in updates.items():
+        keys = path.split(".")
+        node = data
+        # Walk to the parent mapping of the leaf key.
+        for key in keys[:-1]:
+            if not isinstance(node, dict) or key not in node:
+                node = None
+                break
+            node = node[key]
+
+        leaf = keys[-1]
+        if not isinstance(node, dict) or leaf not in node:
+            not_found.append(path)
             continue
 
-        field_match = (
-            re.match(r"^(\s+)([a-z_]+):\s*(.*)$", line) if current_section else None
-        )
-        if field_match:
-            indent, field_name, rest = field_match.groups()
-            full_path = f"{current_section}.{field_name}"
+        node[leaf] = _coerce_yaml_value(new_value)
 
-            if full_path in updates:
-                new_value = updates[full_path]
-                applied_updates.add(full_path)
-                comment = (
-                    comment_match.group(1)
-                    if (comment_match := re.search(r"(\s+#.*)$", rest))
-                    else ""
-                )
-
-                formatted_value = (
-                    "null"
-                    if new_value in [None, "null"]
-                    else str(new_value).lower()
-                    if isinstance(new_value, bool)
-                    else f'"{new_value}"'
-                    if isinstance(new_value, str)
-                    and (" " in new_value or ":" in new_value)
-                    else str(new_value)
-                )
-                result_lines.append(f"{indent}{field_name}: {formatted_value}{comment}")
-                continue
-
-        result_lines.append(line)
-
-    unapplied_updates = set(updates.keys()) - applied_updates
-    if unapplied_updates:
+    if not_found:
         raise ConfigLoadError(
-            f"Configuration fields not found: {', '.join(sorted(unapplied_updates))}"
+            f"Configuration fields not found: {', '.join(sorted(not_found))}"
         )
 
     try:
         with open(config_path, "w") as f:
-            f.write("\n".join(result_lines))
+            yaml_rt.dump(data, f)
     except Exception as e:
         raise ConfigLoadError(f"Failed to write configuration file {config_path}: {e}")
