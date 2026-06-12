@@ -258,7 +258,9 @@ def ui(
     frontend_app = Path(__file__).parent / "frontend" / "app.py"
 
     if not frontend_app.exists():
-        console_err.print(f"[red]Error:[/red] Streamlit app not found at {frontend_app}")
+        console_err.print(
+            f"[red]Error:[/red] Streamlit app not found at {frontend_app}"
+        )
         raise typer.Exit(code=1)
 
     # Build streamlit command
@@ -1207,7 +1209,9 @@ def backup_infra_output(
     )
 
     if secret is None and name is None:
-        console_err.print("[red]✗[/red] Provide --secret <output-name> or --name <output-name>.")
+        console_err.print(
+            "[red]✗[/red] Provide --secret <output-name> or --name <output-name>."
+        )
         raise typer.Exit(code=1)
     if secret is not None and name is not None:
         console_err.print("[red]✗[/red] --secret and --name are mutually exclusive.")
