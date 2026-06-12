@@ -1,7 +1,8 @@
 # Contributing to LLMaven
 
-Thank you for your interest in contributing to LLMaven! This project is developed
-by [UW SSEC](https://escience.washington.edu/software-engineering/ssec/) and
+Thank you for your interest in contributing to LLMaven! This project is
+developed by
+[UW SSEC](https://escience.washington.edu/software-engineering/ssec/) and
 welcomes contributions from the community.
 
 ## Table of Contents
@@ -31,21 +32,25 @@ welcomes contributions from the community.
 LLMaven uses [pixi](https://pixi.sh) to manage dependencies and environments.
 
 1. **Install pixi** if you haven't already:
+
    ```bash
    curl -fsSL https://pixi.sh/install.sh | bash
    ```
 
 2. **Install project dependencies:**
+
    ```bash
    pixi install
    ```
 
 3. **Activate the development environment:**
+
    ```bash
    pixi shell -e llmaven
    ```
 
 4. **Install pre-commit hooks:**
+
    ```bash
    pre-commit install
    ```
@@ -74,6 +79,7 @@ pixi run -e llmaven pytest tests/ --cov=llmaven
 ## Submitting a Pull Request
 
 1. **Create a feature branch** from `main`:
+
    ```bash
    git checkout -b fix/short-description
    # or
@@ -87,11 +93,13 @@ pixi run -e llmaven pytest tests/ --cov=llmaven
 4. **Run the full test suite** and ensure it passes.
 
 5. **Run pre-commit** to catch formatting and lint issues:
+
    ```bash
    pre-commit run --all-files
    ```
 
 6. **Push your branch** and open a pull request against `main`:
+
    ```bash
    git push origin your-branch-name
    ```
@@ -99,8 +107,8 @@ pixi run -e llmaven pytest tests/ --cov=llmaven
 7. **Fill in the PR template** — link the issue your PR closes with
    `Closes #<issue-number>` in the description.
 
-8. **Respond to review feedback** promptly. A maintainer will review your PR
-   and may request changes before merging.
+8. **Respond to review feedback** promptly. A maintainer will review your PR and
+   may request changes before merging.
 
 ### Commit message format
 
@@ -121,7 +129,7 @@ Common types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`.
 - **Type hints:** encouraged throughout; required for public API surfaces
 - **Dependencies:** runtime deps go in `pyproject.toml`; dev-only tools go in
   `pixi.toml`. Do not add a package to both unless there is a specific reason.
-- **Comments:** only when the *why* is non-obvious. Avoid restating what the
+- **Comments:** only when the _why_ is non-obvious. Avoid restating what the
   code already says.
 
 ## Reporting Issues

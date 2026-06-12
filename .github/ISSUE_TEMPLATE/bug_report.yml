@@ -39,7 +39,8 @@ body:
     id: actual
     attributes:
       label: Actual behaviour
-      description: What actually happened? Include any error messages or stack traces.
+      description:
+        What actually happened? Include any error messages or stack traces.
     validations:
       required: true
 

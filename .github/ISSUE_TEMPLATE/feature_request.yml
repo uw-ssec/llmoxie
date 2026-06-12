@@ -11,7 +11,8 @@ body:
     id: problem
     attributes:
       label: Problem or motivation
-      description: What problem does this feature solve? What use case does it enable?
+      description:
+        What problem does this feature solve? What use case does it enable?
       placeholder: I'm trying to do X but currently have to Y instead...
     validations:
       required: true
@@ -20,7 +21,9 @@ body:
     id: solution
     attributes:
       label: Proposed solution
-      description: Describe the feature you'd like to see. Include any API or CLI design ideas.
+      description:
+        Describe the feature you'd like to see. Include any API or CLI design
+        ideas.
     validations:
       required: true
 
@@ -28,7 +31,8 @@ body:
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Any alternative approaches or workarounds you've thought about?
+      description:
+        Any alternative approaches or workarounds you've thought about?
     validations:
       required: false
 
