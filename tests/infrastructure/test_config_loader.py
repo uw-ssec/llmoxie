@@ -219,4 +219,6 @@ def test_untouched_null_fields_stay_null(tmp_path):
 
     result = config_path.read_text()
     # The untouched null line is rendered as explicit `null`, not blank.
-    assert "pulumi_state_store: null  # Azure Storage account (auto-generated)" in result
+    assert (
+        "pulumi_state_store: null  # Azure Storage account (auto-generated)" in result
+    )
