@@ -16,8 +16,15 @@ from llmaven.agentic.exceptions import ProviderConfigurationError
 from llmaven.agentic.settings import config
 
 
-def create_llm_model() -> OpenAIChatModel:
+def create_llm_model(
+    provider: str | None = None,
+    model: str | None = None,
+) -> OpenAIChatModel:
     """Create an LLM model based on the configured provider.
+
+    Args:
+        provider: Optional provider override. Defaults to ``config.llm_provider``.
+        model: Optional model override. Defaults to ``config.llm_model``.
 
     Returns:
         OpenAIChatModel: The configured LLM model instance.
@@ -25,23 +32,24 @@ def create_llm_model() -> OpenAIChatModel:
     Raises:
         ProviderConfigurationError: If the provider is unsupported or configuration is invalid.
     """
-    provider = config.llm_provider.lower()
+    resolved_provider = (provider or config.llm_provider).lower()
+    resolved_model = model or config.llm_model
 
-    if provider == "openai":
-        return _create_openai_model()
-    elif provider == "ollama":
-        return _create_ollama_model()
-    elif provider == "litellm":
-        return _create_litellm_model()
-    elif provider == "azure":
-        return _create_azure_model()
-    elif provider == "huggingface":
+    if resolved_provider == "openai":
+        return _create_openai_model(resolved_model)
+    elif resolved_provider == "ollama":
+        return _create_ollama_model(resolved_model)
+    elif resolved_provider == "litellm":
+        return _create_litellm_model(resolved_model)
+    elif resolved_provider == "azure":
+        return _create_azure_model(resolved_model)
+    elif resolved_provider == "huggingface":
         return _create_huggingface_model()
     else:
-        raise ProviderConfigurationError(f"Unsupported provider: {provider}")
+        raise ProviderConfigurationError(f"Unsupported provider: {resolved_provider}")
 
 
-def _create_openai_model() -> OpenAIChatModel:
+def _create_openai_model(model: str) -> OpenAIChatModel:
     """Create OpenAI model using default provider.
 
     Returns:
@@ -57,10 +65,10 @@ def _create_openai_model() -> OpenAIChatModel:
     )
 
     provider = OpenAIProvider(http_client=http_client)
-    return OpenAIChatModel(config.llm_model, provider=provider)
+    return OpenAIChatModel(model, provider=provider)
 
 
-def _create_ollama_model() -> OpenAIChatModel:
+def _create_ollama_model(model: str) -> OpenAIChatModel:
     """Create Ollama model using OpenAI-compatible endpoint.
 
     Ollama provides an OpenAI-compatible API at /v1 endpoint.
@@ -83,10 +91,10 @@ def _create_ollama_model() -> OpenAIChatModel:
     provider = OllamaProvider(
         base_url=base_url, api_key=api_key, http_client=http_client
     )
-    return OpenAIChatModel(config.llm_model, provider=provider)
+    return OpenAIChatModel(model, provider=provider)
 
 
-def _create_litellm_model() -> OpenAIChatModel:
+def _create_litellm_model(model: str) -> OpenAIChatModel:
     """Create LiteLLM model for unified provider access.
 
     LiteLLM provides a unified interface to 100+ LLM providers through
@@ -109,7 +117,7 @@ def _create_litellm_model() -> OpenAIChatModel:
         )
 
     # Construct model name with prefix if specified
-    model_name = f"{config.litellm_model_prefix}{config.llm_model}"
+    model_name = f"{config.litellm_model_prefix}{model}"
 
     # Create HTTP client with timeout configuration
     import httpx
@@ -127,7 +135,7 @@ def _create_litellm_model() -> OpenAIChatModel:
     return OpenAIChatModel(model_name, provider=provider)
 
 
-def _create_azure_model() -> OpenAIChatModel:
+def _create_azure_model(model: str) -> OpenAIChatModel:
     """Create Azure AI Foundry model.
 
     Azure OpenAI Service provides OpenAI models through Azure's infrastructure
@@ -155,7 +163,7 @@ def _create_azure_model() -> OpenAIChatModel:
         )
 
     # Use deployment name if specified, otherwise use model name
-    deployment = config.azure_deployment_name or config.llm_model
+    deployment = config.azure_deployment_name or model
 
     # Construct Azure OpenAI base URL
     # Azure uses: https://{resource}.openai.azure.com/openai/deployments/{deployment}/
