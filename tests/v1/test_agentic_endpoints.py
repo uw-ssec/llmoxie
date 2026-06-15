@@ -13,6 +13,7 @@ from llmaven.main import app
 from llmaven.agentic.search.models import SearchResult
 from llmaven.agentic.agent.models import RAGResponse, Citation
 from llmaven.agentic.exceptions import AgenticRAGError
+from llmaven.agentic.settings import config as agentic_config
 
 client = TestClient(app)
 
@@ -411,3 +412,96 @@ class TestAgenticEndpointsIntegration:
         data = response.json()
         assert len(data["citations"]) == 3
         assert data["sources_used"] == 3
+
+
+class TestAgenticChatGlobalConfigContamination:
+    """Cross-request contamination via /v1/agentic/chat.
+
+    The chat endpoint constructs a fresh `RAGAgent` per request and
+    forwards user-controlled `llm_provider`/`llm_model` straight in.
+    `RAGAgent.__init__` writes those values into the module-level
+    `agentic_config` singleton, so a *subsequent* request that supplies
+    no overrides silently routes through the previous request's provider.
+
+    These tests deliberately mock at the layer **below** `RAGAgent`
+    (`create_llm_model`, `HybridSearcher`, `Agent`) so the real
+    `RAGAgent.__init__` runs end-to-end through the FastAPI handler.
+    """
+
+    # Sentinel baseline distinct from any string used elsewhere in the
+    # suite, so the assertion is invariant to test ordering even when
+    # earlier tests leak overrides into the global singleton.
+    BASELINE_PROVIDER = "openai"
+    BASELINE_MODEL = "regression-baseline-sentinel"
+
+    @pytest.fixture(autouse=True)
+    def _force_known_baseline(self):
+        original_provider = agentic_config.llm_provider
+        original_model = agentic_config.llm_model
+        agentic_config.llm_provider = self.BASELINE_PROVIDER
+        agentic_config.llm_model = self.BASELINE_MODEL
+        try:
+            yield
+        finally:
+            agentic_config.llm_provider = original_provider
+            agentic_config.llm_model = original_model
+
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
+    @patch("llmaven.agentic.agent.rag_agent.Agent")
+    @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
+    def test_chat_request_does_not_leak_provider_to_subsequent_request(
+        self, mock_searcher_cls, mock_agent_cls, mock_create_llm
+    ):
+        """Two sequential POSTs: request 1 has overrides, request 2 does not.
+
+        Request 2 must be served using the env-default provider/model. On
+        `main` the global config has been clobbered by request 1, so
+        request 2's `RAGAgent.__init__` sees the leaked override.
+        """
+        mock_searcher_cls.return_value = Mock()
+        # pydantic-ai Agent.run() returns AgentRunResult with .output attribute,
+        # which RAGAgent.run() unwraps before returning to the endpoint.
+        mock_run_result = Mock()
+        mock_run_result.output = RAGResponse(
+            answer="ok",
+            citations=[],
+            confidence=0.0,
+            sources_used=0,
+        )
+        mock_agent_instance = Mock()
+        mock_agent_instance.run = AsyncMock(return_value=mock_run_result)
+        mock_agent_cls.return_value = mock_agent_instance
+        mock_create_llm.return_value = Mock()
+
+        baseline_provider = agentic_config.llm_provider
+        baseline_model = agentic_config.llm_model
+
+        # Request 1 — supplies overrides.
+        resp1 = client.post(
+            "/v1/agentic/chat",
+            json={
+                "query": "first",
+                "llm_provider": "ollama",
+                "llm_model": "llama2",
+            },
+        )
+        assert resp1.status_code == 200
+
+        # Request 2 — no overrides, expected to use the env default.
+        resp2 = client.post("/v1/agentic/chat", json={"query": "second"})
+        assert resp2.status_code == 200
+
+        # After both requests, the global must still equal the baseline.
+        # Today it equals ("ollama", "llama2") because request 1 leaked.
+        assert agentic_config.llm_provider == baseline_provider, (
+            "Provider leaked across requests: request 1's override "
+            "persisted in the global config singleton after the response "
+            f"was returned (expected {baseline_provider!r}, "
+            f"got {agentic_config.llm_provider!r}). Subsequent requests "
+            "without an override will silently route to the wrong provider."
+        )
+        assert agentic_config.llm_model == baseline_model, (
+            "Model leaked across requests: request 1's override persisted "
+            f"in the global config singleton (expected {baseline_model!r}, "
+            f"got {agentic_config.llm_model!r})."
+        )
