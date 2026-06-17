@@ -16,8 +16,12 @@ from llmaven.agentic.exceptions import ProviderConfigurationError
 from llmaven.agentic.settings import config
 
 
-def create_llm_model() -> OpenAIChatModel:
+def create_llm_model(tags: list[str] | None = None) -> OpenAIChatModel:
     """Create an LLM model based on the configured provider.
+
+    Args:
+        tags: Optional list of tags passed to LiteLLM via x-litellm-tags header
+        for request filtering and analysis in log data.
 
     Returns:
         OpenAIChatModel: The configured LLM model instance.
@@ -32,7 +36,7 @@ def create_llm_model() -> OpenAIChatModel:
     elif provider == "ollama":
         return _create_ollama_model()
     elif provider == "litellm":
-        return _create_litellm_model()
+        return _create_litellm_model(tags=tags)
     elif provider == "azure":
         return _create_azure_model()
     elif provider == "huggingface":
@@ -86,11 +90,15 @@ def _create_ollama_model() -> OpenAIChatModel:
     return OpenAIChatModel(config.llm_model, provider=provider)
 
 
-def _create_litellm_model() -> OpenAIChatModel:
+def _create_litellm_model(tags: list[str] | None = None) -> OpenAIChatModel:
     """Create LiteLLM model for unified provider access.
 
     LiteLLM provides a unified interface to 100+ LLM providers through
     either a proxy server or direct SDK usage.
+
+    Args:
+        tags: Optional list of tags sent via x-litellm-tags header for
+        request filtering and analysis in log data.
 
     Returns:
         OpenAIChatModel: LiteLLM model instance.
@@ -114,8 +122,13 @@ def _create_litellm_model() -> OpenAIChatModel:
     # Create HTTP client with timeout configuration
     import httpx
 
+    extra_headers = {}
+    if tags:
+        extra_headers["x-litellm-tags"] = ",".join(tags)
+
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min total, 10 sec connect
+        headers=extra_headers,
     )
 
     provider = OpenAIProvider(
