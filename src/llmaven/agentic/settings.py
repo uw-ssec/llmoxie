@@ -90,9 +90,12 @@ class AgenticConfig(BaseSettings):
         default=5, gt=0, description="Final number of results to return"
     )
 
-    # Load data from Azure 
-    azure_blob_account_url: str | None = None # e.g. https://myaccount.blob.core.windows.net
-    azure_blob_connection_string: str | None = None # fallback auth
+    # Load data from Azure
+    azure_blob_account_url: str | None = (
+        None  # e.g. https://myaccount.blob.core.windows.net
+    )
+    azure_blob_connection_string: str | None = None  # fallback auth
+
 
 # Global configuration instance
 config = AgenticConfig()

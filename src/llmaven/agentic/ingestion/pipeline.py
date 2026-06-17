@@ -180,7 +180,7 @@ class IngestionPipeline:
                         continue
 
         return documents
-    
+
     def _load_from_azure(self, uri: str) -> list[dict[str, Any]]:
         """Load documents from Azure Blob Storage.
 
@@ -194,7 +194,7 @@ class IngestionPipeline:
         IngestionError: If Azure connection or blob listing fails
         """
         # Parse az://container/prefix
-        path = uri[len("az://"):]
+        path = uri[len("az://") :]
         parts = path.split("/", 1)
         container_name = parts[0]
         prefix = parts[1] if len(parts) > 1 else ""
@@ -228,7 +228,9 @@ class IngestionPipeline:
         try:
             blobs = container_client.list_blobs(name_starts_with=prefix or None)
         except Exception as e:
-            raise IngestionError(f"Failed to list blobs in '{container_name}': {e}") from e
+            raise IngestionError(
+                f"Failed to list blobs in '{container_name}': {e}"
+            ) from e
 
         for blob in blobs:
             blob_name: str = blob.name
@@ -238,12 +240,14 @@ class IngestionPipeline:
             try:
                 blob_client = container_client.get_blob_client(blob_name)
                 data = blob_client.download_blob().readall()
-                content = data if suffix == ".pdf" else data.decode("utf-8", errors="ignore")
+                content = (
+                    data if suffix == ".pdf" else data.decode("utf-8", errors="ignore")
+                )
                 documents.append(
-                {
-                "file_path": f"az://{container_name}/{blob_name}",
-                "content": content,
-                }
+                    {
+                        "file_path": f"az://{container_name}/{blob_name}",
+                        "content": content,
+                    }
                 )
             except Exception:
                 continue
