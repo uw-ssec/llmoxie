@@ -142,6 +142,9 @@ class IngestionPipeline:
         documents = []
 
         for directory in directories:
+            if directory.startswith("az://"):
+                documents.extend(self._load_from_azure(directory))
+                continue
             dir_path = Path(directory)
             if not dir_path.exists():
                 raise IngestionError(f"Directory does not exist: {directory}")
@@ -176,6 +179,74 @@ class IngestionPipeline:
                         # Continue processing other files if one fails
                         continue
 
+        return documents
+    
+    def _load_from_azure(self, uri: str) -> list[dict[str, Any]]:
+        """Load documents from Azure Blob Storage.
+
+        Args:
+        uri: Azure Blob URI in the format az://container-name/optional-prefix
+
+        Returns:
+        List of document dicts with 'file_path' and 'content' keys
+
+        Raises:
+        IngestionError: If Azure connection or blob listing fails
+        """
+        # Parse az://container/prefix
+        path = uri[len("az://"):]
+        parts = path.split("/", 1)
+        container_name = parts[0]
+        prefix = parts[1] if len(parts) > 1 else ""
+
+        try:
+            from azure.storage.blob import BlobServiceClient
+            from azure.identity import DefaultAzureCredential
+
+            if config.azure_blob_connection_string:
+                client = BlobServiceClient.from_connection_string(
+                    config.azure_blob_connection_string
+                )
+            elif config.azure_blob_account_url:
+                client = BlobServiceClient(
+                    account_url=config.azure_blob_account_url,
+                    credential=DefaultAzureCredential(),
+                )
+            else:
+                raise IngestionError(
+                    "Azure Blob Storage requires either AGENTIC_AZURE_BLOB_ACCOUNT_URL "
+                    "or AGENTIC_AZURE_BLOB_CONNECTION_STRING in environment."
+                )
+        except ImportError as e:
+            raise IngestionError(
+                f"azure-storage-blob and azure-identity are required for Azure ingestion: {e}"
+            ) from e
+
+        documents = []
+        container_client = client.get_container_client(container_name)
+
+        try:
+            blobs = container_client.list_blobs(name_starts_with=prefix or None)
+        except Exception as e:
+            raise IngestionError(f"Failed to list blobs in '{container_name}': {e}") from e
+
+        for blob in blobs:
+            blob_name: str = blob.name
+            suffix = Path(blob_name).suffix.lower()
+            if suffix not in self.SUPPORTED_EXTENSIONS:
+                continue
+            try:
+                blob_client = container_client.get_blob_client(blob_name)
+                data = blob_client.download_blob().readall()
+                content = data if suffix == ".pdf" else data.decode("utf-8", errors="ignore")
+                documents.append(
+                {
+                "file_path": f"az://{container_name}/{blob_name}",
+                "content": content,
+                }
+                )
+            except Exception:
+                continue
         return documents
 
     def parse(self, document: dict[str, Any]) -> dict[str, Any]:

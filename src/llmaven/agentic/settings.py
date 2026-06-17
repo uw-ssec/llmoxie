@@ -35,6 +35,8 @@ class AgenticConfig(BaseSettings):
         enable_rerank: Whether to enable ColBERT reranking (default: True)
         prefetch_top_k: Number of candidates from each prefetch method (default: 20)
         final_top_k: Final number of results to return (default: 5)
+        azure_blob_account_url: Azure Blob Storage account URL (e.g. https://myaccount.blob.core.windows.net)
+        azure_blob_connection_string: Azure Blob Storage connection string (alternative to account URL)
     """
 
     model_config = SettingsConfigDict(
@@ -88,6 +90,9 @@ class AgenticConfig(BaseSettings):
         default=5, gt=0, description="Final number of results to return"
     )
 
+    # Load data from Azure 
+    azure_blob_account_url: str | None = None # e.g. https://myaccount.blob.core.windows.net
+    azure_blob_connection_string: str | None = None # fallback auth
 
 # Global configuration instance
 config = AgenticConfig()
