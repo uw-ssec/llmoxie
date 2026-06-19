@@ -669,10 +669,12 @@ def _prepare_extract_output_file(
     source: "ExtractSource",
     from_date: str,
     to_date: str,
+    use_zip: bool = True,
 ) -> Path:
     use_default_path = output_file is None
     filename_prefix = "llmaven_"
-    filename_suffix = f"_{from_date}_to_{to_date}.zip"
+    base_suffix = f"_{from_date}_to_{to_date}"
+    filename_suffix = f"{base_suffix}.zip" if use_zip else base_suffix
 
     if source.value == ExtractSource.litellm:
         path = output_file or Path(
@@ -685,9 +687,17 @@ def _prepare_extract_output_file(
     else:
         _fail_extract(f"Source is not supported: {source}")
 
-    # Guard only for the default path (Typer can't validate a value that wasn't provided)
-    if use_default_path and path.exists() and path.is_dir():
-        _fail_extract(f"Default output path is a directory: {path}")
+    # Ensure the output path's type matches the chosen mode (zip vs directory).
+    if path.exists():
+        if use_zip and path.is_dir():
+            _fail_extract(
+                f"Output path is a directory but zip mode is enabled: {path}. "
+                "Pass --no-zip to write JSONL files into a directory."
+            )
+        if not use_zip and path.is_file():
+            _fail_extract(
+                f"Output path is a file but --no-zip writes to a directory: {path}"
+            )
 
     # If user provided --out, ensure parent exists (argument parsing doesn’t create directories)
     if not use_default_path:
@@ -703,14 +713,60 @@ def _prepare_extract_output_file(
     return path
 
 
+class _ExtractWriter:
+    """Write per-day JSONL entries to either a zip archive or a directory.
+
+    Why: lets the extract pipeline stay shape-identical whether `--no-zip` is
+    used or not, instead of branching on every writestr call.
+    """
+
+    def __init__(self, output_path: Path, *, use_zip: bool) -> None:
+        self._output_path = output_path
+        self._use_zip = use_zip
+        self._zipf_ctx = None
+        self._zipf = None
+
+    def __enter__(self) -> "_ExtractWriter":
+        if self._use_zip:
+            import zipfile
+
+            self._zipf_ctx = zipfile.ZipFile(
+                self._output_path, mode="w", compression=zipfile.ZIP_DEFLATED
+            )
+            # Use the __enter__ return value so callers (and test mocks) see the
+            # post-__enter__ object, matching a plain `with zipfile.ZipFile(...)`.
+            self._zipf = self._zipf_ctx.__enter__()
+        else:
+            # If the directory previously existed and the user confirmed overwrite,
+            # remove its contents so stale files don't linger alongside new output.
+            if self._output_path.exists() and self._output_path.is_dir():
+                for child in self._output_path.iterdir():
+                    if child.is_file():
+                        child.unlink()
+            self._output_path.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._zipf_ctx is not None:
+            self._zipf_ctx.__exit__(exc_type, exc, tb)
+            self._zipf_ctx = None
+            self._zipf = None
+
+    def writestr(self, name: str, data: str) -> None:
+        if self._zipf is not None:
+            self._zipf.writestr(name, data)
+        else:
+            (self._output_path / name).write_text(data, encoding="utf-8")
+
+
 def _extract_litellm_logs(
     start_date_obj: "date",
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
+    use_zip: bool = True,
 ) -> None:
     import json
-    import zipfile
 
     import httpx
 
@@ -726,10 +782,7 @@ def _extract_litellm_logs(
 
     total_records = 0
 
-    # TODO: Make zipfile output optional (https://github.com/uw-ssec/llmaven/issues/87).
-    with zipfile.ZipFile(
-        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
-    ) as zipf:
+    with _ExtractWriter(output_file, use_zip=use_zip) as zipf:
         # TODO: Add retry logic (https://github.com/uw-ssec/llmaven/issues/88).
         with httpx.Client(timeout=30.0) as http_client:
             current_date = start_date_obj
@@ -882,8 +935,8 @@ def _extract_mlflow_logs(
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
+    use_zip: bool = True,
 ) -> None:
-    import zipfile
     from collections import defaultdict
 
     import mlflow
@@ -917,9 +970,7 @@ def _extract_mlflow_logs(
     total_records = 0
     total_files_written = 0
 
-    with zipfile.ZipFile(
-        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
-    ) as zipf:
+    with _ExtractWriter(output_file, use_zip=use_zip) as zipf:
         current_date = start_date_obj
 
         # Partition the export by UTC day using half-open windows [D, D+1).
@@ -1011,12 +1062,21 @@ def extract(
     output_file: Optional[Path] = typer.Option(
         None,
         "--out",
-        help="Output zip file path",
-        dir_okay=False,
+        help="Output path (zip file, or directory when --no-zip is used)",
+        dir_okay=True,
         file_okay=True,
         writable=True,
         resolve_path=True,
         path_type=Path,
+    ),
+    no_zip: bool = typer.Option(
+        False,
+        "--no-zip",
+        help=(
+            "Write raw JSONL files into a directory instead of bundling them "
+            "into a zip archive. Useful for small date ranges where unzipping "
+            "is just an extra step."
+        ),
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
@@ -1047,12 +1107,15 @@ def extract(
     if start_date_obj > end_date_obj:
         _fail_extract("--from must be <= --to")
 
+    use_zip = not no_zip
+
     # Validate output file
     output_file = _prepare_extract_output_file(
         output_file,
         source,
         from_date,
         to_date,
+        use_zip=use_zip,
     )
 
     if source == ExtractSource.litellm:
@@ -1061,6 +1124,7 @@ def extract(
             end_date_obj,
             output_file,
             env_file,
+            use_zip=use_zip,
         )
     elif source == ExtractSource.mlflow:
         _extract_mlflow_logs(
@@ -1068,6 +1132,7 @@ def extract(
             end_date_obj,
             output_file,
             env_file,
+            use_zip=use_zip,
         )
     # else: source is validated in the initial check.
 
