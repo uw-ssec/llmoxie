@@ -144,3 +144,15 @@ class TestInfraDeployEnvFile:
         assert result.exit_code == 0
         kwargs = mock_deploy.call_args.kwargs
         assert kwargs["env_file_path"] is None
+
+
+class TestSecretsDedup:
+    """Issue #89: `deployment.validate.get_llmaven_secrets` must be the same
+    callable as `infrastructure.utils.secrets.get_llmaven_secrets`, not a
+    re-implementation that can drift."""
+
+    def test_validate_reexports_canonical_secrets_loader(self):
+        from llmaven.deployment import validate
+        from llmaven.infrastructure.utils import secrets as utils_secrets
+
+        assert validate.get_llmaven_secrets is utils_secrets.get_llmaven_secrets
