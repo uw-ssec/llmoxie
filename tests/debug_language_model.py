@@ -1,9 +1,10 @@
 import logging
 import os
-from llmaven.core.generator.language_model import LanguageModel
 
 # Enable Hugging Face logs
 import transformers
+
+from llmaven.core.generator.language_model import LanguageModel
 
 transformers.utils.logging.set_verbosity_info()  # Ensures logs appear
 

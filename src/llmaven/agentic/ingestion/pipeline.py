@@ -32,19 +32,19 @@ except ImportError:
     except ImportError:
         pass
 
-from fastembed import TextEmbedding, SparseTextEmbedding, LateInteractionTextEmbedding
+from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding, TextEmbedding
+from qdrant_client.models import PointStruct
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
 )
 
+from llmaven.agentic.exceptions import EmbeddingError, IngestionError
 from llmaven.agentic.settings import config
 from llmaven.agentic.vector_store.qdrant_manager import QdrantManager
-from llmaven.agentic.exceptions import IngestionError, EmbeddingError
-from qdrant_client.models import PointStruct
 
 
 class IngestionPipeline:

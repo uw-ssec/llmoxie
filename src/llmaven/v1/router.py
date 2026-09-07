@@ -6,7 +6,8 @@ This module aggregates all v1 endpoints into a single router.
 from __future__ import annotations
 
 from fastapi import APIRouter
-from .endpoints import generate, retrieve, agentic_retrieve, agentic_chat
+
+from .endpoints import agentic_chat, agentic_retrieve, generate, retrieve
 
 # Create the main v1 router
 router = APIRouter(prefix="/v1")

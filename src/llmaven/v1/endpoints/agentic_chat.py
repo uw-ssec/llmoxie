@@ -7,7 +7,6 @@ responses including citations and confidence scores.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -34,17 +33,17 @@ class AgenticChatRequest(BaseModel):
     """
 
     query: str = Field(..., description="User query or question", min_length=1)
-    collection: Optional[str] = Field(None, description="Collection name")
-    conversation_id: Optional[str] = Field(
+    collection: str | None = Field(None, description="Collection name")
+    conversation_id: str | None = Field(
         None, description="Conversation ID for tracking history"
     )
-    message_history: Optional[list[dict[str, str]]] = Field(
+    message_history: list[dict[str, str]] | None = Field(
         None, description="Conversation history"
     )
-    llm_provider: Optional[str] = Field(
+    llm_provider: str | None = Field(
         None, description="LLM provider override (openai, ollama, huggingface)"
     )
-    llm_model: Optional[str] = Field(None, description="LLM model override")
+    llm_model: str | None = Field(None, description="LLM model override")
 
 
 @router.post("", response_model=RAGResponse)
@@ -96,4 +95,4 @@ async def agentic_chat(request: AgenticChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error in agentic chat: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}")

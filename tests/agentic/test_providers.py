@@ -4,19 +4,19 @@ This module tests the provider factory and its ability to create
 different LLM models based on configuration.
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from llmaven.agentic.exceptions import ProviderConfigurationError
 from llmaven.agentic.providers.factory import (
-    create_llm_model,
-    _create_openai_model,
-    _create_ollama_model,
-    _create_litellm_model,
     _create_azure_model,
     _create_huggingface_model,
+    _create_litellm_model,
+    _create_ollama_model,
+    _create_openai_model,
+    create_llm_model,
 )
-from llmaven.agentic.exceptions import ProviderConfigurationError
 
 
 class TestProviderFactory:

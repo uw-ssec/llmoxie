@@ -1,8 +1,10 @@
+import shutil
 from pathlib import Path
+
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
+
 from ..embeddings.embedding_model import get_embedding_model
-import shutil
 
 
 class Retriever:
@@ -54,7 +56,7 @@ class Retriever:
 
             except Exception as e:
                 print(
-                    f"Warning: Could not delete collection '{collection_name}'. Error: {str(e)}"
+                    f"Warning: Could not delete collection '{collection_name}'. Error: {e!s}"
                 )
 
         print(

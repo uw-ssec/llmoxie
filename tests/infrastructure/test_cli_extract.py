@@ -8,9 +8,9 @@ avoiding event-loop / async / grpc side effects during unit tests.
 
 from __future__ import annotations
 
-from datetime import date
 import json
 import os
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -1059,6 +1059,7 @@ class TestInfraExtractMLflow:
         self,
     ):
         from mlflow.entities import ViewType
+
         from llmaven.cli import _fetch_mlflow_experiment_ids_for_date_range
 
         client = Mock()

@@ -4,13 +4,14 @@ This module tests the document ingestion pipeline including loading, parsing,
 chunking, embedding, and upsertion to Qdrant.
 """
 
-import pytest
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import tempfile
 
+import pytest
+
+from llmaven.agentic.exceptions import EmbeddingError, IngestionError
 from llmaven.agentic.ingestion.pipeline import IngestionPipeline
-from llmaven.agentic.exceptions import IngestionError, EmbeddingError
 
 
 class TestIngestionPipelineInitialization:
@@ -310,20 +311,20 @@ class TestIngestionPipelineEmbed:
     def test_embed_error_handling(self):
         """Test that embedding errors are caught and wrapped."""
         mock_qdrant_manager = MagicMock()
-        with patch(
-            "llmaven.agentic.ingestion.pipeline.QdrantManager",
-            return_value=mock_qdrant_manager,
+        with (
+            patch(
+                "llmaven.agentic.ingestion.pipeline.QdrantManager",
+                return_value=mock_qdrant_manager,
+            ),
+            patch("llmaven.agentic.ingestion.pipeline.TextEmbedding") as mock_dense,
         ):
-            with patch(
-                "llmaven.agentic.ingestion.pipeline.TextEmbedding"
-            ) as mock_dense:
-                mock_dense.side_effect = Exception("Embedding failed")
+            mock_dense.side_effect = Exception("Embedding failed")
 
-                pipeline = IngestionPipeline()
-                chunk = {"text": "test", "file_path": "test.txt"}
+            pipeline = IngestionPipeline()
+            chunk = {"text": "test", "file_path": "test.txt"}
 
-                with pytest.raises(EmbeddingError):
-                    pipeline.embed(chunk)
+            with pytest.raises(EmbeddingError):
+                pipeline.embed(chunk)
 
 
 class TestIngestionPipelineUpsert:
@@ -428,40 +429,40 @@ class TestIngestionPipelineFullPipeline:
             for i in range(150)  # More than default batch size
         ]
 
-        with patch(
-            "llmaven.agentic.ingestion.pipeline.QdrantManager",
-            return_value=mock_qdrant_manager,
+        with (
+            patch(
+                "llmaven.agentic.ingestion.pipeline.QdrantManager",
+                return_value=mock_qdrant_manager,
+            ),
+            patch("llmaven.agentic.ingestion.pipeline.TextEmbedding") as mock_dense,
+            patch(
+                "llmaven.agentic.ingestion.pipeline.SparseTextEmbedding"
+            ) as mock_sparse,
+            patch(
+                "llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding"
+            ) as mock_colbert,
         ):
-            with patch(
-                "llmaven.agentic.ingestion.pipeline.TextEmbedding"
-            ) as mock_dense:
-                with patch(
-                    "llmaven.agentic.ingestion.pipeline.SparseTextEmbedding"
-                ) as mock_sparse:
-                    with patch(
-                        "llmaven.agentic.ingestion.pipeline.LateInteractionTextEmbedding"
-                    ) as mock_colbert:
-                        # Mock embeddings
-                        mock_dense_instance = MagicMock()
-                        mock_dense_instance.embed.return_value = [[0.1] * 384]
-                        mock_dense.return_value = mock_dense_instance
+            # Mock embeddings
+            mock_dense_instance = MagicMock()
+            mock_dense_instance.embed.return_value = [[0.1] * 384]
+            mock_dense.return_value = mock_dense_instance
 
-                        mock_sparse_instance = MagicMock()
-                        mock_sparse_instance.embed.return_value = [
-                            {"indices": [1], "values": [0.5]}
-                        ]
-                        mock_sparse.return_value = mock_sparse_instance
+            mock_sparse_instance = MagicMock()
+            mock_sparse_instance.embed.return_value = [
+                {"indices": [1], "values": [0.5]}
+            ]
+            mock_sparse.return_value = mock_sparse_instance
 
-                        mock_colbert_instance = MagicMock()
-                        mock_colbert_instance.embed.return_value = [[[0.1] * 128] * 10]
-                        mock_colbert.return_value = mock_colbert_instance
+            mock_colbert_instance = MagicMock()
+            mock_colbert_instance.embed.return_value = [[[0.1] * 128] * 10]
+            mock_colbert.return_value = mock_colbert_instance
 
-                        pipeline = IngestionPipeline(batch_size=50)
+            pipeline = IngestionPipeline(batch_size=50)
 
-                        # Mock load to return many documents
-                        pipeline.load = MagicMock(return_value=mock_documents)
+            # Mock load to return many documents
+            pipeline.load = MagicMock(return_value=mock_documents)
 
-                        pipeline.ingest([])
+            pipeline.ingest([])
 
-                        # Verify upsert was called multiple times (batched)
-                        assert mock_qdrant_manager.upsert_points.call_count >= 2
+            # Verify upsert was called multiple times (batched)
+            assert mock_qdrant_manager.upsert_points.call_count >= 2

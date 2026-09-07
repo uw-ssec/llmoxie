@@ -7,8 +7,8 @@ Supports logging to local filesystem or Azure Blob Storage using fsspec.
 import json
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from datetime import UTC, datetime
+from typing import Any
 
 import fsspec  # type: ignore
 
@@ -57,14 +57,14 @@ class DataLogger:
         # Ensure base directory/container exists
         try:
             self.fs.makedirs(self.base_path, exist_ok=True)
-        except (OSError, IOError) as e:
+        except OSError as e:
             # Some filesystems or remote providers may raise OS-related errors
             # when the directory/container already exists or cannot be created;
             # log at debug level so it can be inspected if needed.
             logger.debug("Could not create base path '%s': %s", self.base_path, e)
 
     def _get_log_filename(
-        self, model: Optional[str] = None, user_id: Optional[str] = None
+        self, model: str | None = None, user_id: str | None = None
     ) -> str:
         """
         Generate log filename based on user, model and date.
@@ -77,7 +77,7 @@ class DataLogger:
             Filename in format: {user_id}_{model}_{YYYYMMDD}.jsonl (if user_id provided)
                            or: {model}_{YYYYMMDD}.jsonl (if no user_id)
         """
-        date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+        date_str = datetime.now(UTC).strftime("%Y%m%d")
         model_name = model.replace("/", "_") if model else "unknown"
 
         if user_id:
@@ -88,7 +88,7 @@ class DataLogger:
     def _get_full_path(self, filename: str) -> str:
         return f"{self.base_path}/{filename}"
 
-    def log_entry(self, log_entry: Dict[str, Any]) -> None:
+    def log_entry(self, log_entry: dict[str, Any]) -> None:
         """
         Append a log entry to storage.
 
@@ -114,17 +114,17 @@ class DataLogger:
             # Append to file (fsspec handles both local and Azure)
             with self.fs.open(full_path, "a", encoding="utf-8") as f:
                 f.write(log_line)
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.error("Error logging to storage: %s", e)
 
     def create_log_entry(
         self,
         method: str,
         path: str,
-        request_headers: Dict[str, str],
+        request_headers: dict[str, str],
         request_body: Any,
-        user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Create a log entry structure for a request.
 
@@ -157,9 +157,9 @@ class DataLogger:
 
     def add_response_to_entry(
         self,
-        log_entry: Dict[str, Any],
+        log_entry: dict[str, Any],
         status_code: int,
-        response_headers: Dict[str, str],
+        response_headers: dict[str, str],
         response_body: Any,
         streaming: bool = False,
     ) -> None:
