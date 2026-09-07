@@ -1,9 +1,14 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import os
 import logging
+import os
 from typing import Literal
-from transformers import pipeline
+
 from langchain_community.llms import HuggingFacePipeline
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    pipeline,
+)
 
 
 class LanguageModel:
@@ -59,7 +64,7 @@ class LanguageModel:
             self.hg_pipeline = HuggingFacePipeline(pipeline=pipe)
         else:
             logging.error("Model and tokenizer not loaded. Cannot create pipeline.")
-            return None
+            return
 
     def inference(self, prompt):
         if self.hg_pipeline:

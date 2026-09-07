@@ -29,6 +29,7 @@ def qdrant_container():
     with QdrantContainer() as container:
         yield container
 
+
 @pytest.fixture
 def qdrant_url(qdrant_container):
     """Provide the Qdrant HTTP API URL for tests."""
@@ -51,7 +52,7 @@ def test_qdrant_collection(qdrant_url):
     # Create collection
     client.create_collection(
         collection_name="test_collection",
-        vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+        vectors_config=VectorParams(size=384, distance=Distance.COSINE),
     )
 
     # Verify
@@ -238,12 +239,12 @@ def qdrant_container():
 
 ```python
 # Unit tests (no Qdrant)
-tests/agentic/test_models.py
-tests/agentic/test_exceptions.py
+tests / agentic / test_models.py
+tests / agentic / test_exceptions.py
 
 # Integration tests (with Qdrant)
-tests/agentic/test_qdrant_manager.py
-tests/agentic/test_ingestion_pipeline.py
+tests / agentic / test_qdrant_manager.py
+tests / agentic / test_ingestion_pipeline.py
 ```
 
 ### 3. Mark Integration Tests
@@ -327,9 +328,11 @@ def qdrant_container():
     with QdrantContainer() as container:
         yield container
 
+
 @pytest.fixture
 def qdrant_url(qdrant_container):
     return qdrant_container.get_api_url()
+
 
 # test.py
 def test_qdrant(qdrant_url):

@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import Qdrant

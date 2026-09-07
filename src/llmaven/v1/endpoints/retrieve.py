@@ -1,7 +1,9 @@
 import traceback
+
 from fastapi import APIRouter, HTTPException
-from ...services.retrieval_service import perform_retrieval
+
 from ...schemas.retrieve import RetrieveRequest
+from ...services.retrieval_service import perform_retrieval
 
 router = APIRouter(prefix="/retrieve", tags=["retrieve"])
 

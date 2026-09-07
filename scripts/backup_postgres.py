@@ -10,7 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import fsspec
@@ -67,7 +67,7 @@ def backup(config_path: str | None = None) -> None:
         keep_last_n = int(os.getenv("BACKUP_KEEP_LAST_N", "7"))
 
     db_name = _parse_db_name(db_url)
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     dest_key = f"{destination}{db_name}/{timestamp}.dump"
 
     storage_opts = _storage_options(destination)

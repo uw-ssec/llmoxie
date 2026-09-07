@@ -669,7 +669,7 @@ from openai import OpenAI
 # Configure client to use LiteLLM proxy
 client = OpenAI(
     base_url="http://localhost:4000",
-    api_key="sk-1234"  # Your LITELLM_MASTER_KEY
+    api_key="sk-1234",  # Your LITELLM_MASTER_KEY
 )
 
 # Make a chat completion request
@@ -677,8 +677,8 @@ response = client.chat.completions.create(
     model="gpt-5-mini",
     messages=[
         {"role": "system", "content": "You are a helpful scientific assistant."},
-        {"role": "user", "content": "What is the significance of the Higgs boson?"}
-    ]
+        {"role": "user", "content": "What is the significance of the Higgs boson?"},
+    ],
 )
 
 print(response.choices[0].message.content)
@@ -693,7 +693,7 @@ from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     model="gpt-5-mini",
     openai_api_key="sk-1234",
-    openai_api_base="http://localhost:4000"
+    openai_api_base="http://localhost:4000",
 )
 
 # Make a request
@@ -727,7 +727,7 @@ experiment = mlflow.get_experiment_by_name("Default")
 
 # Search runs
 runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
-print(runs[['run_id', 'metrics.total_cost', 'params.model']])
+print(runs[["run_id", "metrics.total_cost", "params.model"]])
 ```
 
 ### Managing Storage with MinIO
@@ -766,24 +766,24 @@ from botocore.client import Config
 
 # Configure S3 client for MinIO
 s3_client = boto3.client(
-    's3',
-    endpoint_url='http://localhost:9000',
-    aws_access_key_id='minioadmin',
-    aws_secret_access_key='minioadmin',
-    config=Config(signature_version='s3v4'),
-    region_name='us-east-1'
+    "s3",
+    endpoint_url="http://localhost:9000",
+    aws_access_key_id="minioadmin",
+    aws_secret_access_key="minioadmin",
+    config=Config(signature_version="s3v4"),
+    region_name="us-east-1",
 )
 
 # List buckets
 response = s3_client.list_buckets()
-for bucket in response['Buckets']:
-    print(bucket['Name'])
+for bucket in response["Buckets"]:
+    print(bucket["Name"])
 
 # Upload file
-s3_client.upload_file('local_file.txt', 'llmaven', 'remote_file.txt')
+s3_client.upload_file("local_file.txt", "llmaven", "remote_file.txt")
 
 # Download file
-s3_client.download_file('llmaven', 'remote_file.txt', 'downloaded_file.txt')
+s3_client.download_file("llmaven", "remote_file.txt", "downloaded_file.txt")
 ```
 
 ## Docker Compose Infrastructure
@@ -1395,25 +1395,23 @@ export AWS_ENDPOINT_URL=http://localhost:9000
 import os
 
 # Configure environment
-os.environ['LITELLM_API_BASE'] = 'http://localhost:4000'
-os.environ['LITELLM_API_KEY'] = 'sk-1234'
-os.environ['MLFLOW_TRACKING_URI'] = 'http://localhost:8080'
+os.environ["LITELLM_API_BASE"] = "http://localhost:4000"
+os.environ["LITELLM_API_KEY"] = "sk-1234"
+os.environ["MLFLOW_TRACKING_URI"] = "http://localhost:8080"
 
 from openai import OpenAI
 import mlflow
 
 # Use LiteLLM
 client = OpenAI(
-    base_url=os.environ['LITELLM_API_BASE'],
-    api_key=os.environ['LITELLM_API_KEY']
+    base_url=os.environ["LITELLM_API_BASE"], api_key=os.environ["LITELLM_API_KEY"]
 )
 
 # Track with MLflow
-mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI'])
+mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
 with mlflow.start_run():
     response = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=[{"role": "user", "content": "Hello!"}]
+        model="gpt-5-mini", messages=[{"role": "user", "content": "Hello!"}]
     )
     mlflow.log_param("model", "gpt-5-mini")
     mlflow.log_metric("response_length", len(response.choices[0].message.content))

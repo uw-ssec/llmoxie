@@ -4,14 +4,13 @@ This module creates and configures Azure Container Apps Environment with
 VNet integration, monitoring, and workload profiles.
 """
 
-from typing import Dict, Optional
 import datetime
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import LLMavenConfig, BackupJobConfig
+from ..config.schema import BackupJobConfig, LLMavenConfig
 
 
 def create_container_apps_environment(
@@ -20,7 +19,7 @@ def create_container_apps_environment(
     container_apps_subnet_id: Output[str],
     log_analytics_workspace: azure_native.operationalinsights.Workspace,
     config: LLMavenConfig,
-    tags: Dict[str, str],
+    tags: dict[str, str],
 ) -> azure_native.app.ManagedEnvironment:
     """
     Create Azure Container Apps Managed Environment.
@@ -110,18 +109,18 @@ def create_container_app_with_key_vault_secrets(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: Optional[Dict[str, str]] = None,
-    key_vault_secret_refs: Optional[Dict[str, str]] = None,
-    inline_secrets: Optional[Dict[str, str]] = None,
-    command_args: Optional[list] = None,
-    volumes: Optional[list] = None,
-    volume_mounts: Optional[list] = None,
-    managed_identity_id: Optional[Output[str]] = None,
+    env_vars: dict[str, str] | None = None,
+    key_vault_secret_refs: dict[str, str] | None = None,
+    inline_secrets: dict[str, str] | None = None,
+    command_args: list | None = None,
+    volumes: list | None = None,
+    volume_mounts: list | None = None,
+    managed_identity_id: Output[str] | None = None,
     environment: str = "dev",
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
     enable_ingress: bool = True,
     ingress_external: bool = True,
-    opts: Optional[pulumi.ResourceOptions] = None,
+    opts: pulumi.ResourceOptions | None = None,
 ) -> azure_native.app.ContainerApp:
     """
     Create Azure Container App with Key Vault secret references.
@@ -341,12 +340,12 @@ def create_backup_job(
     location: str,
     managed_environment_id: Output[str],
     key_vault_uri: Output[str],
-    key_vault_secret_refs: Dict[str, str],
+    key_vault_secret_refs: dict[str, str],
     storage_conn_str: str,
     config: LLMavenConfig,
-    tags: Dict[str, str],
-    managed_identity_id: Optional[Output[str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
+    tags: dict[str, str],
+    managed_identity_id: Output[str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
 ) -> azure_native.app.Job:
     """Create a scheduled Container Apps Job that streams pg_dump to blob storage.
 

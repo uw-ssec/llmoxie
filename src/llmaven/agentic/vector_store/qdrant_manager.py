@@ -10,21 +10,21 @@ from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
-    VectorParams,
     Distance,
-    SparseVectorParams,
-    SparseVector,
-    MultiVectorConfig,
     MultiVectorComparator,
+    MultiVectorConfig,
     PointStruct,
     ScoredPoint,
+    SparseVector,
+    SparseVectorParams,
+    VectorParams,
 )
 
-from llmaven.agentic.settings import config
 from llmaven.agentic.exceptions import (
-    QdrantConnectionError,
     CollectionNotFoundError,
+    QdrantConnectionError,
 )
+from llmaven.agentic.settings import config
 
 
 class QdrantManager:

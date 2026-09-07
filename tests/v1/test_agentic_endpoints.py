@@ -5,14 +5,15 @@ This module tests the FastAPI endpoints for agentic RAG:
 - POST /v1/agentic/chat - RAG chat endpoint
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from fastapi.testclient import TestClient
 
-from llmaven.main import app
-from llmaven.agentic.search.models import SearchResult
-from llmaven.agentic.agent.models import RAGResponse, Citation
+from llmaven.agentic.agent.models import Citation, RAGResponse
 from llmaven.agentic.exceptions import AgenticRAGError
+from llmaven.agentic.search.models import SearchResult
+from llmaven.main import app
 
 client = TestClient(app)
 

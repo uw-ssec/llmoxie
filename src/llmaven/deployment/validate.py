@@ -7,7 +7,6 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
 from ..infrastructure.config.schema import LLMavenConfig
@@ -16,10 +15,8 @@ from ..infrastructure.config.schema import LLMavenConfig
 class ValidationError(Exception):
     """Exception raised when validation fails."""
 
-    pass
 
-
-def check_azure_cli() -> Tuple[bool, str]:
+def check_azure_cli() -> tuple[bool, str]:
     """Check if Azure CLI is installed and authenticated.
 
     Returns:
@@ -61,7 +58,7 @@ def check_azure_cli() -> Tuple[bool, str]:
     return True, "Azure CLI is installed and authenticated"
 
 
-def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
+def check_subscription_access(subscription_id: str) -> tuple[bool, str]:
     """Check if subscription is accessible.
 
     Args:
@@ -92,7 +89,7 @@ def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
         return False, f"Failed to check subscription: {e}"
 
 
-def check_required_providers(subscription_id: str) -> Tuple[bool, str]:
+def check_required_providers(subscription_id: str) -> tuple[bool, str]:
     """Check if required Azure resource providers are registered.
 
     Args:
@@ -148,7 +145,7 @@ def check_required_providers(subscription_id: str) -> Tuple[bool, str]:
         return False, f"Failed to check providers: {e}"
 
 
-def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
+def get_llmaven_secrets(env_file_path: Path | None = None) -> dict[str, str]:
     """Get all LLMAVEN_SECRETS_* environment variables.
 
     Args:
@@ -196,8 +193,8 @@ def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
 def check_secrets(
     config: LLMavenConfig,
     skip_secrets: bool = False,
-    env_file_path: Optional[Path] = None,
-) -> Tuple[bool, List[str]]:
+    env_file_path: Path | None = None,
+) -> tuple[bool, list[str]]:
     """Check if required secrets are available as environment variables.
 
     Args:
@@ -306,7 +303,7 @@ def check_secrets(
     return all_secrets_found, messages
 
 
-def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[str]]:
+def check_config_for_hardcoded_secrets(config_path: Path) -> tuple[bool, list[str]]:
     """Check if configuration file contains hardcoded secrets.
 
     Args:
@@ -347,7 +344,7 @@ def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[st
     return not has_hardcoded_secrets, messages
 
 
-def estimate_monthly_cost(config: LLMavenConfig) -> Tuple[float, float]:
+def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
     """Estimate monthly Azure cost based on configuration.
 
     Args:
@@ -410,7 +407,7 @@ def validate_config(
     config_path: Path,
     strict: bool = False,
     skip_secrets: bool = False,
-    env_file_path: Optional[Path] = None,
+    env_file_path: Path | None = None,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
