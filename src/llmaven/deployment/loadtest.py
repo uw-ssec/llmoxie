@@ -34,6 +34,9 @@ class LoadTestResults:
     total_requests: int
     failed_requests: int
     content_policy_errors: int
+    fallback_requests: int
+    fallback_rate_pct: float
+    served_model_counts_json: str
     error_rate_pct: float
     throughput_rps: float
     latency_p50_ms: float
@@ -49,6 +52,7 @@ class LoadTestResults:
 
 
 _ANTHROPIC_API_PATH = "/v1/messages"
+_REQUEST_TIMEOUT_SECONDS = 90.0
 
 _ANTHROPIC_SAFE_FIELDS = {
     "model",
@@ -99,6 +103,8 @@ def _extract_request(
                     cleaned.append(block)
                     continue
                 if block.get("type") == "thinking":
+                    continue
+                if block.get("type") == "image":
                     continue
                 if block.get("type") == "tool_result":
                     block = {**block}
@@ -278,6 +284,8 @@ def run_load_test(
     token_acc: dict[str, int] = {"in": 0, "out": 0, "n": 0}
     error_acc: dict[str, int] = {"n": 0}
     content_policy_acc: dict[str, int] = {"n": 0}
+    fallback_acc: dict[str, int] = {"n": 0}
+    served_model_acc: dict[str, int] = {}
 
     # Capture locals for use inside the inner class.
     _request_queue = request_queue
@@ -285,6 +293,8 @@ def run_load_test(
     _token_acc = token_acc
     _error_acc = error_acc
     _content_policy_acc = content_policy_acc
+    _fallback_acc = fallback_acc
+    _served_model_acc = served_model_acc
     _error_log = error_log
     _max_errors = max_errors_logged
 
@@ -312,16 +322,36 @@ def run_load_test(
                 _ANTHROPIC_API_PATH,
                 json=req,
                 headers=headers,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
                 catch_response=True,
             ) as resp:
                 if resp.status_code == 200:
                     try:
-                        usage = resp.json().get("usage", {})
+                        payload = resp.json()
+                        usage = (
+                            payload.get("usage", {})
+                            if isinstance(payload, dict)
+                            else {}
+                        )
+                        if not isinstance(usage, dict):
+                            usage = {}
+
+                        requested_model = req.get("model")
+                        served_model = (
+                            payload.get("model") if isinstance(payload, dict) else None
+                        )
+                        if isinstance(served_model, str) and served_model:
+                            _served_model_acc[served_model] = (
+                                _served_model_acc.get(served_model, 0) + 1
+                            )
+                            if requested_model and served_model != requested_model:
+                                _fallback_acc["n"] += 1
+
                         _token_acc["in"] += usage.get("input_tokens", 0)
                         _token_acc["out"] += usage.get("output_tokens", 0)
                         _token_acc["n"] += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"Error occurred while processing response: {e}")
                     resp.success()
                 else:
                     if (
@@ -357,13 +387,17 @@ def run_load_test(
         if n % 20 == 0:
             left = len(_request_queue)
             print(f"{left} requests left... {runner.user_count} users active")
-        n += 1
         gevent.sleep(0.1)
+        n += 1
+        if n > 20000:  # sanity check to prevent infinite loop
+            print("Waited too long for test to complete, exiting...")
+            break
     runner.stop()
 
     stats = env.stats.total
     total = stats.num_requests
     failed = stats.num_failures
+    successful = max(total - failed, 0)
     n_tokens = token_acc["n"]
 
     return LoadTestResults(
@@ -371,6 +405,9 @@ def run_load_test(
         total_requests=total,
         failed_requests=failed,
         content_policy_errors=content_policy_acc["n"],
+        fallback_requests=fallback_acc["n"],
+        fallback_rate_pct=(fallback_acc["n"] / successful * 100) if successful else 0.0,
+        served_model_counts_json=json.dumps(served_model_acc, sort_keys=True),
         error_rate_pct=(failed / total * 100) if total else 0.0,
         throughput_rps=stats.total_rps,
         latency_p50_ms=stats.get_response_time_percentile(0.50) or 0.0,
