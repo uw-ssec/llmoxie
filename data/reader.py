@@ -41,7 +41,9 @@ def _parse_end_user(raw: Any) -> dict[str, str]:
             "account_uuid": raw.get("account_uuid", ""),
             "session_id": raw.get("session_id", ""),
         }
-    logger.warning("Could not parse end_user field into device/account/session ids: %r", raw)
+    logger.warning(
+        "Could not parse end_user field into device/account/session ids: %r", raw
+    )
     return {"device_id": "", "account_uuid": "", "session_id": ""}
 
 
@@ -139,7 +141,10 @@ def _rows_from_record(
     record: dict, *, include_thinking: bool, include_tool_use: bool
 ) -> list[dict]:
     """Convert one raw LiteLLM spend-log record into its flattened block rows."""
-    kwargs = {"include_thinking": include_thinking, "include_tool_use": include_tool_use}
+    kwargs = {
+        "include_thinking": include_thinking,
+        "include_tool_use": include_tool_use,
+    }
     rows: list[dict] = []
     base = _base_row(record)
 
@@ -150,11 +155,15 @@ def _rows_from_record(
         content = message.get("content", "")
 
         if isinstance(content, str):
-            rows.extend(_rows_from_block(base, "input", msg_idx, role, 0, content, **kwargs))
+            rows.extend(
+                _rows_from_block(base, "input", msg_idx, role, 0, content, **kwargs)
+            )
         elif isinstance(content, list):
             for block_idx, block in enumerate(content):
                 rows.extend(
-                    _rows_from_block(base, "input", msg_idx, role, block_idx, block, **kwargs)
+                    _rows_from_block(
+                        base, "input", msg_idx, role, block_idx, block, **kwargs
+                    )
                 )
 
     # ── Output message ────────────────────────────────────────────
@@ -174,11 +183,15 @@ def _rows_from_record(
         role = out_msg.get("role", "assistant")
         content = out_msg.get("content", "")
         if isinstance(content, str):
-            rows.extend(_rows_from_block(base, "output", None, role, 0, content, **kwargs))
+            rows.extend(
+                _rows_from_block(base, "output", None, role, 0, content, **kwargs)
+            )
         elif isinstance(content, list):
             for block_idx, block in enumerate(content):
                 rows.extend(
-                    _rows_from_block(base, "output", None, role, block_idx, block, **kwargs)
+                    _rows_from_block(
+                        base, "output", None, role, block_idx, block, **kwargs
+                    )
                 )
     elif not messages:
         logger.warning(
@@ -206,7 +219,9 @@ def load_messages_from_records(
     for record in records:
         rows.extend(
             _rows_from_record(
-                record, include_thinking=include_thinking, include_tool_use=include_tool_use
+                record,
+                include_thinking=include_thinking,
+                include_tool_use=include_tool_use,
             )
         )
     return pd.DataFrame(rows)

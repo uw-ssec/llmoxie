@@ -41,13 +41,22 @@ class TestAdlsRecordAdapter:
                     "model": "gpt-5.3-codex",
                     "response_cost": 0.05,
                     "total_tokens": 500,
-                    "metadata": {"user_api_key_alias": "carlos-api", "user_api_key_hash": "hash1"},
+                    "metadata": {
+                        "user_api_key_alias": "carlos-api",
+                        "user_api_key_hash": "hash1",
+                    },
                     "messages": [{"role": "user", "content": "hi"}],
-                    "response": {"choices": [{"message": {"role": "assistant", "content": "hello"}}]},
+                    "response": {
+                        "choices": [
+                            {"message": {"role": "assistant", "content": "hello"}}
+                        ]
+                    },
                 }
             }
         }
-        adapted = _adls_record_to_spend_log_shape(record, fallback_request_id="fallback")
+        adapted = _adls_record_to_spend_log_shape(
+            record, fallback_request_id="fallback"
+        )
 
         assert adapted["request_id"] == "req-123"
         assert adapted["startTime"] == "2026-01-02T23:41:18.414000Z"
@@ -56,12 +65,16 @@ class TestAdlsRecordAdapter:
         assert adapted["spend"] == 0.05
         assert adapted["total_tokens"] == 500
         assert adapted["metadata"]["user_api_key_alias"] == "carlos-api"
-        assert adapted["proxy_server_request"]["messages"] == [{"role": "user", "content": "hi"}]
+        assert adapted["proxy_server_request"]["messages"] == [
+            {"role": "user", "content": "hi"}
+        ]
         assert adapted["response"]["choices"][0]["message"]["content"] == "hello"
 
     def test_falls_back_to_filename_request_id_when_missing(self):
         record = {"kwargs": {"standard_logging_object": {}}}
-        adapted = _adls_record_to_spend_log_shape(record, fallback_request_id="from-filename")
+        adapted = _adls_record_to_spend_log_shape(
+            record, fallback_request_id="from-filename"
+        )
         assert adapted["request_id"] == "from-filename"
 
     def test_responses_api_shape_does_not_crash(self, caplog):
@@ -77,7 +90,9 @@ class TestAdlsRecordAdapter:
                 }
             }
         }
-        adapted = _adls_record_to_spend_log_shape(record, fallback_request_id="fallback")
+        adapted = _adls_record_to_spend_log_shape(
+            record, fallback_request_id="fallback"
+        )
         df = load_messages_from_records([adapted])
         assert len(df[df["direction"] == "input"]) == 1
         assert len(df[df["direction"] == "output"]) == 0
@@ -116,7 +131,10 @@ class TestIterRawRecords:
     def test_zip_reads_in_memory_without_leftover_files(self, tmp_path):
         zip_path = tmp_path / "data.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("litellm_spend_logs_2026-01-01.jsonl", json.dumps({"request_id": "r1"}) + "\n")
+            zf.writestr(
+                "litellm_spend_logs_2026-01-01.jsonl",
+                json.dumps({"request_id": "r1"}) + "\n",
+            )
             zf.writestr("logs/2026/01/01/req-2.json", json.dumps({"kwargs": {}}))
 
         before = set(tmp_path.iterdir())
@@ -140,7 +158,12 @@ class TestSessionsToFlatRows:
                         "role": "assistant",
                         "content": [
                             {"type": "text", "text": "sure"},
-                            {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+                            {
+                                "type": "tool_use",
+                                "id": "t1",
+                                "name": "Bash",
+                                "input": {"command": "ls"},
+                            },
                         ],
                     },
                 ],
@@ -148,7 +171,11 @@ class TestSessionsToFlatRows:
         ]
         rows = _sessions_to_flat_rows(sessions)
         assert len(rows) == 3
-        assert rows[0]["msg_idx"] == 0 and rows[0]["role"] == "user" and rows[0]["text"] == "hi"
+        assert (
+            rows[0]["msg_idx"] == 0
+            and rows[0]["role"] == "user"
+            and rows[0]["text"] == "hi"
+        )
         assert rows[2]["type"] == "tool_use" and rows[2]["tool_name"] == "Bash"
         assert json.loads(rows[2]["tool_input"]) == {"command": "ls"}
         # session-level fields repeated onto every row
@@ -189,7 +216,9 @@ class TestBuildSessionsIntegration:
         # every tool_use in an assistant message is answered by a tool_result
         # in the very next (user) message
         for i, m in enumerate(s["messages"][:-1]):
-            tool_use_ids = [c["id"] for c in m["content"] if c.get("type") == "tool_use"]
+            tool_use_ids = [
+                c["id"] for c in m["content"] if c.get("type") == "tool_use"
+            ]
             if not tool_use_ids:
                 continue
             next_msg = s["messages"][i + 1]

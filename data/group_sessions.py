@@ -63,7 +63,9 @@ def _epoch_to_iso(ts: float | None) -> str | None:
     used by the litellm_spend_logs JSONL export (e.g. "2026-01-02T23:41:18.414000Z")."""
     if ts is None:
         return None
-    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
 
 
 def _adls_record_to_spend_log_shape(record: dict, fallback_request_id: str) -> dict:
@@ -125,7 +127,9 @@ def _iter_raw_records(input_path: Path) -> Iterable[dict]:
             for name in sorted(zf.namelist()):
                 if name.endswith(".jsonl"):
                     with zf.open(name) as fh:
-                        with jsonlines.Reader(io.TextIOWrapper(fh, encoding="utf-8")) as reader:
+                        with jsonlines.Reader(
+                            io.TextIOWrapper(fh, encoding="utf-8")
+                        ) as reader:
                             yield from reader
                 elif name.endswith(".json"):
                     with zf.open(name) as fh:
@@ -321,7 +325,9 @@ def _sessions_to_flat_rows(sessions: list[dict]) -> list[dict]:
                     row["tool_name"] = block.get("name")
                     row["tool_use_id"] = block.get("id")
                     input_val = block.get("input")
-                    row["tool_input"] = json.dumps(input_val) if input_val is not None else None
+                    row["tool_input"] = (
+                        json.dumps(input_val) if input_val is not None else None
+                    )
                 else:
                     row["text"] = json.dumps(block)
                 rows.append(row)
@@ -376,7 +382,9 @@ def main() -> None:
 
     logger.info("Wrote %d sessions to %s", len(sessions), output)
     if n_skipped:
-        logger.info("Skipped %d requests with no session_id (could not be grouped)", n_skipped)
+        logger.info(
+            "Skipped %d requests with no session_id (could not be grouped)", n_skipped
+        )
 
 
 if __name__ == "__main__":

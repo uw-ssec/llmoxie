@@ -215,7 +215,9 @@ class TestLoadMessagesFromRecords:
             "proxy_server_request": {
                 "messages": [{"role": "user", "content": "hello"}]
             },
-            "response": {"output": [{"type": "message"}]},  # Responses-API shape, no "choices"
+            "response": {
+                "output": [{"type": "message"}]
+            },  # Responses-API shape, no "choices"
         }
         with caplog.at_level(logging.WARNING):
             df = load_messages_from_records([record])
