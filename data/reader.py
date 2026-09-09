@@ -7,12 +7,16 @@ Each row in the output corresponds to one content block within a message
 from __future__ import annotations
 
 import json
+import logging
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import jsonlines
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_end_user(raw: Any) -> dict[str, str]:
@@ -37,6 +41,7 @@ def _parse_end_user(raw: Any) -> dict[str, str]:
             "account_uuid": raw.get("account_uuid", ""),
             "session_id": raw.get("session_id", ""),
         }
+    logger.warning("Could not parse end_user field into device/account/session ids: %r", raw)
     return {"device_id": "", "account_uuid": "", "session_id": ""}
 
 
@@ -130,6 +135,83 @@ def _rows_from_block(
     return [row]
 
 
+def _rows_from_record(
+    record: dict, *, include_thinking: bool, include_tool_use: bool
+) -> list[dict]:
+    """Convert one raw LiteLLM spend-log record into its flattened block rows."""
+    kwargs = {"include_thinking": include_thinking, "include_tool_use": include_tool_use}
+    rows: list[dict] = []
+    base = _base_row(record)
+
+    # ── Input messages ────────────────────────────────────────────
+    messages = record.get("proxy_server_request", {}).get("messages", [])
+    for msg_idx, message in enumerate(messages):
+        role = message.get("role", "")
+        content = message.get("content", "")
+
+        if isinstance(content, str):
+            rows.extend(_rows_from_block(base, "input", msg_idx, role, 0, content, **kwargs))
+        elif isinstance(content, list):
+            for block_idx, block in enumerate(content):
+                rows.extend(
+                    _rows_from_block(base, "input", msg_idx, role, block_idx, block, **kwargs)
+                )
+
+    # ── Output message ────────────────────────────────────────────
+    out_msg = None
+    response = record.get("response")
+    if response:
+        try:
+            out_msg = response["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            logger.warning(
+                "request_id=%s: could not read response.choices[0].message: %s",
+                base["request_id"],
+                exc,
+            )
+
+    if out_msg:
+        role = out_msg.get("role", "assistant")
+        content = out_msg.get("content", "")
+        if isinstance(content, str):
+            rows.extend(_rows_from_block(base, "output", None, role, 0, content, **kwargs))
+        elif isinstance(content, list):
+            for block_idx, block in enumerate(content):
+                rows.extend(
+                    _rows_from_block(base, "output", None, role, block_idx, block, **kwargs)
+                )
+    elif not messages:
+        logger.warning(
+            "request_id=%s: record yielded neither input nor output messages",
+            base["request_id"],
+        )
+
+    return rows
+
+
+def load_messages_from_records(
+    records: Iterable[dict],
+    *,
+    include_thinking: bool = False,
+    include_tool_use: bool = True,
+) -> pd.DataFrame:
+    """Flatten an iterable of already-parsed LiteLLM spend-log records into a tidy DataFrame.
+
+    Same output as :func:`load_messages`, but takes record dicts directly
+    instead of reading them from a ``.jsonl`` file on disk — useful for
+    records read from a zip member in memory, or adapted from another
+    source format.
+    """
+    rows: list[dict] = []
+    for record in records:
+        rows.extend(
+            _rows_from_record(
+                record, include_thinking=include_thinking, include_tool_use=include_tool_use
+            )
+        )
+    return pd.DataFrame(rows)
+
+
 def load_messages(
     path: str | Path,
     *,
@@ -160,60 +242,10 @@ def load_messages(
         direction, msg_idx, block_idx, role, type, text, thinking, tool_name,
         tool_input, tool_use_id, cache_control.
     """
-    rows: list[dict] = []
-    kwargs = {
-        "include_thinking": include_thinking,
-        "include_tool_use": include_tool_use,
-    }
-
     with jsonlines.open(Path(path)) as reader:
-        for record in reader:
-            base = _base_row(record)
-
-            # ── Input messages ────────────────────────────────────────────
-            messages = record.get("proxy_server_request", {}).get("messages", [])
-            for msg_idx, message in enumerate(messages):
-                role = message.get("role", "")
-                content = message.get("content", "")
-
-                if isinstance(content, str):
-                    rows.extend(
-                        _rows_from_block(
-                            base, "input", msg_idx, role, 0, content, **kwargs
-                        )
-                    )
-                elif isinstance(content, list):
-                    for block_idx, block in enumerate(content):
-                        rows.extend(
-                            _rows_from_block(
-                                base, "input", msg_idx, role, block_idx, block, **kwargs
-                            )
-                        )
-
-            # ── Output message ────────────────────────────────────────────
-            try:
-                out_msg = record["response"]["choices"][0]["message"]
-            except (KeyError, IndexError, TypeError):
-                out_msg = None
-
-            if out_msg:
-                role = out_msg.get("role", "assistant")
-                content = out_msg.get("content", "")
-                if isinstance(content, str):
-                    rows.extend(
-                        _rows_from_block(
-                            base, "output", None, role, 0, content, **kwargs
-                        )
-                    )
-                elif isinstance(content, list):
-                    for block_idx, block in enumerate(content):
-                        rows.extend(
-                            _rows_from_block(
-                                base, "output", None, role, block_idx, block, **kwargs
-                            )
-                        )
-
-    return pd.DataFrame(rows)
+        return load_messages_from_records(
+            reader, include_thinking=include_thinking, include_tool_use=include_tool_use
+        )
 
 
 def last_request_per_session(df: pd.DataFrame) -> pd.DataFrame:
@@ -348,6 +380,14 @@ def inspect_keys(data: list[dict], keys: list[str]) -> None:
 
 
 def normalize_model_name(model: str | None) -> str | None:
+    """Clean up a raw model string into one consistent short form.
+
+    Model names show up in inconsistent formats depending on provider
+    routing, e.g. ``bedrock/anthropic.claude-4-6-sonnet-20250929-v1:0`` or
+    ``us.anthropic.claude-3-5-haiku-20241022-v1:0``. This strips provider
+    prefixes, date/version suffixes, and reorders to
+    ``claude-<family>-<major>.<minor>`` (e.g. ``claude-sonnet-4.6``).
+    """
     if not model:
         return model
     # Handle '--model X' CLI-style entries

@@ -9,12 +9,17 @@ session-level stats (request count, spend, tokens, time span).
 Usage
 -----
     python data/group_sessions.py path/to/jan-feb-march-2026.zip -o sessions.jsonl
+    python data/group_sessions.py path/to/adls/logs/ --format parquet
 
-``path`` may be a single ``.jsonl`` file, a directory of daily
-``litellm_spend_logs_*.jsonl`` files, or a ``.zip`` archive of them (the
-format produced by ``llmaven infra extract``).
+``path`` may be a single ``.jsonl`` file (the ``litellm_spend_logs_*.jsonl``
+format from ``llmaven infra extract``), a single ``.json`` file (one request
+per file, the ADLS format from ``adl_logger.py``), a directory containing
+either (searched recursively, so nested ``<yyyy>/<mm>/<dd>/`` layouts work),
+or a ``.zip`` of them.
 
-Output is one JSON object per line (JSONL), one line per session:
+Output defaults to JSONL, one JSON object per line, one line per session.
+Pass ``--format parquet`` for a flat table instead (one row per message
+block, session fields repeated per row):
 
     {
       "session_id": "...",
@@ -38,34 +43,115 @@ Output is one JSON object per line (JSONL), one line per session:
 from __future__ import annotations
 
 import argparse
+import io
 import json
-import tempfile
+import logging
 import zipfile
+from collections.abc import Iterable
+from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonlines
 import pandas as pd
-from reader import last_request_per_session, load_messages
+from reader import last_request_per_session, load_messages_from_records
+
+logger = logging.getLogger(__name__)
 
 
-def _resolve_input_paths(input_path: Path) -> list[Path]:
-    """Return a sorted list of .jsonl paths for a file, directory, or zip input."""
+def _epoch_to_iso(ts: float | None) -> str | None:
+    """Convert a Unix epoch timestamp to the same ISO-8601 string format
+    used by the litellm_spend_logs JSONL export (e.g. "2026-01-02T23:41:18.414000Z")."""
+    if ts is None:
+        return None
+    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _adls_record_to_spend_log_shape(record: dict, fallback_request_id: str) -> dict:
+    """Adapt one ADLS per-request JSON record (see adl_logger.py) into the
+    litellm spend-log record shape that reader.py's row-building expects.
+
+    Sourced from ``kwargs["standard_logging_object"]``, litellm's own
+    normalized per-request log object — verified against a real sample from
+    the ``litellm-logs`` container (a GitHub Copilot / gpt-5.3-codex request
+    via the Responses API), which has the same field names
+    (``end_user``, ``messages``, ``model``, ``total_tokens``, ...) as the
+    litellm_spend_logs JSONL export, just with epoch-float timestamps
+    instead of ISO strings.
+
+    Known gap: ``standard_logging_object["response"]`` keeps the raw
+    provider-shaped response. For Chat Completions calls that's the
+    ``{"choices": [...]}`` shape reader.py already parses. For Responses-API
+    calls (``call_type == "responses"``, seen from Copilot/gpt-5.3-codex
+    traffic) the reply is shaped as ``{"output": [...]}`` instead, which
+    reader.py does not yet parse — reader.py logs a warning and the
+    session's messages simply won't include that request's final reply.
+    Follow-up work if Responses-API output needs to be included.
+    """
+    kw = record.get("kwargs") or {}
+    slo = kw.get("standard_logging_object") or {}
+    metadata = slo.get("metadata") or {}
+
+    return {
+        "request_id": slo.get("id") or fallback_request_id,
+        "startTime": _epoch_to_iso(slo.get("startTime")),
+        "endTime": _epoch_to_iso(slo.get("endTime")),
+        "end_user": slo.get("end_user"),
+        "model": slo.get("model"),
+        "spend": slo.get("response_cost"),
+        "total_tokens": slo.get("total_tokens"),
+        "api_key": metadata.get("user_api_key_hash"),
+        "metadata": {"user_api_key_alias": metadata.get("user_api_key_alias")},
+        "proxy_server_request": {"messages": slo.get("messages") or []},
+        "response": slo.get("response") or {},
+    }
+
+
+def _iter_raw_records(input_path: Path) -> Iterable[dict]:
+    """Yield raw record dicts from a file, directory, or zip.
+
+    Supports ``.jsonl`` (the ``litellm_spend_logs_*.jsonl`` format from
+    ``llmaven infra extract``) and individual ``.json`` files (one request
+    per file, the ADLS format written by ``adl_logger.py``, e.g.
+    ``logs/<yyyy>/<mm>/<dd>/<request_id>.json``). A directory is searched
+    recursively so that nested date folders are picked up. Zip members are
+    read directly from the archive without extracting to disk.
+    """
     if input_path.is_dir():
-        return sorted(input_path.glob("*.jsonl"))
-    if input_path.suffix == ".zip":
-        tmp_dir = Path(tempfile.mkdtemp(prefix="llmoxie_sessions_"))
+        for p in sorted(input_path.rglob("*")):
+            if p.suffix in (".jsonl", ".json"):
+                yield from _iter_raw_records(p)
+    elif input_path.suffix == ".zip":
         with zipfile.ZipFile(input_path) as zf:
-            zf.extractall(tmp_dir)
-        return sorted(tmp_dir.glob("*.jsonl"))
-    return [input_path]
+            for name in sorted(zf.namelist()):
+                if name.endswith(".jsonl"):
+                    with zf.open(name) as fh:
+                        with jsonlines.Reader(io.TextIOWrapper(fh, encoding="utf-8")) as reader:
+                            yield from reader
+                elif name.endswith(".json"):
+                    with zf.open(name) as fh:
+                        record = json.load(fh)
+                    yield _adls_record_to_spend_log_shape(record, Path(name).stem)
+    elif input_path.suffix == ".jsonl":
+        if input_path.stat().st_size == 0:
+            return
+        with jsonlines.open(input_path) as reader:
+            yield from reader
+    elif input_path.suffix == ".json":
+        if input_path.stat().st_size == 0:
+            return
+        with open(input_path) as f:
+            record = json.load(f)
+        yield _adls_record_to_spend_log_shape(record, input_path.stem)
+    else:
+        logger.warning("Skipping file with unrecognized extension: %s", input_path)
 
 
-def _load_all(paths: list[Path]) -> pd.DataFrame:
-    """Load and concatenate every non-empty .jsonl file into one DataFrame."""
-    frames = [load_messages(p) for p in paths if p.stat().st_size > 0]
-    if not frames:
+def _load_all(input_path: Path) -> pd.DataFrame:
+    """Load every raw record under input_path into one tidy DataFrame."""
+    records = list(_iter_raw_records(input_path))
+    if not records:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+    return load_messages_from_records(records)
 
 
 def _block_to_content(row: pd.Series) -> dict:
@@ -197,45 +283,100 @@ def build_sessions(df: pd.DataFrame) -> tuple[list[dict], int]:
     return sessions, int(n_requests_skipped)
 
 
+def _sessions_to_flat_rows(sessions: list[dict]) -> list[dict]:
+    """Explode session records into one flat row per message content block.
+
+    Same row shape as the block-level DataFrame ``_load_all`` produces (one
+    row = one block), but built from the reconstructed session messages
+    rather than raw request rows, with session-level fields (spend, tokens,
+    time span, ...) repeated onto every row. Meant as an alternative,
+    non-nested output format for tools that work better with flat tables
+    (e.g. loading into a DataFrame or parquet) than with nested JSON.
+    """
+    rows = []
+    for session in sessions:
+        session_meta = {k: v for k, v in session.items() if k != "messages"}
+        if isinstance(session_meta.get("models"), list):
+            session_meta["models"] = ", ".join(session_meta["models"])
+
+        for msg_idx, message in enumerate(session["messages"]):
+            for block_idx, block in enumerate(message["content"]):
+                row = {
+                    **session_meta,
+                    "msg_idx": msg_idx,
+                    "role": message["role"],
+                    "block_idx": block_idx,
+                    "type": block.get("type"),
+                    "text": None,
+                    "thinking": None,
+                    "tool_name": None,
+                    "tool_input": None,
+                    "tool_use_id": None,
+                }
+                if block.get("type") == "text":
+                    row["text"] = block.get("text")
+                elif block.get("type") == "thinking":
+                    row["thinking"] = block.get("thinking")
+                elif block.get("type") == "tool_use":
+                    row["tool_name"] = block.get("name")
+                    row["tool_use_id"] = block.get("id")
+                    input_val = block.get("input")
+                    row["tool_input"] = json.dumps(input_val) if input_val is not None else None
+                else:
+                    row["text"] = json.dumps(block)
+                rows.append(row)
+    return rows
+
+
 def main() -> None:
+    """CLI entry point: parse args, load the input, build sessions, write the output."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
         "input",
         type=Path,
-        help="Raw data: a .jsonl file, a directory of litellm_spend_logs_*.jsonl files, or a .zip of them",
+        help=(
+            "Raw data: a .jsonl file, a .json file, a directory of either "
+            "(searched recursively), or a .zip of them"
+        ),
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=Path("sessions.jsonl"),
-        help="Output JSONL path (default: sessions.jsonl)",
+        default=None,
+        help="Output path (default: sessions.jsonl or sessions.parquet, depending on --format)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["jsonl", "parquet"],
+        default="jsonl",
+        help="Output format: jsonl (one nested session per line) or parquet (flat, one row per message block)",
     )
     args = parser.parse_args()
+    output = args.output or Path(f"sessions.{args.format}")
 
-    paths = _resolve_input_paths(args.input)
-    if not paths:
-        raise SystemExit(f"No .jsonl files found at {args.input}")
-
-    df = _load_all(paths)
-    n_requests = (
-        df.loc[df["direction"] == "input", "request_id"].nunique()
-        if not df.empty
-        else 0
-    )
+    df = _load_all(args.input)
+    if df.empty:
+        raise SystemExit(f"No records found at {args.input}")
+    n_requests = df.loc[df["direction"] == "input", "request_id"].nunique()
+    logger.info("Loaded %d requests from %s", n_requests, args.input)
 
     sessions, n_skipped = build_sessions(df)
 
-    with jsonlines.open(args.output, mode="w") as writer:
-        for record in sessions:
-            writer.write(record)
+    if args.format == "jsonl":
+        with jsonlines.open(output, mode="w") as writer:
+            for record in sessions:
+                writer.write(record)
+    else:
+        pd.DataFrame(_sessions_to_flat_rows(sessions)).to_parquet(output, index=False)
 
-    print(f"Loaded {n_requests} requests from {len(paths)} file(s)")
-    print(f"Wrote {len(sessions)} sessions to {args.output}")
+    logger.info("Wrote %d sessions to %s", len(sessions), output)
     if n_skipped:
-        print(f"Skipped {n_skipped} requests with no session_id (could not be grouped)")
+        logger.info("Skipped %d requests with no session_id (could not be grouped)", n_skipped)
 
 
 if __name__ == "__main__":
