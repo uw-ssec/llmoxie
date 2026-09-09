@@ -62,12 +62,12 @@ Output defaults to JSONL, one JSON object per line, one line per session:
 }
 ```
 
-Pass `--format parquet` for a flat table instead, one row per message
-block, with session-level fields (spend, tokens, time span, ...) repeated
-onto every row. Useful for tools that work better with a flat table than
-nested JSON. There's no analysis notebook in this repo yet (worth adding as
-a follow-up), but if you have one, try it against both formats and see
-which is easier to work with.
+Pass `--format parquet` for a flat table instead, one row per message block,
+with session-level fields (spend, tokens, time span, ...) repeated onto every
+row. Useful for tools that work better with a flat table than nested JSON.
+There's no analysis notebook in this repo yet (worth adding as a follow-up), but
+if you have one, try it against both formats and see which is easier to work
+with.
 
 Notes:
 
