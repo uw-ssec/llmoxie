@@ -48,64 +48,14 @@ import json
 import logging
 import zipfile
 from collections.abc import Iterable
-from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonlines
 import pandas as pd
 from .reader import last_request_per_session, load_messages_from_records
+from .sources import from_adls
 
 logger = logging.getLogger(__name__)
-
-
-def _epoch_to_iso(ts: float | None) -> str | None:
-    """Convert a Unix epoch timestamp to the same ISO-8601 string format
-    used by the litellm_spend_logs JSONL export (e.g. "2026-01-02T23:41:18.414000Z")."""
-    if ts is None:
-        return None
-    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ"
-    )
-
-
-def _adls_record_to_spend_log_shape(record: dict, fallback_request_id: str) -> dict:
-    """Adapt one ADLS per-request JSON record (see adl_logger.py) into the
-    litellm spend-log record shape that reader.py's row-building expects.
-
-    Sourced from ``kwargs["standard_logging_object"]``, litellm's own
-    normalized per-request log object — verified against a real sample from
-    the ``litellm-logs`` container (a GitHub Copilot / gpt-5.3-codex request
-    via the Responses API), which has the same field names
-    (``end_user``, ``messages``, ``model``, ``total_tokens``, ...) as the
-    litellm_spend_logs JSONL export, just with epoch-float timestamps
-    instead of ISO strings.
-
-    Known gap: ``standard_logging_object["response"]`` keeps the raw
-    provider-shaped response. For Chat Completions calls that's the
-    ``{"choices": [...]}`` shape reader.py already parses. For Responses-API
-    calls (``call_type == "responses"``, seen from Copilot/gpt-5.3-codex
-    traffic) the reply is shaped as ``{"output": [...]}`` instead, which
-    reader.py does not yet parse — reader.py logs a warning and the
-    session's messages simply won't include that request's final reply.
-    Follow-up work if Responses-API output needs to be included.
-    """
-    kw = record.get("kwargs") or {}
-    slo = kw.get("standard_logging_object") or {}
-    metadata = slo.get("metadata") or {}
-
-    return {
-        "request_id": slo.get("id") or fallback_request_id,
-        "startTime": _epoch_to_iso(slo.get("startTime")),
-        "endTime": _epoch_to_iso(slo.get("endTime")),
-        "end_user": slo.get("end_user"),
-        "model": slo.get("model"),
-        "spend": slo.get("response_cost"),
-        "total_tokens": slo.get("total_tokens"),
-        "api_key": metadata.get("user_api_key_hash"),
-        "metadata": {"user_api_key_alias": metadata.get("user_api_key_alias")},
-        "proxy_server_request": {"messages": slo.get("messages") or []},
-        "response": slo.get("response") or {},
-    }
 
 
 def _iter_raw_records(input_path: Path) -> Iterable[dict]:
@@ -155,7 +105,9 @@ def _load_adls_json(fh, name: str) -> Iterable[dict]:
     except json.JSONDecodeError as exc:
         logger.warning("Skipping unparsable ADLS json file %s: %s", name, exc)
         return
-    yield _adls_record_to_spend_log_shape(record, Path(name).stem)
+    common = from_adls(record)
+    common["request_id"] = common.get("request_id") or Path(name).stem
+    yield common
 
 
 def _load_all(input_path: Path) -> pd.DataFrame:

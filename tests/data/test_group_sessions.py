@@ -9,95 +9,14 @@ from pathlib import Path
 
 import pytest
 from llmaven.data.group_sessions import (
-    _adls_record_to_spend_log_shape,
-    _epoch_to_iso,
     _iter_raw_records,
     _load_all,
     _sessions_to_flat_rows,
     build_sessions,
     main,
 )
-from llmaven.data.reader import load_messages_from_records
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-
-class TestEpochToIso:
-    def test_converts_to_matching_format(self):
-        # 2026-01-02T23:41:18.414000Z, matching the litellm_spend_logs JSONL format
-        assert _epoch_to_iso(1767397278.414) == "2026-01-02T23:41:18.414000Z"
-
-    def test_none_passthrough(self):
-        assert _epoch_to_iso(None) is None
-
-
-class TestAdlsRecordAdapter:
-    def test_maps_standard_logging_object_fields(self):
-        record = {
-            "kwargs": {
-                "standard_logging_object": {
-                    "id": "req-123",
-                    "startTime": 1767397278.414,
-                    "endTime": 1767397280.0,
-                    "end_user": "user_dev1_account_acc1_session_sess1",
-                    "model": "gpt-5.3-codex",
-                    "response_cost": 0.05,
-                    "total_tokens": 500,
-                    "metadata": {
-                        "user_api_key_alias": "carlos-api",
-                        "user_api_key_hash": "hash1",
-                    },
-                    "messages": [{"role": "user", "content": "hi"}],
-                    "response": {
-                        "choices": [
-                            {"message": {"role": "assistant", "content": "hello"}}
-                        ]
-                    },
-                }
-            }
-        }
-        adapted = _adls_record_to_spend_log_shape(
-            record, fallback_request_id="fallback"
-        )
-
-        assert adapted["request_id"] == "req-123"
-        assert adapted["startTime"] == "2026-01-02T23:41:18.414000Z"
-        assert adapted["end_user"] == "user_dev1_account_acc1_session_sess1"
-        assert adapted["model"] == "gpt-5.3-codex"
-        assert adapted["spend"] == 0.05
-        assert adapted["total_tokens"] == 500
-        assert adapted["metadata"]["user_api_key_alias"] == "carlos-api"
-        assert adapted["proxy_server_request"]["messages"] == [
-            {"role": "user", "content": "hi"}
-        ]
-        assert adapted["response"]["choices"][0]["message"]["content"] == "hello"
-
-    def test_falls_back_to_filename_request_id_when_missing(self):
-        record = {"kwargs": {"standard_logging_object": {}}}
-        adapted = _adls_record_to_spend_log_shape(
-            record, fallback_request_id="from-filename"
-        )
-        assert adapted["request_id"] == "from-filename"
-
-    def test_responses_api_shape_does_not_crash(self, caplog):
-        # Real shape seen from a GitHub Copilot / gpt-5.3-codex request: reply is
-        # under "output", not "choices" -- reader.py should warn, not crash.
-        record = {
-            "kwargs": {
-                "standard_logging_object": {
-                    "id": "req-1",
-                    "end_user": "",
-                    "messages": [{"role": "user", "content": "hi"}],
-                    "response": {"output": [{"type": "message"}]},
-                }
-            }
-        }
-        adapted = _adls_record_to_spend_log_shape(
-            record, fallback_request_id="fallback"
-        )
-        df = load_messages_from_records([adapted])
-        assert len(df[df["direction"] == "input"]) == 1
-        assert len(df[df["direction"] == "output"]) == 0
 
 
 class TestIterRawRecords:
