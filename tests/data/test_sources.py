@@ -133,7 +133,9 @@ class TestAdaptersProduceEquivalentOutput:
             "spend": 0.02,
             "total_tokens": 250,
             "metadata": {"user_api_key_alias": "carlos-api"},
-            "proxy_server_request": {"messages": [{"role": "user", "content": "hello"}]},
+            "proxy_server_request": {
+                "messages": [{"role": "user", "content": "hello"}]
+            },
             "response": {
                 "choices": [{"message": {"role": "assistant", "content": "hi"}}]
             },
@@ -199,9 +201,15 @@ class TestIterSource:
     def test_adls_mode_lists_and_downloads_matching_day(self):
         day = date(2026, 3, 28)
         files = {
-            "logs/2026/03/28/req-1.json": {"kwargs": {"standard_logging_object": {"id": "req-1"}}},
-            "logs/2026/03/28/req-2.json": {"kwargs": {"standard_logging_object": {"id": "req-2"}}},
-            "logs/2026/03/29/req-3.json": {"kwargs": {"standard_logging_object": {"id": "req-3"}}},
+            "logs/2026/03/28/req-1.json": {
+                "kwargs": {"standard_logging_object": {"id": "req-1"}}
+            },
+            "logs/2026/03/28/req-2.json": {
+                "kwargs": {"standard_logging_object": {"id": "req-2"}}
+            },
+            "logs/2026/03/29/req-3.json": {
+                "kwargs": {"standard_logging_object": {"id": "req-3"}}
+            },
         }
         adls_fs = _fake_adls_fs(files)
 
@@ -214,7 +222,9 @@ class TestIterSource:
     def test_adls_mode_ignores_non_json_blobs(self):
         day = date(2026, 3, 28)
         files = {
-            "logs/2026/03/28/req-1.json": {"kwargs": {"standard_logging_object": {"id": "req-1"}}},
+            "logs/2026/03/28/req-1.json": {
+                "kwargs": {"standard_logging_object": {"id": "req-1"}}
+            },
             "logs/2026/03/28/readme.txt": {},
         }
         adls_fs = _fake_adls_fs(files)
@@ -234,7 +244,11 @@ class TestIterSource:
 
         litellm_client.get.assert_called_once_with(
             "/spend/logs",
-            params={"start_date": "2026-03-28", "end_date": "2026-03-29", "summarize": "false"},
+            params={
+                "start_date": "2026-03-28",
+                "end_date": "2026-03-29",
+                "summarize": "false",
+            },
         )
         assert [r["request_id"] for r, _ in results] == ["r1", "r2"]
         assert all(source == "litellm" for _, source in results)
@@ -242,7 +256,11 @@ class TestIterSource:
     def test_auto_mode_uses_adls_when_files_exist(self):
         day = date(2026, 3, 28)
         adls_fs = _fake_adls_fs(
-            {"logs/2026/03/28/req-1.json": {"kwargs": {"standard_logging_object": {"id": "req-1"}}}}
+            {
+                "logs/2026/03/28/req-1.json": {
+                    "kwargs": {"standard_logging_object": {"id": "req-1"}}
+                }
+            }
         )
         litellm_client = _fake_litellm_client([])
 

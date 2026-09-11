@@ -32,7 +32,9 @@ def _epoch_to_iso(ts: float | None) -> str | None:
     used by the litellm_spend_logs JSONL export (e.g. "2026-01-02T23:41:18.414000Z")."""
     if ts is None:
         return None
-    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
 
 
 def from_adls(record: dict) -> dict:
@@ -175,7 +177,9 @@ def iter_source(
         ]
 
     if mode == "adls" or (mode == "auto" and adls_blob_names):
-        logger.info("%s: reading %d ADLS file(s)", day.isoformat(), len(adls_blob_names))
+        logger.info(
+            "%s: reading %d ADLS file(s)", day.isoformat(), len(adls_blob_names)
+        )
         for name in adls_blob_names:
             raw = json.loads(adls_fs.download_blob(name).readall())
             common = from_adls(raw)
@@ -192,7 +196,8 @@ def iter_source(
     start = day.isoformat()
     end = (day + timedelta(days=1)).isoformat()
     response = litellm_client.get(
-        "/spend/logs", params={"start_date": start, "end_date": end, "summarize": "false"}
+        "/spend/logs",
+        params={"start_date": start, "end_date": end, "summarize": "false"},
     )
     response.raise_for_status()
     for raw in response.json():
