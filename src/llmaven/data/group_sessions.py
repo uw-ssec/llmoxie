@@ -8,8 +8,8 @@ session-level stats (request count, spend, tokens, time span).
 
 Usage
 -----
-    python data/group_sessions.py path/to/jan-feb-march-2026.zip -o sessions.jsonl
-    python data/group_sessions.py path/to/adls/logs/ --format parquet
+    python -m llmaven.data.group_sessions path/to/jan-feb-march-2026.zip -o sessions.jsonl
+    python -m llmaven.data.group_sessions path/to/adls/logs/ --format parquet
 
 ``path`` may be a single ``.jsonl`` file (the ``litellm_spend_logs_*.jsonl``
 format from ``llmaven infra extract``), a single ``.json`` file (one request
@@ -53,7 +53,7 @@ from pathlib import Path
 
 import jsonlines
 import pandas as pd
-from reader import last_request_per_session, load_messages_from_records
+from .reader import last_request_per_session, load_messages_from_records
 
 logger = logging.getLogger(__name__)
 
@@ -132,22 +132,30 @@ def _iter_raw_records(input_path: Path) -> Iterable[dict]:
                         ) as reader:
                             yield from reader
                 elif name.endswith(".json"):
-                    with zf.open(name) as fh:
-                        record = json.load(fh)
-                    yield _adls_record_to_spend_log_shape(record, Path(name).stem)
+                    yield from _load_adls_json(zf.open(name), name)
     elif input_path.suffix == ".jsonl":
-        if input_path.stat().st_size == 0:
-            return
+        # An empty .jsonl file just yields no records below; no special-casing needed.
         with jsonlines.open(input_path) as reader:
             yield from reader
     elif input_path.suffix == ".json":
-        if input_path.stat().st_size == 0:
-            return
-        with open(input_path) as f:
-            record = json.load(f)
-        yield _adls_record_to_spend_log_shape(record, input_path.stem)
+        with open(input_path, "rb") as f:
+            yield from _load_adls_json(f, str(input_path))
     else:
         logger.warning("Skipping file with unrecognized extension: %s", input_path)
+
+
+def _load_adls_json(fh, name: str) -> Iterable[dict]:
+    """Parse one ADLS .json file, skipping (with a warning) if it's empty or corrupt.
+
+    Unlike an empty .jsonl file, json.load() raises on an empty/corrupt file
+    rather than quietly yielding nothing, so this needs an explicit guard.
+    """
+    try:
+        record = json.load(fh)
+    except json.JSONDecodeError as exc:
+        logger.warning("Skipping unparsable ADLS json file %s: %s", name, exc)
+        return
+    yield _adls_record_to_spend_log_shape(record, Path(name).stem)
 
 
 def _load_all(input_path: Path) -> pd.DataFrame:
@@ -364,6 +372,10 @@ def main() -> None:
     )
     args = parser.parse_args()
     output = args.output or Path(f"sessions.{args.format}")
+    if output.exists():
+        raise SystemExit(
+            f"{output} already exists, pass a different -o/--output to avoid overwriting it"
+        )
 
     df = _load_all(args.input)
     if df.empty:

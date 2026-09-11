@@ -1,4 +1,4 @@
-"""Unit tests for data/reader.py."""
+"""Unit tests for llmaven.data.reader."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 
 import pandas as pd
 import pytest
-from reader import (
+from llmaven.data.reader import (
     _parse_end_user,
     deduplicate_messages,
     last_request_per_session,

@@ -27,8 +27,8 @@ path described in the
 ## Grouping requests into sessions
 
 ```sh
-pixi run -e llmaven python data/group_sessions.py path/to/jan-feb-march-2026.zip -o sessions.jsonl
-pixi run -e llmaven python data/group_sessions.py path/to/adls/logs/ --format parquet
+pixi run -e llmaven python -m llmaven.data.group_sessions path/to/jan-feb-march-2026.zip -o sessions.jsonl
+pixi run -e llmaven python -m llmaven.data.group_sessions path/to/adls/logs/ --format parquet
 ```
 
 The input path accepts:

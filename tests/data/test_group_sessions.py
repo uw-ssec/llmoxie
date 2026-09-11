@@ -1,21 +1,23 @@
-"""Unit and integration tests for data/group_sessions.py."""
+"""Unit and integration tests for llmaven.data.group_sessions."""
 
 from __future__ import annotations
 
 import json
+import logging
 import zipfile
 from pathlib import Path
 
 import pytest
-from group_sessions import (
+from llmaven.data.group_sessions import (
     _adls_record_to_spend_log_shape,
     _epoch_to_iso,
     _iter_raw_records,
     _load_all,
     _sessions_to_flat_rows,
     build_sessions,
+    main,
 )
-from reader import load_messages_from_records
+from llmaven.data.reader import load_messages_from_records
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -109,6 +111,19 @@ class TestIterRawRecords:
         p = tmp_path / "empty.jsonl"
         p.write_text("")
         assert list(_iter_raw_records(p)) == []
+
+    def test_empty_json_file_warns_and_skips_instead_of_crashing(
+        self, tmp_path, caplog
+    ):
+        # Unlike an empty .jsonl file, json.load() raises on an empty file,
+        # so this needs to be handled explicitly rather than left to "naturally
+        # yield nothing".
+        p = tmp_path / "empty.json"
+        p.write_text("")
+        with caplog.at_level(logging.WARNING):
+            records = list(_iter_raw_records(p))
+        assert records == []
+        assert "Skipping unparsable" in caplog.text
 
     def test_single_adls_json_file_uses_filename_as_request_id(self, tmp_path):
         p = tmp_path / "req-abc.json"
@@ -230,3 +245,25 @@ class TestBuildSessionsIntegration:
             assert s["total_spend"] > 0
             assert s["total_tokens"] > 0
             assert s["start_time"] < s["end_time"]
+
+
+class TestMainRefusesToOverwriteOutput:
+    def test_exits_if_output_already_exists(self, tmp_path, monkeypatch):
+        existing_output = tmp_path / "sessions.jsonl"
+        existing_output.write_text("not touching this\n")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "group_sessions.py",
+                str(FIXTURES / "test.jsonl"),
+                "-o",
+                str(existing_output),
+            ],
+        )
+
+        with pytest.raises(SystemExit, match="already exists"):
+            main()
+
+        # the pre-existing file must be untouched
+        assert existing_output.read_text() == "not touching this\n"
