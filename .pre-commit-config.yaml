@@ -36,7 +36,7 @@ repos:
     rev: "v2.4.2"
     hooks:
       - id: codespell
-        exclude: (\.ipynb$|pixi\.lock)
+        exclude: (\.ipynb$|pixi\.lock|tests/data/fixtures/.*\.jsonl$)
 
   - repo: local
     hooks:
@@ -44,7 +44,7 @@ repos:
         name: Disallow improper capitalization
         language: pygrep
         entry: Github
-        exclude: .pre-commit-config.yaml
+        exclude: (\.pre-commit-config\.yaml|tests/data/fixtures/.*\.jsonl$)
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: "0.37.0"
