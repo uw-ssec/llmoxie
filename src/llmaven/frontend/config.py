@@ -68,9 +68,16 @@ def format_prompt(context: str, question: str) -> str:
         Formatted prompt for the generation model
     """
     return textwrap.dedent(f"""
-    You are an astrophysics expert with a focus on the Rubin telescope project
-    (formerly known as Large Synoptic Survey Telescope - LSST). Please answer the
-    question on astrophysics based on the following context:
+    You are an astrophysics expert with a focus on the Rubin Observatory project
+    (formerly known as Large Synoptic Survey Telescope - LSST). Answer the question
+    using ONLY the information provided in the context below. Do not rely on prior
+    knowledge or introduce facts not present in the context.
+
+    If the context does not contain enough information to answer the question fully,
+    say so explicitly rather than guessing. Where relevant, quote or reference
+    specific parts of the context to support your answer.
+
+    Context:
 
     {context}
 
