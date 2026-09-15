@@ -58,13 +58,17 @@ def invoke_extract(
 
 class TestInfraExtract:
     def test_rejects_invalid_date_format(self, runner: CliRunner):
-        result = invoke_extract(runner, from_date="2026-99-01", to_date="2026-01-02")
+        result = invoke_extract(
+            runner, from_date="2026-99-01", to_date="2026-01-02", source=None
+        )
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
 
     def test_rejects_inverted_date_range(self, runner: CliRunner):
-        result = invoke_extract(runner, from_date="2026-01-03", to_date="2026-01-02")
+        result = invoke_extract(
+            runner, from_date="2026-01-03", to_date="2026-01-02", source=None
+        )
 
         assert result.exit_code == 1
         assert "--from must be <= --to" in result.output
@@ -181,20 +185,32 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        # httpx client mock
+        record = {
+            "request_id": "a",
+            "api_key": "SECRET",
+            "startTime": "2026-01-01T00:00:00Z",
+        }
+
+        # httpx client mock — v2 returns a paginated dict; one page per day is enough here
         resp1 = Mock()
         resp1.raise_for_status.return_value = None
-        resp1.json.return_value = [
-            {
-                "request_id": "a",
-                "api_key": "SECRET",
-                "startTime": "2026-01-01T00:00:00Z",
-            }
-        ]
+        resp1.json.return_value = {
+            "data": [record],
+            "total": 1,
+            "page": 1,
+            "page_size": 300,
+            "total_pages": 1,
+        }
 
         resp2 = Mock()
         resp2.raise_for_status.return_value = None
-        resp2.json.return_value = []  # no records day 2
+        resp2.json.return_value = {
+            "data": [],
+            "total": 0,
+            "page": 1,
+            "page_size": 300,
+            "total_pages": 1,
+        }
 
         http_client = Mock()
         http_client.get.side_effect = [resp1, resp2]
@@ -217,11 +233,12 @@ class TestInfraExtract:
         # Verify request calls (endpoint + headers + params)
         assert http_client.get.call_count == 2
         (url0,), kwargs0 = http_client.get.call_args_list[0]
-        assert url0 == "http://litellm/spend/logs"
+        assert url0 == "http://litellm/spend/logs/v2"
         assert kwargs0["headers"] == {"Authorization": "Bearer mk"}
         assert kwargs0["params"]["start_date"] == "2026-01-01"
         assert kwargs0["params"]["end_date"] == "2026-01-02"
-        assert kwargs0["params"]["summarize"] == "false"
+        assert kwargs0["params"]["page"] == 1
+        assert kwargs0["params"]["page_size"] == 300
 
         # Verify zip writes (one jsonl per date)
         assert zipf.writestr.call_count == 2
@@ -271,7 +288,7 @@ class TestInfraExtract:
         )
 
         assert result.exit_code == 1
-        assert "LiteLLM /spend/logs failed for 2026-01-01" in result.output
+        assert "LiteLLM /spend/logs/v2 failed for 2026-01-01" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -344,6 +361,79 @@ class TestInfraExtract:
 
         assert result.exit_code == 1
         assert "Invalid JSON response for 2026-01-01" in result.output
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_paginates_across_multiple_pages(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        """Days with more records than page_size must be fetched across multiple pages."""
+        output_file = tmp_path / "out.zip"
+
+        page1_records = [{"request_id": f"a{i}"} for i in range(300)]
+        page2_records = [{"request_id": f"b{i}"} for i in range(150)]
+
+        resp1 = Mock()
+        resp1.raise_for_status.return_value = None
+        resp1.json.return_value = {
+            "data": page1_records,
+            "total": 450,
+            "page": 1,
+            "page_size": 300,
+            "total_pages": 2,
+        }
+
+        resp2 = Mock()
+        resp2.raise_for_status.return_value = None
+        resp2.json.return_value = {
+            "data": page2_records,
+            "total": 450,
+            "page": 2,
+            "page_size": 300,
+            "total_pages": 2,
+        }
+
+        http_client = Mock()
+        http_client.get.side_effect = [resp1, resp2]
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+
+        zipf = Mock()
+        mock_zip_cls.return_value.__enter__.return_value = zipf
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_file,
+        )
+
+        assert result.exit_code == 0
+        assert http_client.get.call_count == 2
+
+        (url0,), kwargs0 = http_client.get.call_args_list[0]
+        assert url0 == "http://litellm/spend/logs/v2"
+        assert kwargs0["params"]["page"] == 1
+        assert kwargs0["params"]["page_size"] == 300
+
+        (url1,), kwargs1 = http_client.get.call_args_list[1]
+        assert kwargs1["params"]["page"] == 2
+
+        assert zipf.writestr.call_count == 1
+        name0, payload0 = zipf.writestr.call_args_list[0][0]
+        assert name0 == "litellm_spend_logs_2026-01-01.jsonl"
+        assert len(payload0.strip().splitlines()) == 450
+
+        assert "450 total records" in result.output
 
 
 class MockPagedList(list):

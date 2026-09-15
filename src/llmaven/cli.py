@@ -716,7 +716,7 @@ def _extract_litellm_logs(
 
     litellm_base_url, litellm_master_key = _get_litellm_credentials(env_file)
 
-    endpoint = f"{litellm_base_url.rstrip('/')}/spend/logs"
+    endpoint = f"{litellm_base_url.rstrip('/')}/spend/logs/v2"
     headers = {"Authorization": f"Bearer {litellm_master_key}"}
 
     console.print(
@@ -735,34 +735,61 @@ def _extract_litellm_logs(
             current_date = start_date_obj
             while current_date <= end_date_obj:
                 date_str = current_date.isoformat()
+
+                # Collect all pages for this day. /spend/logs/v2 uses lte on
+                # end_date, so passing the next calendar day as a date-only
+                # string (parsed as midnight) gives the same half-open [D, D+1)
+                # window as the old /spend/logs endpoint. Datetime strings with a
+                # time component (e.g. "23:59:59") are rejected with 422 by older
+                # LiteLLM deployments that only accept YYYY-MM-DD.
                 next_date_str = (current_date + timedelta(days=1)).isoformat()
+                day_records: list[object] = []
+                page = 1
+                while True:
+                    params = {
+                        "start_date": date_str,
+                        "end_date": next_date_str,
+                        "page": page,
+                        "page_size": 100,
+                    }
 
-                params = {
-                    "start_date": date_str,
-                    "end_date": next_date_str,  # exclusive upper bound
-                    "summarize": "false",
-                }
+                    try:
+                        resp = http_client.get(endpoint, params=params, headers=headers)
+                        resp.raise_for_status()
+                    except httpx.HTTPError as exc:
+                        _fail_extract(
+                            f"LiteLLM /spend/logs/v2 failed for {date_str} page {page}: {exc}"
+                        )
+
+                    try:
+                        body = resp.json()
+                    except json.JSONDecodeError as exc:
+                        _fail_extract(
+                            f"Invalid JSON response for {date_str} page {page}: {exc}"
+                        )
+
+                    if not isinstance(body, dict):
+                        _fail_extract(
+                            f"Invalid JSON response for {date_str} page {page}: expected dict"
+                        )
+
+                    data = body.get("data")
+                    if not isinstance(data, list):
+                        _fail_extract(
+                            f"Invalid JSON response for {date_str} page {page}: missing 'data' list"
+                        )
+
+                    day_records.extend(data)
+
+                    total_pages = body.get("total_pages", 1)
+                    if page >= total_pages:
+                        break
+                    page += 1
+
+                total_records += len(day_records)
 
                 try:
-                    resp = http_client.get(endpoint, params=params, headers=headers)
-                    resp.raise_for_status()
-                except httpx.HTTPError as exc:
-                    _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
-
-                try:
-                    data = resp.json()
-                except json.JSONDecodeError as exc:
-                    _fail_extract(f"Invalid JSON response for {date_str}: {exc}")
-
-                if not isinstance(data, list):
-                    _fail_extract(
-                        f"Invalid JSON response for {date_str}: expected list"
-                    )
-
-                total_records += len(data)
-
-                try:
-                    jsonl_payload = _serialize_to_jsonl(data)
+                    jsonl_payload = _serialize_to_jsonl(day_records)
                 except Exception as exc:
                     _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
 
@@ -771,7 +798,9 @@ def _extract_litellm_logs(
                     jsonl_payload,
                 )
 
-                console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
+                console.print(
+                    f"[green]✓[/green] {date_str}: {len(day_records)} records"
+                )
                 current_date += timedelta(days=1)
 
     console.print(
