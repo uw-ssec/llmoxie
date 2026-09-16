@@ -191,32 +191,17 @@ class TestInfraExtract:
             "startTime": "2026-01-01T00:00:00Z",
         }
 
-        # httpx client mock — v2 returns a paginated dict; one page per day is enough here
-        resp1 = Mock()
-        resp1.raise_for_status.return_value = None
-        resp1.json.return_value = {
-            "data": [record],
-            "total": 1,
-            "page": 1,
-            "page_size": 300,
-            "total_pages": 1,
-        }
-
-        resp2 = Mock()
-        resp2.raise_for_status.return_value = None
-        resp2.json.return_value = {
-            "data": [],
-            "total": 0,
-            "page": 1,
-            "page_size": 300,
-            "total_pages": 1,
-        }
+        # v1 returns a plain list. One request per day.
+        def _make_resp(records):
+            r = Mock()
+            r.raise_for_status.return_value = None
+            r.json.return_value = records
+            return r
 
         http_client = Mock()
-        http_client.get.side_effect = [resp1, resp2]
+        http_client.get.side_effect = [_make_resp([record]), _make_resp([])]
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
 
-        # zipfile mock
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
@@ -230,24 +215,20 @@ class TestInfraExtract:
 
         assert result.exit_code == 0
 
-        # Verify request calls (endpoint + headers + params)
+        # One request per day
         assert http_client.get.call_count == 2
         (url0,), kwargs0 = http_client.get.call_args_list[0]
-        assert url0 == "http://litellm/spend/logs/v2"
+        assert url0 == "http://litellm/spend/logs"
         assert kwargs0["headers"] == {"Authorization": "Bearer mk"}
         assert kwargs0["params"]["start_date"] == "2026-01-01"
         assert kwargs0["params"]["end_date"] == "2026-01-02"
-        assert kwargs0["params"]["page"] == 1
-        assert kwargs0["params"]["page_size"] == 300
+        assert kwargs0["params"]["summarize"] == "false"
 
-        # Verify zip writes (one jsonl per date)
-        assert zipf.writestr.call_count == 2
+        # Only the day with records gets a file written
+        assert zipf.writestr.call_count == 1
         name0, payload0 = zipf.writestr.call_args_list[0][0]
         assert name0 == "litellm_spend_logs_2026-01-01.jsonl"
         assert '"request_id": "a"' in payload0
-        name1, payload1 = zipf.writestr.call_args_list[1][0]
-        assert name1 == "litellm_spend_logs_2026-01-02.jsonl"
-        assert payload1 == ""
 
         assert "1 total records" in result.output
 
@@ -257,7 +238,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_http_error_exits(
+    def test_http_error_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -267,28 +248,39 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        resp = Mock()
         import httpx
 
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        bad_resp = Mock()
+        bad_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "boom", request=Mock(), response=Mock()
         )
+        good_resp = Mock()
+        good_resp.raise_for_status.return_value = None
+        good_resp.json.return_value = [{"request_id": "ok"}]
 
         http_client = Mock()
-        http_client.get.return_value = resp
+        # Day 1 fails, day 2 succeeds
+        http_client.get.side_effect = [bad_resp, good_resp]
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
-        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        zipf = Mock()
+        mock_zip_cls.return_value.__enter__.return_value = zipf
 
         result = invoke_extract(
             runner,
             from_date="2026-01-01",
-            to_date="2026-01-01",
+            to_date="2026-01-02",
             source=None,
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "LiteLLM /spend/logs/v2 failed for 2026-01-01" in result.output
+        assert result.exit_code == 0
+        assert "skipping" in result.output
+        # Only the successful day gets a file
+        assert zipf.writestr.call_count == 1
+        name0, _ = zipf.writestr.call_args_list[0][0]
+        assert name0 == "litellm_spend_logs_2026-01-02.jsonl"
+        assert "1 total records" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -296,7 +288,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_json_decode_error_exits(
+    def test_json_decode_error_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -323,8 +315,8 @@ class TestInfraExtract:
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "Invalid JSON response for 2026-01-01" in result.output
+        assert result.exit_code == 0
+        assert "skipping" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -332,7 +324,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_non_list_json_exits(
+    def test_non_list_json_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -359,81 +351,8 @@ class TestInfraExtract:
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "Invalid JSON response for 2026-01-01" in result.output
-
-    @patch(
-        "llmaven.cli._get_llmaven_secrets",
-        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
-    )
-    @patch("zipfile.ZipFile")
-    @patch("httpx.Client")
-    def test_paginates_across_multiple_pages(
-        self,
-        mock_httpx_client_cls,
-        mock_zip_cls,
-        _mock_secrets,
-        runner: CliRunner,
-        tmp_path: Path,
-    ):
-        """Days with more records than page_size must be fetched across multiple pages."""
-        output_file = tmp_path / "out.zip"
-
-        page1_records = [{"request_id": f"a{i}"} for i in range(300)]
-        page2_records = [{"request_id": f"b{i}"} for i in range(150)]
-
-        resp1 = Mock()
-        resp1.raise_for_status.return_value = None
-        resp1.json.return_value = {
-            "data": page1_records,
-            "total": 450,
-            "page": 1,
-            "page_size": 300,
-            "total_pages": 2,
-        }
-
-        resp2 = Mock()
-        resp2.raise_for_status.return_value = None
-        resp2.json.return_value = {
-            "data": page2_records,
-            "total": 450,
-            "page": 2,
-            "page_size": 300,
-            "total_pages": 2,
-        }
-
-        http_client = Mock()
-        http_client.get.side_effect = [resp1, resp2]
-        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
-
-        zipf = Mock()
-        mock_zip_cls.return_value.__enter__.return_value = zipf
-
-        result = invoke_extract(
-            runner,
-            from_date="2026-01-01",
-            to_date="2026-01-01",
-            source=None,
-            output_file=output_file,
-        )
-
         assert result.exit_code == 0
-        assert http_client.get.call_count == 2
-
-        (url0,), kwargs0 = http_client.get.call_args_list[0]
-        assert url0 == "http://litellm/spend/logs/v2"
-        assert kwargs0["params"]["page"] == 1
-        assert kwargs0["params"]["page_size"] == 300
-
-        (url1,), kwargs1 = http_client.get.call_args_list[1]
-        assert kwargs1["params"]["page"] == 2
-
-        assert zipf.writestr.call_count == 1
-        name0, payload0 = zipf.writestr.call_args_list[0][0]
-        assert name0 == "litellm_spend_logs_2026-01-01.jsonl"
-        assert len(payload0.strip().splitlines()) == 450
-
-        assert "450 total records" in result.output
+        assert "skipping" in result.output
 
 
 class MockPagedList(list):
