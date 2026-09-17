@@ -53,7 +53,16 @@ from pathlib import Path
 
 import jsonlines
 import pandas as pd
-from .reader import last_request_per_session, load_messages_from_records
+import pyarrow as pa
+import pyarrow.parquet as pq
+from tqdm import tqdm
+
+from .reader import (
+    _parse_end_user,
+    _rows_from_record,
+    last_request_per_session,
+    load_messages_from_records,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -342,6 +351,210 @@ def _sessions_to_flat_rows(sessions: list[dict]) -> list[dict]:
     return rows
 
 
+_PARQUET_COLS = (
+    "request_id",
+    "session_id",
+    "direction",
+    "msg_idx",
+    "block_idx",
+    "role",
+    "type",
+    "text",
+    "thinking",
+    "tool_name",
+    "tool_input",
+    "tool_use_id",
+)
+
+# Explicit schema prevents PyArrow from inferring `null` type for columns whose
+# first batch happens to contain only None values (e.g. thinking, tool_name).
+_PARQUET_SCHEMA = pa.schema(
+    [
+        pa.field("request_id", pa.string()),
+        pa.field("session_id", pa.string()),
+        pa.field("direction", pa.string()),
+        pa.field("msg_idx", pa.int64()),
+        pa.field("block_idx", pa.int64()),
+        pa.field("role", pa.string()),
+        pa.field("type", pa.string()),
+        pa.field("text", pa.string()),
+        pa.field("thinking", pa.string()),
+        pa.field("tool_name", pa.string()),
+        pa.field("tool_input", pa.string()),
+        pa.field("tool_use_id", pa.string()),
+    ]
+)
+
+_PARQUET_BATCH_SIZE = 10_000
+
+
+def _stream_to_parquet(
+    input_path: Path,
+    parquet_path: Path,
+) -> tuple[dict, set[str], int]:
+    """Stream all records from input_path into a compact Parquet file.
+
+    Accumulates per-session stats in memory (O(n_sessions)) without building a
+    full block-level DataFrame.  Writes only the 12 columns needed for session
+    reconstruction to the Parquet — all other columns go into the returned
+    session_stats dict.
+
+    Returns
+    -------
+    (session_stats, last_request_ids, n_skipped)
+        session_stats maps session_id → aggregated stats dict.
+        last_request_ids is the set of request_ids that are the "last" (longest
+        input history, tie-broken by start_time) for their session.
+        n_skipped is the count of records with an unparsable session_id.
+    """
+    session_stats: dict[str, dict] = {}
+    n_skipped = 0
+    n_no_content = 0
+
+    writer = pq.ParquetWriter(parquet_path, _PARQUET_SCHEMA, compression="snappy")
+    batch: list[dict] = []
+
+    def _flush(final: bool = False) -> None:
+        nonlocal batch
+        if not batch:
+            return
+        arrays = {col: [row.get(col) for row in batch] for col in _PARQUET_COLS}
+        table = pa.table(arrays, schema=_PARQUET_SCHEMA)
+        writer.write_table(table)
+        batch = []
+
+    # Suppress per-record reader warnings during streaming; count and report in aggregate.
+    # Use __module__ rather than a hard-coded name so it works regardless of how the
+    # package was imported (e.g. 'llmaven.data.reader' vs 'src.llmaven.data.reader').
+    _reader_logger = logging.getLogger(_rows_from_record.__module__)
+    _saved_level = _reader_logger.level
+    _reader_logger.setLevel(logging.ERROR)
+    try:
+        for record in tqdm(
+            _iter_raw_records(input_path), unit="rec", desc="Pass 1: scanning"
+        ):
+            eu = _parse_end_user(record.get("end_user"))
+            session_id = eu["session_id"] or record.get("session_id")
+
+            if not session_id:
+                n_skipped += 1
+                continue
+
+            request_id = record.get("request_id") or ""
+            start_time = record.get("startTime") or ""
+            end_time = record.get("endTime") or ""
+            spend = record.get("spend") or 0.0
+            total_tokens = record.get("total_tokens") or 0
+            model = record.get("model")
+            metadata = record.get("metadata") or {}
+            alias = metadata.get("user_api_key_alias")
+            n_messages = len(
+                (record.get("proxy_server_request") or {}).get("messages") or []
+            )
+
+            if session_id not in session_stats:
+                session_stats[session_id] = {
+                    "device_id": eu["device_id"],
+                    "account_uuid": eu["account_uuid"],
+                    "user_api_key_alias": alias,
+                    "n_requests": 1,
+                    "total_spend": spend,
+                    "total_tokens": total_tokens,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "models": {model} if model else set(),
+                    "_best_request_id": request_id,
+                    "_best_n_messages": n_messages,
+                    "_best_start_time": start_time,
+                }
+            else:
+                s = session_stats[session_id]
+                s["n_requests"] += 1
+                s["total_spend"] += spend
+                s["total_tokens"] += total_tokens
+                if start_time and (not s["start_time"] or start_time < s["start_time"]):
+                    s["start_time"] = start_time
+                if end_time and end_time > s["end_time"]:
+                    s["end_time"] = end_time
+                if model:
+                    s["models"].add(model)
+                if n_messages > s["_best_n_messages"] or (
+                    n_messages == s["_best_n_messages"]
+                    and start_time > s["_best_start_time"]
+                ):
+                    s["_best_request_id"] = request_id
+                    s["_best_n_messages"] = n_messages
+                    s["_best_start_time"] = start_time
+
+            block_rows = _rows_from_record(
+                record, include_thinking=True, include_tool_use=True
+            )
+            if not block_rows:
+                n_no_content += 1
+            for row in block_rows:
+                batch.append({col: row.get(col) for col in _PARQUET_COLS})
+                if len(batch) >= _PARQUET_BATCH_SIZE:
+                    _flush()
+
+    finally:
+        _reader_logger.setLevel(_saved_level)
+
+    _flush(final=True)
+    writer.close()
+
+    if n_no_content:
+        logger.info(
+            "%d records yielded no content blocks (empty messages or Responses-API format)",
+            n_no_content,
+        )
+
+    last_request_ids = {s["_best_request_id"] for s in session_stats.values()}
+    return session_stats, last_request_ids, n_skipped
+
+
+def _build_sessions_from_parquet(
+    parquet_path: Path,
+    session_stats: dict,
+    last_request_ids: set[str],
+) -> list[dict]:
+    """Read the block Parquet, reconstruct one session record per session_id.
+
+    Filters to last-request rows in memory, then calls _reconstruct_conversation
+    for each session and merges with the pre-computed session_stats.
+    """
+    df = pd.read_parquet(parquet_path)
+    df = df[df["request_id"].isin(last_request_ids)]
+
+    sessions = []
+    for session_id, group in tqdm(
+        df.groupby("session_id"),
+        total=len(session_stats),
+        unit="session",
+        desc="Pass 2: building sessions",
+    ):
+        s = session_stats.get(session_id)
+        if s is None:
+            continue
+        sessions.append(
+            {
+                "session_id": session_id,
+                "device_id": s["device_id"],
+                "account_uuid": s["account_uuid"],
+                "user_api_key_alias": s["user_api_key_alias"],
+                "models": sorted(m for m in s["models"] if m),
+                "n_requests": s["n_requests"],
+                "total_spend": float(s["total_spend"]) if s["total_spend"] else None,
+                "total_tokens": int(s["total_tokens"]) if s["total_tokens"] else None,
+                "start_time": s["start_time"],
+                "end_time": s["end_time"],
+                "messages": _reconstruct_conversation(group),
+            }
+        )
+
+    sessions.sort(key=lambda s: s["start_time"] or "")
+    return sessions
+
+
 def main() -> None:
     """CLI entry point: parse args, load the input, build sessions, write the output."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -370,6 +583,18 @@ def main() -> None:
         default="jsonl",
         help="Output format: jsonl (one nested session per line) or parquet (flat, one row per message block)",
     )
+    parser.add_argument(
+        "--parquet-cache",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path for the intermediate block Parquet kept after pass 1 "
+            "(default: <output>.blocks.parquet).  If the file already exists, "
+            "pass 1 is skipped and the cached Parquet is reused "
+            "(a <PATH>.stats.json sidecar must also exist)."
+        ),
+    )
     args = parser.parse_args()
     output = args.output or Path(f"sessions.{args.format}")
     if output.exists():
@@ -377,13 +602,58 @@ def main() -> None:
             f"{output} already exists, pass a different -o/--output to avoid overwriting it"
         )
 
-    df = _load_all(args.input)
-    if df.empty:
-        raise SystemExit(f"No records found at {args.input}")
-    n_requests = df.loc[df["direction"] == "input", "request_id"].nunique()
-    logger.info("Loaded %d requests from %s", n_requests, args.input)
+    use_streaming = args.input.suffix == ".jsonl"
 
-    sessions, n_skipped = build_sessions(df)
+    if use_streaming:
+        parquet_path = args.parquet_cache or output.with_suffix(".blocks.parquet")
+        stats_path = parquet_path.with_suffix(parquet_path.suffix + ".stats.json")
+
+        if parquet_path.exists():
+            if not stats_path.exists():
+                raise SystemExit(
+                    f"Parquet cache found at {parquet_path} but sidecar {stats_path} is missing"
+                )
+            logger.info("Reusing cached Parquet at %s", parquet_path)
+            with open(stats_path) as f:
+                raw_stats = json.load(f)
+            session_stats = {
+                sid: {**s, "models": set(s["models"])}
+                for sid, s in raw_stats["sessions"].items()
+            }
+            last_request_ids = {s["_best_request_id"] for s in session_stats.values()}
+            n_skipped = raw_stats.get("n_skipped", 0)
+        else:
+            session_stats, last_request_ids, n_skipped = _stream_to_parquet(
+                args.input, parquet_path
+            )
+            serialisable = {
+                "n_skipped": n_skipped,
+                "sessions": {
+                    sid: {**s, "models": sorted(s["models"])}
+                    for sid, s in session_stats.items()
+                },
+            }
+            with open(stats_path, "w") as f:
+                json.dump(serialisable, f)
+            logger.info("Saved Parquet at %s", parquet_path)
+
+        logger.info("Scanning complete: %d sessions found", len(session_stats))
+        if not session_stats:
+            raise SystemExit(
+                "No sessions found — all records had an unparsable or missing end_user field. "
+                f"({n_skipped} records skipped)"
+            )
+
+        sessions = _build_sessions_from_parquet(
+            parquet_path, session_stats, last_request_ids
+        )
+    else:
+        df = _load_all(args.input)
+        if df.empty:
+            raise SystemExit(f"No records found at {args.input}")
+        n_requests = df.loc[df["direction"] == "input", "request_id"].nunique()
+        logger.info("Loaded %d requests from %s", n_requests, args.input)
+        sessions, n_skipped = build_sessions(df)
 
     if args.format == "jsonl":
         with jsonlines.open(output, mode="w") as writer:
