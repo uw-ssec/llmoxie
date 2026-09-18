@@ -80,6 +80,22 @@ def create_container_apps_environment(
         # Workload profiles - omitted to use default Consumption profile
         # Consumption is the default workload profile type (serverless, pay-per-use)
         # No need to explicitly specify it
+        opts=pulumi.ResourceOptions(
+            ignore_changes=[
+                "appLogsConfiguration",
+                "vnetConfiguration",
+                "zoneRedundant",
+                "workloadProfiles",
+                "infrastructureResourceGroup",
+                "peerAuthentication",
+                "openTelemetryConfiguration",
+                "daprAIConnectionString",
+                "daprAIInstrumentationKey",
+                "availabilityZones",
+                "peerTrafficConfiguration",
+                "publicNetworkAccess",
+            ],
+        ),
     )
 
     pulumi.export(
@@ -389,7 +405,17 @@ def create_backup_job(
 
     job = azure_native.app.Job(
         f"backup-job-{environment}",
-        opts=opts,
+        opts=pulumi.ResourceOptions.merge(
+            opts,
+            pulumi.ResourceOptions(
+                ignore_changes=[
+                    "configuration",
+                    "identity",
+                    "template",
+                    "workloadProfileName",
+                ]
+            ),
+        ),
         resource_group_name=resource_group_name,
         job_name=f"{project_name}-backup-{environment}",
         location=location,
