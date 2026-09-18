@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 from enum import Enum
+from time import sleep
 from datetime import datetime, time, timezone, timedelta
 from typing import TYPE_CHECKING, NoReturn, Optional
 
@@ -709,7 +710,6 @@ def _extract_litellm_logs(
     output_file: Path,
     env_file: Optional[Path],
 ) -> None:
-    import json
     import zipfile
 
     import httpx
@@ -735,11 +735,15 @@ def _extract_litellm_logs(
             current_date = start_date_obj
             while current_date <= end_date_obj:
                 date_str = current_date.isoformat()
-                next_date_str = (current_date + timedelta(days=1)).isoformat()
+                day_records: list[object] = []
+                # failed_hours: list[int] = []
 
+                # /spend/logs only accepts YYYY-MM-DD (no time component).
+                # summarize=false returns individual records instead of daily aggregates.
+                next_date_str = (current_date + timedelta(days=1)).isoformat()
                 params = {
                     "start_date": date_str,
-                    "end_date": next_date_str,  # exclusive upper bound
+                    "end_date": next_date_str,
                     "summarize": "false",
                 }
 
@@ -747,31 +751,42 @@ def _extract_litellm_logs(
                     resp = http_client.get(endpoint, params=params, headers=headers)
                     resp.raise_for_status()
                 except httpx.HTTPError as exc:
-                    _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
+                    if resp.status_code >= 500:
+                        print(
+                            f"Server error for {date_str}: {resp.status_code}. Cooling off for 60 seconds..."
+                        )
+                        sleep(60)  # brief pause before retrying on server errors
+                    else:
+                        _fail_extract(
+                            f"LiteLLM /spend/logs failed for {date_str}: {exc}"
+                        )
 
                 try:
-                    data = resp.json()
-                except json.JSONDecodeError as exc:
-                    _fail_extract(f"Invalid JSON response for {date_str}: {exc}")
-
-                if not isinstance(data, list):
-                    _fail_extract(
-                        f"Invalid JSON response for {date_str}: expected list"
+                    body = resp.json()
+                    if not isinstance(body, list):
+                        raise ValueError(f"expected list, got {type(body).__name__}")
+                    day_records.extend(body)
+                except Exception as exc:
+                    console_err.print(
+                        f"[yellow]![/yellow] {date_str}: skipping ({exc})"
                     )
 
-                total_records += len(data)
+                total_records += len(day_records)
 
                 try:
-                    jsonl_payload = _serialize_to_jsonl(data)
+                    jsonl_payload = _serialize_to_jsonl(day_records)
                 except Exception as exc:
                     _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
 
-                zipf.writestr(
-                    f"litellm_spend_logs_{date_str}.jsonl",
-                    jsonl_payload,
-                )
+                if day_records:
+                    zipf.writestr(
+                        f"litellm_spend_logs_{date_str}.jsonl",
+                        jsonl_payload,
+                    )
 
-                console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
+                console.print(
+                    f"[green]✓[/green] {date_str}: {len(day_records)} records"
+                )
                 current_date += timedelta(days=1)
 
     console.print(

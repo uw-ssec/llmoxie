@@ -58,13 +58,17 @@ def invoke_extract(
 
 class TestInfraExtract:
     def test_rejects_invalid_date_format(self, runner: CliRunner):
-        result = invoke_extract(runner, from_date="2026-99-01", to_date="2026-01-02")
+        result = invoke_extract(
+            runner, from_date="2026-99-01", to_date="2026-01-02", source=None
+        )
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
 
     def test_rejects_inverted_date_range(self, runner: CliRunner):
-        result = invoke_extract(runner, from_date="2026-01-03", to_date="2026-01-02")
+        result = invoke_extract(
+            runner, from_date="2026-01-03", to_date="2026-01-02", source=None
+        )
 
         assert result.exit_code == 1
         assert "--from must be <= --to" in result.output
@@ -181,26 +185,23 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        # httpx client mock
-        resp1 = Mock()
-        resp1.raise_for_status.return_value = None
-        resp1.json.return_value = [
-            {
-                "request_id": "a",
-                "api_key": "SECRET",
-                "startTime": "2026-01-01T00:00:00Z",
-            }
-        ]
+        record = {
+            "request_id": "a",
+            "api_key": "SECRET",
+            "startTime": "2026-01-01T00:00:00Z",
+        }
 
-        resp2 = Mock()
-        resp2.raise_for_status.return_value = None
-        resp2.json.return_value = []  # no records day 2
+        # v1 returns a plain list. One request per day.
+        def _make_resp(records):
+            r = Mock()
+            r.raise_for_status.return_value = None
+            r.json.return_value = records
+            return r
 
         http_client = Mock()
-        http_client.get.side_effect = [resp1, resp2]
+        http_client.get.side_effect = [_make_resp([record]), _make_resp([])]
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
 
-        # zipfile mock
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
@@ -214,7 +215,7 @@ class TestInfraExtract:
 
         assert result.exit_code == 0
 
-        # Verify request calls (endpoint + headers + params)
+        # One request per day
         assert http_client.get.call_count == 2
         (url0,), kwargs0 = http_client.get.call_args_list[0]
         assert url0 == "http://litellm/spend/logs"
@@ -223,14 +224,11 @@ class TestInfraExtract:
         assert kwargs0["params"]["end_date"] == "2026-01-02"
         assert kwargs0["params"]["summarize"] == "false"
 
-        # Verify zip writes (one jsonl per date)
-        assert zipf.writestr.call_count == 2
+        # Only the day with records gets a file written
+        assert zipf.writestr.call_count == 1
         name0, payload0 = zipf.writestr.call_args_list[0][0]
         assert name0 == "litellm_spend_logs_2026-01-01.jsonl"
         assert '"request_id": "a"' in payload0
-        name1, payload1 = zipf.writestr.call_args_list[1][0]
-        assert name1 == "litellm_spend_logs_2026-01-02.jsonl"
-        assert payload1 == ""
 
         assert "1 total records" in result.output
 
@@ -240,7 +238,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_http_error_exits(
+    def test_http_error_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -250,28 +248,39 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        resp = Mock()
         import httpx
 
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        bad_resp = Mock()
+        bad_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "boom", request=Mock(), response=Mock()
         )
+        good_resp = Mock()
+        good_resp.raise_for_status.return_value = None
+        good_resp.json.return_value = [{"request_id": "ok"}]
 
         http_client = Mock()
-        http_client.get.return_value = resp
+        # Day 1 fails, day 2 succeeds
+        http_client.get.side_effect = [bad_resp, good_resp]
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
-        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        zipf = Mock()
+        mock_zip_cls.return_value.__enter__.return_value = zipf
 
         result = invoke_extract(
             runner,
             from_date="2026-01-01",
-            to_date="2026-01-01",
+            to_date="2026-01-02",
             source=None,
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "LiteLLM /spend/logs failed for 2026-01-01" in result.output
+        assert result.exit_code == 0
+        assert "skipping" in result.output
+        # Only the successful day gets a file
+        assert zipf.writestr.call_count == 1
+        name0, _ = zipf.writestr.call_args_list[0][0]
+        assert name0 == "litellm_spend_logs_2026-01-02.jsonl"
+        assert "1 total records" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -279,7 +288,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_json_decode_error_exits(
+    def test_json_decode_error_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -306,8 +315,8 @@ class TestInfraExtract:
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "Invalid JSON response for 2026-01-01" in result.output
+        assert result.exit_code == 0
+        assert "skipping" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -315,7 +324,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_non_list_json_exits(
+    def test_non_list_json_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -342,8 +351,8 @@ class TestInfraExtract:
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "Invalid JSON response for 2026-01-01" in result.output
+        assert result.exit_code == 0
+        assert "skipping" in result.output
 
 
 class MockPagedList(list):

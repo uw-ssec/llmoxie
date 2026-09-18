@@ -26,24 +26,30 @@ def _parse_end_user(raw: Any) -> dict[str, str]:
     or missing entirely.
     """
     if isinstance(raw, str):
+        parsed = None
         try:
-            raw = json.loads(raw)
+            parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            m = re.fullmatch(
-                r"user_(?P<device_id>[0-9a-f]*)_account_(?P<account_uuid>.*?)_session_(?P<session_id>[0-9a-f-]+)",
-                raw,
-            )
-            if m:
-                return m.groupdict()
+            try:
+                # row_to_json() writes JSONB TEXT fields with literal backslash+quote
+                # pairs: {\"key\":\"val\"}.  json.loads fails on the raw string but
+                # succeeds after replacing \" with ".
+                parsed = json.loads(raw.replace('\\"', '"'))
+            except (json.JSONDecodeError, TypeError):
+                m = re.fullmatch(
+                    r"user_(?P<device_id>[0-9a-f]*)_account_(?P<account_uuid>.*?)_session_(?P<session_id>[0-9a-f-]+)",
+                    raw,
+                )
+                if m:
+                    return m.groupdict()
+        if parsed is not None:
+            raw = parsed
     if isinstance(raw, dict):
         return {
             "device_id": raw.get("device_id", ""),
             "account_uuid": raw.get("account_uuid", ""),
             "session_id": raw.get("session_id", ""),
         }
-    logger.warning(
-        "Could not parse end_user field into device/account/session ids: %r", raw
-    )
     return {"device_id": "", "account_uuid": "", "session_id": ""}
 
 
@@ -57,7 +63,7 @@ def _base_row(record: dict) -> dict:
         "end_time": record.get("endTime"),
         "device_id": eu["device_id"],
         "account_uuid": eu["account_uuid"],
-        "session_id": eu["session_id"],
+        "session_id": eu["session_id"] or record.get("session_id"),
         "model": record.get("model"),
         "spend": record.get("spend"),
         "total_tokens": record.get("total_tokens"),
