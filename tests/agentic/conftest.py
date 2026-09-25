@@ -72,7 +72,7 @@ def qdrant_url(qdrant_container):
             assert any(c.name == "test" for c in collections)
         ```
     """
-    return qdrant_container.get_api_url()
+    return f"http://{qdrant_container.rest_host_address}"
 
 
 @pytest.fixture
@@ -97,4 +97,4 @@ def qdrant_grpc_url(qdrant_container):
             assert client.get_collections() is not None
         ```
     """
-    return qdrant_container.get_grpc_url()
+    return f"http://{qdrant_container.grpc_host_address}"
