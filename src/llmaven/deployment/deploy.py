@@ -11,9 +11,9 @@ from pathlib import Path
 
 from pulumi import automation as auto
 
-from .validate import ValidationError, validate_config
 from ..infrastructure.config.loader import load_config, update_config_fields
 from ..infrastructure.main import create_pulumi_program
+from .validate import ValidationError, validate_config
 
 CONTAINER_NAME = "pulumi-state"
 PULUMI_BACKEND_URL = f"azblob://{CONTAINER_NAME}?storage_account={{storage_account}}"
@@ -21,8 +21,6 @@ PULUMI_BACKEND_URL = f"azblob://{CONTAINER_NAME}?storage_account={{storage_accou
 
 class DeploymentError(Exception):
     """Exception raised when deployment fails."""
-
-    pass
 
 
 def _run_az_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:

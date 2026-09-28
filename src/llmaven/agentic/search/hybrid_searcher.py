@@ -30,12 +30,12 @@ except ImportError:
     except ImportError:
         pass
 
-from fastembed import TextEmbedding, SparseTextEmbedding, LateInteractionTextEmbedding
+from fastembed import LateInteractionTextEmbedding, SparseTextEmbedding, TextEmbedding
 
+from llmaven.agentic.exceptions import EmbeddingError, SearchError
+from llmaven.agentic.search.models import SearchResult
 from llmaven.agentic.settings import config
 from llmaven.agentic.vector_store.qdrant_manager import QdrantManager
-from llmaven.agentic.search.models import SearchResult
-from llmaven.agentic.exceptions import SearchError, EmbeddingError
 
 logger = logging.getLogger(__name__)
 

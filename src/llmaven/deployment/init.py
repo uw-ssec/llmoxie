@@ -6,12 +6,11 @@ This module provides the implementation for the 'llmaven init' command.
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from ..infrastructure.config.defaults import get_config_template_yaml
 
 
-def get_azure_subscription_id() -> Optional[str]:
+def get_azure_subscription_id() -> str | None:
     """Get current Azure subscription ID from Azure CLI.
 
     Returns:
@@ -31,7 +30,7 @@ def get_azure_subscription_id() -> Optional[str]:
     return None
 
 
-def get_azure_tenant_id() -> Optional[str]:
+def get_azure_tenant_id() -> str | None:
     """Get current Azure tenant ID from Azure CLI.
 
     Returns:
@@ -51,7 +50,7 @@ def get_azure_tenant_id() -> Optional[str]:
     return None
 
 
-def prompt_for_input(prompt: str, default: Optional[str] = None) -> str:
+def prompt_for_input(prompt: str, default: str | None = None) -> str:
     """Prompt user for input with optional default value.
 
     Args:
@@ -76,7 +75,7 @@ def prompt_for_input(prompt: str, default: Optional[str] = None) -> str:
 
 def initialize_config(
     environment: str = "dev",
-    output_path: Optional[Path] = None,
+    output_path: Path | None = None,
     interactive: bool = True,
 ) -> None:
     """Initialize LLMaven deployment configuration.
