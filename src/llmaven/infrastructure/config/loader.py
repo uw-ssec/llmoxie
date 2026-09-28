@@ -4,7 +4,6 @@ This module handles loading and parsing llmaven-config.yaml files.
 """
 
 from pathlib import Path
-from typing import Union
 
 import yaml
 from pydantic import ValidationError
@@ -15,10 +14,8 @@ from .schema import LLMavenConfig
 class ConfigLoadError(Exception):
     """Exception raised when configuration loading fails."""
 
-    pass
 
-
-def load_config(config_path: Union[str, Path]) -> LLMavenConfig:
+def load_config(config_path: str | Path) -> LLMavenConfig:
     """Load and validate configuration from YAML file.
 
     Args:
@@ -65,7 +62,7 @@ def load_config(config_path: Union[str, Path]) -> LLMavenConfig:
     return config
 
 
-def load_config_dict(config_path: Union[str, Path]) -> dict:
+def load_config_dict(config_path: str | Path) -> dict:
     """Load configuration as dictionary without validation.
 
     Args:
@@ -91,7 +88,7 @@ def load_config_dict(config_path: Union[str, Path]) -> dict:
         raise ConfigLoadError(f"Failed to read configuration file {config_path}: {e}")
 
 
-def save_config(config: LLMavenConfig, output_path: Union[str, Path]) -> None:
+def save_config(config: LLMavenConfig, output_path: str | Path) -> None:
     """Save configuration to YAML file.
 
     Args:
@@ -121,9 +118,7 @@ def save_config(config: LLMavenConfig, output_path: Union[str, Path]) -> None:
         raise ConfigLoadError(f"Failed to write configuration to {output_path}: {e}")
 
 
-def update_config_fields(
-    config_path: Union[str, Path], updates: dict[str, str]
-) -> None:
+def update_config_fields(config_path: str | Path, updates: dict[str, str]) -> None:
     """Update specific fields in YAML config while preserving formatting.
 
     This function updates only the specified fields while preserving all comments,

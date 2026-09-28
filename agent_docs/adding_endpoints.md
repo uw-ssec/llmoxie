@@ -23,8 +23,10 @@ Create a new file in `src/llmaven/schemas/`:
 # src/llmaven/schemas/new_feature.py
 from pydantic import BaseModel
 
+
 class NewFeatureRequest(BaseModel):
     param: str
+
 
 class NewFeatureResponse(BaseModel):
     result: str
@@ -58,6 +60,7 @@ from llmaven.services.new_feature_service import process_feature
 
 router = APIRouter()
 
+
 @router.post("/new_feature/", response_model=NewFeatureResponse)
 async def new_feature(request: NewFeatureRequest):
     try:
@@ -74,6 +77,7 @@ Update `src/llmaven/v1/router.py`:
 
 ```python
 from llmaven.v1.endpoints import new_feature
+
 router.include_router(new_feature.router)
 ```
 
@@ -90,6 +94,7 @@ from fastapi.testclient import TestClient
 from llmaven.main import app
 
 client = TestClient(app)
+
 
 def test_new_feature_success():
     response = client.post("/v1/new_feature/", json={"param": "test"})

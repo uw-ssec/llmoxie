@@ -1,6 +1,7 @@
-import streamlit as st
 import requests
+import streamlit as st
 from langchain.document_loaders import PyMuPDFLoader
+
 from llmaven.frontend.config import config, expand_query, format_prompt
 
 st.title("RAG Chatbot")
@@ -69,7 +70,7 @@ if query := st.chat_input("Your question:"):
             )
         except Exception as e:
             retrieved_docs = []
-            st.error(f"❌ Retrieval API failed: {str(e)}")
+            st.error(f"❌ Retrieval API failed: {e!s}")
 
     # Show retrieved documents immediately
     retrieved_text = "\n\n".join(doc["page_content"][:500] for doc in retrieved_docs)
@@ -96,7 +97,7 @@ if query := st.chat_input("Your question:"):
             )
         except Exception as e:
             generated_answer = "⚠️ Failed to generate response."
-            st.error(f"❌ Generation API failed: {str(e)}")
+            st.error(f"❌ Generation API failed: {e!s}")
 
     # Display AI-generated response
     assistant_message = {

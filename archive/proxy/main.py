@@ -7,15 +7,13 @@ This proxy forwards all requests to the OpenAI API and supports streaming respon
 import json
 import logging
 import os
-from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException, Header
-from fastapi.responses import StreamingResponse
-from dotenv import load_dotenv
-
-from data_log import DataLogger
 from auth import UserKeyStore
+from data_log import DataLogger
+from dotenv import load_dotenv
+from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
 app = FastAPI(
     title="OpenAI API Proxy",
@@ -59,7 +57,7 @@ async def startup_event():
         logger.info("Authentication disabled")
 
 
-async def verify_api_key(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+async def verify_api_key(authorization: str | None = Header(None)) -> dict | None:
     """
     Verify API key from Authorization header.
 
@@ -99,7 +97,7 @@ async def proxy_request(
     request: Request,
     path: str,
     method: str = "POST",
-    user_info: Optional[dict] = None,
+    user_info: dict | None = None,
 ) -> Response:
     """
     Proxy a request to the OpenAI API.
@@ -231,13 +229,13 @@ async def proxy_request(
             raise HTTPException(status_code=504, detail="Gateway timeout") from exc
         except httpx.RequestError as exc:
             raise HTTPException(
-                status_code=502, detail=f"Bad gateway: {str(exc)}"
+                status_code=502, detail=f"Bad gateway: {exc!s}"
             ) from exc
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_openai_v1(
-    request: Request, path: str, authorization: Optional[str] = Header(None)
+    request: Request, path: str, authorization: str | None = Header(None)
 ):
     """
     Proxy all OpenAI API v1 endpoints.

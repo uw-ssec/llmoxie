@@ -8,10 +8,10 @@ import pytest
 
 from llmaven.agentic.exceptions import (
     AgenticRAGError,
-    IngestionError,
-    QdrantConnectionError,
     CollectionNotFoundError,
     EmbeddingError,
+    IngestionError,
+    QdrantConnectionError,
     SearchError,
 )
 
@@ -170,10 +170,10 @@ class TestExceptionImportability:
         """Test that all exceptions can be imported."""
         from llmaven.agentic.exceptions import (
             AgenticRAGError,
-            IngestionError,
-            QdrantConnectionError,
             CollectionNotFoundError,
             EmbeddingError,
+            IngestionError,
+            QdrantConnectionError,
             SearchError,
         )
 
