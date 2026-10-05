@@ -1,6 +1,5 @@
 from ..core.generator.language_model import LanguageModel
 
-
 # Global model instance (lazy-loaded)
 MODEL_INSTANCES = {}
 

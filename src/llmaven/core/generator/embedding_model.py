@@ -1,6 +1,7 @@
-import os
-from langchain_huggingface import HuggingFaceEmbeddings
 import logging
+import os
+
+from langchain_huggingface import HuggingFaceEmbeddings
 
 
 class EmbeddingModel:
@@ -16,7 +17,6 @@ class EmbeddingModel:
             else None
         )
         self.embeddings = None
-        pass
 
     def load_embedding_model(self, model_path=None, download_model=True):
         embeddings = HuggingFaceEmbeddings(
