@@ -11,11 +11,11 @@ from typing import Any
 
 from pydantic_ai import Agent, RunContext
 
-from llmaven.agentic.settings import config
-from llmaven.agentic.providers import create_llm_model
-from llmaven.agentic.search.hybrid_searcher import HybridSearcher
 from llmaven.agentic.agent.models import RAGResponse
 from llmaven.agentic.exceptions import AgenticRAGError, ProviderConfigurationError
+from llmaven.agentic.providers import create_llm_model
+from llmaven.agentic.search.hybrid_searcher import HybridSearcher
+from llmaven.agentic.settings import config
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +215,7 @@ Your responses should be accurate, well-structured, and backed by citations.
                         ),
                         timeout=300.0,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise AgenticRAGError("LLM generation timed out after 300 seconds")
             except Exception:
                 raise

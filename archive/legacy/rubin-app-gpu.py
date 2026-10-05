@@ -1,24 +1,23 @@
 import textwrap
-from uuid import uuid4
 import warnings
 from pathlib import Path
+from uuid import uuid4
 
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.callbacks import CallbackManager, BaseCallbackHandler
-from langchain_core.prompts import PromptTemplate
-from langchain_qdrant import Qdrant
-from langchain_huggingface import HuggingFaceEmbeddings
-from qdrant_client import QdrantClient
-from langchain.globals import set_verbose, set_debug
-from langchain_community.llms import HuggingFacePipeline
-
-from transformers import pipeline
 import panel as pn
+from langchain.globals import set_debug, set_verbose
+from langchain_community.llms import HuggingFacePipeline
+from langchain_core.callbacks import BaseCallbackHandler, CallbackManager
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_qdrant import Qdrant
+from qdrant_client import QdrantClient
+from transformers import pipeline
 
 set_debug(True)
 set_verbose(True)
 
-from download_models import load_transformer_model  # noqa: E402
+from download_models import load_transformer_model
 
 warnings.filterwarnings("ignore")
 
@@ -120,13 +119,11 @@ db = Qdrant(
 )
 
 input_prompt_template = textwrap.dedent(
-    (
-        "You are an astrophysics expert with a focus on the Rubin telescope project "
-        "(formerly known as Large Synoptic Survey Telescope - LSST). Please answer "
-        "the question on astrophysics based on the following context:\n\n"
-        "{context}\n\n"
-        "Question: {question}\n"
-    )
+    "You are an astrophysics expert with a focus on the Rubin telescope project "
+    "(formerly known as Large Synoptic Survey Telescope - LSST). Please answer "
+    "the question on astrophysics based on the following context:\n\n"
+    "{context}\n\n"
+    "Question: {question}\n"
 )
 
 chat_interface = pn.chat.ChatInterface(callback=callback)

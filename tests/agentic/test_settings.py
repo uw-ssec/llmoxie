@@ -5,6 +5,7 @@ including default values, environment variable loading, and validation.
 """
 
 import os
+
 import pytest
 from pydantic import ValidationError
 

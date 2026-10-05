@@ -1,21 +1,20 @@
 import textwrap
-from uuid import uuid4
 import warnings
 from pathlib import Path
+from uuid import uuid4
 
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.callbacks import CallbackManager, BaseCallbackHandler
-from langchain_core.prompts import PromptTemplate
 from langchain_community.llms import LlamaCpp
-from langchain_qdrant import Qdrant
+from langchain_core.callbacks import BaseCallbackHandler, CallbackManager
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
-
 from ssec_tutorials import download_olmo_model
 
 warnings.filterwarnings("ignore")
 
-import panel as pn  # noqa: E402
+import panel as pn
 
 
 def get_chain(callback_handlers: list[BaseCallbackHandler], input_prompt_template: str):

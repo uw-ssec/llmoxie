@@ -9,16 +9,15 @@ import os
 import secrets
 import uuid
 from datetime import datetime
-from typing import Optional
 
 import typer
-from azure.data.tables import TableServiceClient
 from azure.core.credentials import AzureNamedKeyCredential
 from azure.core.exceptions import (
+    HttpResponseError,
     ResourceExistsError,
     ResourceNotFoundError,
-    HttpResponseError,
 )
+from azure.data.tables import TableServiceClient
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
@@ -60,7 +59,7 @@ def get_table_client():
 @app.command()
 def add(
     user_name: str = typer.Argument(..., help="User's full name"),
-    user_id: Optional[str] = typer.Option(
+    user_id: str | None = typer.Option(
         None, "--user-id", "-u", help="Custom user ID (default: auto-generated GUID)"
     ),
 ):

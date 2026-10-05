@@ -1,9 +1,10 @@
-import requests
-import pandas as pd
-import time
 import os
-from tqdm import tqdm
+import time
+
+import pandas as pd
+import requests
 from bs4 import BeautifulSoup
+from tqdm import tqdm
 
 BASE_URL = "https://community.lsst.org"
 LATEST_URL = f"{BASE_URL}/latest.json"

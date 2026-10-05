@@ -5,11 +5,10 @@ This module provides REST API endpoints for generate operations.
 
 from __future__ import annotations
 
-
 from fastapi import APIRouter, HTTPException
 
-from ...services.generation_service import generate_answer
 from ...schemas.generate import GenerationRequest
+from ...services.generation_service import generate_answer
 
 router = APIRouter(prefix="/generate", tags=["generate"])
 
