@@ -3,7 +3,7 @@
 This module defines the Pydantic models for validating llmaven-config.yaml.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -20,7 +20,7 @@ class ProjectConfig(BaseModel):
         default=False,
         description="Enable Pulumi passphrase protection (requires PULUMI_CONFIG_PASSPHRASE)",
     )
-    pulumi_state_store: Optional[str] = Field(
+    pulumi_state_store: str | None = Field(
         default=None,
         description="Azure Blob Storage account for Pulumi state storage (optional)",
     )
@@ -41,10 +41,10 @@ class AzureConfig(BaseModel):
     subscription_id: str = Field(
         default="", description="Azure subscription ID (required)"
     )
-    tenant_id: Optional[str] = Field(
+    tenant_id: str | None = Field(
         default=None, description="Azure AD tenant ID (optional, auto-detected)"
     )
-    resource_group: Optional[str] = Field(
+    resource_group: str | None = Field(
         default=None, description="Resource group name (optional, auto-created)"
     )
 
@@ -83,7 +83,7 @@ class DatabaseConfig(BaseModel):
         default=False, description="Enable high availability"
     )
     postgresql_version: str = Field(default="16", description="PostgreSQL version")
-    databases: List[str] = Field(
+    databases: list[str] = Field(
         default=["llmaven", "mlflow_db", "litellm_db"], description="Database names"
     )
 
@@ -98,7 +98,7 @@ class StorageConfig(BaseModel):
     enable_hierarchical_namespace: bool = Field(
         default=True, description="Enable ADLS Gen2"
     )
-    containers: List[str] = Field(
+    containers: list[str] = Field(
         default=["mlflow", "llmaven", "litellm-logs"],
         description="Storage container names",
     )
@@ -151,7 +151,7 @@ class MonitoringConfig(BaseModel):
         default=True, description="Enable Application Insights"
     )
     enable_log_analytics: bool = Field(default=True, description="Enable Log Analytics")
-    daily_data_cap_gb: Optional[float] = Field(
+    daily_data_cap_gb: float | None = Field(
         default=None, description="Daily data cap in GB (null for unlimited)"
     )
 
@@ -166,10 +166,10 @@ class ContainerAppConfig(BaseModel):
     memory: str = Field(default="1Gi", description="Memory allocation")
     min_replicas: int = Field(default=1, description="Minimum replicas", ge=0)
     max_replicas: int = Field(default=2, description="Maximum replicas", ge=1)
-    env_vars: Dict[str, str] = Field(
+    env_vars: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )
-    key_vault_secret_refs: Dict[str, str] = Field(
+    key_vault_secret_refs: dict[str, str] = Field(
         default_factory=dict, description="Key/Value mapping for Key Vault secrets"
     )
 
@@ -182,12 +182,12 @@ class MLflowConfig(ContainerAppConfig):
         description="MLflow container image",
     )
     port: int = Field(default=8080, description="MLflow port")
-    env_vars: Dict[str, str] = Field(
+    env_vars: dict[str, str] = Field(
         default_factory=lambda: {"MLFLOW_HOST": "0.0.0.0"},
         description="MLflow environment variables",
     )
 
-    key_vault_secret_refs: Dict[str, str] = Field(
+    key_vault_secret_refs: dict[str, str] = Field(
         default_factory=lambda: {
             "MLFLOW_BACKEND_STORE_URI": "db-connection-string-mlflow-db",
             "MLFLOW_DEFAULT_ARTIFACT_ROOT": "mlflow-artifact-root",
@@ -208,12 +208,12 @@ class LiteLLMConfig(ContainerAppConfig):
     config_file: str = Field(
         default="docker/config.yaml", description="Path to LiteLLM config file"
     )
-    env_vars: Dict[str, str] = Field(
+    env_vars: dict[str, str] = Field(
         default_factory=lambda: {"LITELLM_HOST": "0.0.0.0"},
         description="LiteLLM environment variables",
     )
 
-    key_vault_secret_refs: Dict[str, str] = Field(
+    key_vault_secret_refs: dict[str, str] = Field(
         default_factory=lambda: {
             "DATABASE_URL": "db-connection-string-litellm-db",
             "LITELLM_MASTER_KEY": "litellm-master-key",
@@ -250,7 +250,7 @@ class KeyVaultConfig(BaseModel):
         default=90, description="Soft delete retention days", ge=7, le=90
     )
     enable_soft_delete: bool = Field(default=False, description="Enable soft delete")
-    enable_purge_protection: Optional[bool] = Field(
+    enable_purge_protection: bool | None = Field(
         default=None, description="Enable purge protection"
     )
 
@@ -259,7 +259,7 @@ class NetworkSecurityConfig(BaseModel):
     """Network security configuration."""
 
     allow_azure_services: bool = Field(default=True, description="Allow Azure services")
-    allowed_ip_ranges: List[str] = Field(
+    allowed_ip_ranges: list[str] = Field(
         default_factory=list, description="Allowed IP ranges for access control"
     )
 
@@ -350,7 +350,7 @@ class LLMavenConfig(BaseModel):
         default_factory=BackupJobConfig,
         description="Scheduled backup job configuration",
     )
-    tags: Dict[str, str] = Field(
+    tags: dict[str, str] = Field(
         default_factory=lambda: {
             "Environment": "dev",
             "Project": "llmaven",

@@ -76,6 +76,6 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://your-proxy:8000/v1",
-    api_key="your-proxy-api-key-here"  # Not your OpenAI key!
+    api_key="your-proxy-api-key-here",  # Not your OpenAI key!
 )
 ```

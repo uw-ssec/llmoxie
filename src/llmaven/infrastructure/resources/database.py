@@ -4,8 +4,6 @@ This module creates and configures Azure Database for PostgreSQL - Flexible Serv
 with support for high availability, backups, and VNet integration.
 """
 
-from typing import Dict, List, Optional
-
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
@@ -20,7 +18,7 @@ def create_postgres_server(
     postgres_subnet_id: Output[str],
     config: LLMavenConfig,
     admin_password: Output[str],
-    tags: Dict[str, str],
+    tags: dict[str, str],
 ) -> azure_native.dbforpostgresql.Server:
     """
     Create Azure PostgreSQL Flexible Server.
@@ -119,10 +117,10 @@ def create_postgres_server(
 def create_databases(
     resource_group_name: Output[str],
     server_name: Output[str],
-    database_names: List[str],
+    database_names: list[str],
     environment: str,
-    tags: Dict[str, str],
-) -> List[azure_native.dbforpostgresql.Database]:
+    tags: dict[str, str],
+) -> list[azure_native.dbforpostgresql.Database]:
     """
     Create PostgreSQL databases.
 
@@ -159,8 +157,8 @@ def configure_firewall_rules(
     server_name: Output[str],
     environment: str,
     allow_azure_services: bool = True,
-    allowed_ip_ranges: Optional[List[Dict[str, str]]] = None,
-) -> List[azure_native.dbforpostgresql.FirewallRule]:
+    allowed_ip_ranges: list[dict[str, str]] | None = None,
+) -> list[azure_native.dbforpostgresql.FirewallRule]:
     """
     Configure PostgreSQL firewall rules.
 
@@ -208,7 +206,7 @@ def configure_server_parameters(
     resource_group_name: Output[str],
     server_name: Output[str],
     environment: str,
-) -> List[azure_native.dbforpostgresql.Configuration]:
+) -> list[azure_native.dbforpostgresql.Configuration]:
     """
     Configure PostgreSQL server parameters for optimal performance.
 
