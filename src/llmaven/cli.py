@@ -5,18 +5,19 @@ This module provides command-line interface functionality for the LLMaven projec
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from datetime import UTC, datetime, time, timedelta
 from enum import Enum
+from pathlib import Path
 from time import sleep
-from datetime import datetime, time, timezone, timedelta
-from typing import TYPE_CHECKING, NoReturn, Optional
+from typing import TYPE_CHECKING, NoReturn
 
 import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
     from datetime import date
+
     from mlflow import MlflowClient
 
 console = Console()
@@ -105,7 +106,7 @@ def serve(
         help="Environment mode (development or production)",
         case_sensitive=False,
     ),
-    workers: Optional[int] = typer.Option(
+    workers: int | None = typer.Option(
         None,
         "--workers",
         "-w",
@@ -309,7 +310,7 @@ def init(
         "-e",
         help="Environment to configure (dev, staging, prod)",
     ),
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -347,7 +348,7 @@ def init(
 
 @infra_app.command()
 def validate(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -365,7 +366,7 @@ def validate(
         is_flag=True,
         help="Skip secrets validation (use with caution)",
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
@@ -411,7 +412,7 @@ def validate(
 
 @infra_app.command()
 def deploy(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -431,7 +432,7 @@ def deploy(
         is_flag=True,
         help="Automatically approve deployment",
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -474,7 +475,7 @@ def deploy(
 
 @infra_app.command()
 def destroy(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -524,7 +525,7 @@ def destroy(
 
 @infra_app.command()
 def status(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -561,7 +562,7 @@ def status(
 
 @infra_app.command()
 def refresh(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -612,7 +613,7 @@ class ExtractSource(str, Enum):
     mlflow = "mlflow"
 
 
-def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
+def _get_llmaven_secrets(env_file: Path | None) -> dict:
     """Wrapper to keep secrets import local and easy to mock in tests."""
     from llmaven.infrastructure.utils.secrets import get_llmaven_secrets
 
@@ -620,7 +621,7 @@ def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
     return get_llmaven_secrets(env_file)
 
 
-def _get_litellm_credentials(env_file: Optional[Path]) -> tuple[str, str]:
+def _get_litellm_credentials(env_file: Path | None) -> tuple[str, str]:
     secrets = _get_llmaven_secrets(env_file)
 
     # Secrets are normalized to kebab-case when loaded from LLMAVEN_SECRETS_*.
@@ -635,7 +636,7 @@ def _get_litellm_credentials(env_file: Optional[Path]) -> tuple[str, str]:
     return litellm_base_url, litellm_master_key
 
 
-def _parse_utc_date(date_value: str) -> "date":
+def _parse_utc_date(date_value: str) -> date:
     """Parse a YYYY-MM-DD date, exiting with a helpful message on failure."""
 
     try:
@@ -666,8 +667,8 @@ def _serialize_to_jsonl(records: list[object]) -> str:
 
 
 def _prepare_extract_output_file(
-    output_file: Optional[Path],
-    source: "ExtractSource",
+    output_file: Path | None,
+    source: ExtractSource,
     from_date: str,
     to_date: str,
 ) -> Path:
@@ -705,10 +706,10 @@ def _prepare_extract_output_file(
 
 
 def _extract_litellm_logs(
-    start_date_obj: "date",
-    end_date_obj: "date",
+    start_date_obj: date,
+    end_date_obj: date,
     output_file: Path,
-    env_file: Optional[Path],
+    env_file: Path | None,
 ) -> None:
     import zipfile
 
@@ -795,8 +796,8 @@ def _extract_litellm_logs(
     )
 
 
-def _utc_date_to_epoch_ms(d: "date") -> int:
-    return int(datetime.combine(d, time.min, tzinfo=timezone.utc).timestamp() * 1000)
+def _utc_date_to_epoch_ms(d: date) -> int:
+    return int(datetime.combine(d, time.min, tzinfo=UTC).timestamp() * 1000)
 
 
 def _fetch_mlflow_experiment_ids_for_date_range(
@@ -805,7 +806,7 @@ def _fetch_mlflow_experiment_ids_for_date_range(
     from mlflow.entities import ViewType
 
     experiment_ids: list[str] = []
-    page_token: Optional[str] = None
+    page_token: str | None = None
 
     # Use only creation_time as a coarse pre-filter for experiments.
     # If an experiment was created after the requested window ends, it cannot
@@ -852,7 +853,7 @@ def _fetch_mlflow_experiment_traces_in_date_range(
     )
 
     all_traces = []
-    page_token: Optional[str] = None
+    page_token: str | None = None
     page_num = 0
 
     with console.status("[blue]Fetching MLflow traces...[/blue]") as status:
@@ -881,7 +882,7 @@ def _fetch_mlflow_experiment_traces_in_date_range(
     return all_traces
 
 
-def _get_mlflow_tracking_uri(env_file: Optional[Path]) -> str:
+def _get_mlflow_tracking_uri(env_file: Path | None) -> str:
     secrets = _get_llmaven_secrets(env_file)
 
     # Secrets are normalized to kebab-case when loaded from LLMAVEN_SECRETS_*.
@@ -893,10 +894,10 @@ def _get_mlflow_tracking_uri(env_file: Optional[Path]) -> str:
 
 
 def _extract_mlflow_logs(
-    start_date_obj: "date",
-    end_date_obj: "date",
+    start_date_obj: date,
+    end_date_obj: date,
     output_file: Path,
-    env_file: Optional[Path],
+    env_file: Path | None,
 ) -> None:
     import zipfile
     from collections import defaultdict
@@ -1023,7 +1024,7 @@ def extract(
         "--to",
         help="End date (YYYY-MM-DD, interpreted as a UTC calendar date, inclusive)",
     ),
-    output_file: Optional[Path] = typer.Option(
+    output_file: Path | None = typer.Option(
         None,
         "--out",
         help="Output zip file path",
@@ -1033,7 +1034,7 @@ def extract(
         resolve_path=True,
         path_type=Path,
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
 ) -> None:
     """Extract source logs/traces into a day-partitioned JSONL zip.
 
@@ -1089,7 +1090,7 @@ def extract(
 
 @infra_app.command()
 def cancel(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -1127,7 +1128,7 @@ def cancel(
 
 @backup_infra_app.command(name="deploy")
 def backup_infra_deploy(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         "llmaven-backup-config.yaml",
         "--config",
         "-c",
@@ -1186,18 +1187,18 @@ def backup_infra_deploy(
 
 @backup_infra_app.command(name="output")
 def backup_infra_output(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         "llmaven-backup-config.yaml",
         "--config",
         "-c",
         help="Path to backup configuration file",
     ),
-    secret: Optional[str] = typer.Option(
+    secret: str | None = typer.Option(
         None,
         "--secret",
         help="Name of a secret output to retrieve (revealed in plaintext)",
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None,
         "--name",
         "-n",
@@ -1263,7 +1264,7 @@ def ingest(
         ...,
         help="One or more directories containing documents to ingest",
     ),
-    collection: Optional[str] = typer.Option(
+    collection: str | None = typer.Option(
         None,
         "--collection",
         "-c",
@@ -1302,8 +1303,9 @@ def ingest(
             llmaven agentic ingest ./docs --collection my-collection
     """
     from pathlib import Path
-    from llmaven.agentic.ingestion import IngestionPipeline
+
     from llmaven.agentic.exceptions import AgenticRAGError
+    from llmaven.agentic.ingestion import IngestionPipeline
 
     try:
         # Validate directories exist
@@ -1350,19 +1352,19 @@ def search(
         ...,
         help="Search query",
     ),
-    collection: Optional[str] = typer.Option(
+    collection: str | None = typer.Option(
         None,
         "--collection",
         "-c",
         help="Collection name (defaults to config)",
     ),
-    top_k: Optional[int] = typer.Option(
+    top_k: int | None = typer.Option(
         None,
         "--top-k",
         "-k",
         help="Number of results to return (defaults to config)",
     ),
-    prefetch_k: Optional[int] = typer.Option(
+    prefetch_k: int | None = typer.Option(
         None,
         "--prefetch-k",
         "-p",
@@ -1392,8 +1394,8 @@ def search(
         Search specific collection:
             llmaven agentic search "query" --collection my-collection
     """
-    from llmaven.agentic.search import HybridSearcher
     from llmaven.agentic.exceptions import AgenticRAGError
+    from llmaven.agentic.search import HybridSearcher
 
     try:
         console.print(f"[blue]→[/blue] Searching for: [bold]{query}[/bold]")
@@ -1439,49 +1441,49 @@ def search(
 
 @agentic_app.command()
 def chat(
-    collection: Optional[str] = typer.Option(
+    collection: str | None = typer.Option(
         None,
         "--collection",
         "-c",
         help="Collection name (defaults to config)",
     ),
-    provider: Optional[str] = typer.Option(
+    provider: str | None = typer.Option(
         None,
         "--provider",
         help="LLM provider override (openai, ollama, litellm, azure, huggingface)",
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         "-m",
         help="LLM model override",
     ),
-    litellm_base: Optional[str] = typer.Option(
+    litellm_base: str | None = typer.Option(
         None,
         "--litellm-base",
         help="LiteLLM proxy base URL (e.g., http://localhost:4000)",
     ),
-    litellm_api_key: Optional[str] = typer.Option(
+    litellm_api_key: str | None = typer.Option(
         None,
         "--litellm-api-key",
         help="LiteLLM API key",
     ),
-    litellm_model_prefix: Optional[str] = typer.Option(
+    litellm_model_prefix: str | None = typer.Option(
         None,
         "--litellm-prefix",
         help="LiteLLM model prefix (e.g., openai/, anthropic/)",
     ),
-    azure_endpoint: Optional[str] = typer.Option(
+    azure_endpoint: str | None = typer.Option(
         None,
         "--azure-endpoint",
         help="Azure OpenAI endpoint URL (e.g., https://myresource.openai.azure.com)",
     ),
-    azure_api_key: Optional[str] = typer.Option(
+    azure_api_key: str | None = typer.Option(
         None,
         "--azure-api-key",
         help="Azure API key",
     ),
-    azure_deployment: Optional[str] = typer.Option(
+    azure_deployment: str | None = typer.Option(
         None,
         "--azure-deployment",
         help="Azure deployment name",
