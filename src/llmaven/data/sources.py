@@ -200,5 +200,8 @@ def iter_source(
         params={"start_date": start, "end_date": end, "summarize": "false"},
     )
     response.raise_for_status()
-    for raw in response.json():
+    data = response.json()
+    if not isinstance(data, list):
+        raise ValueError("LiteLLM /spend/logs response must be a list")
+    for raw in data:
         yield from_litellm(raw), "litellm"
