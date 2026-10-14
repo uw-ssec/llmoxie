@@ -31,6 +31,7 @@ class AgenticChatRequest(BaseModel):
         message_history: Optional conversation history
         llm_provider: Optional LLM provider override
         llm_model: Optional LLM model override
+        tags: Optional list of tags for request filtering and analysis
     """
 
     query: str = Field(..., description="User query or question", min_length=1)
@@ -45,6 +46,9 @@ class AgenticChatRequest(BaseModel):
         None, description="LLM provider override (openai, ollama, huggingface)"
     )
     llm_model: Optional[str] = Field(None, description="LLM model override")
+    tags: Optional[list[str]] = Field(
+        None, description="Tags for request filtering and analysis in log data"
+    )
 
 
 @router.post("", response_model=RAGResponse)
@@ -76,6 +80,7 @@ async def agentic_chat(request: AgenticChatRequest):
             collection_name=request.collection,
             llm_provider=request.llm_provider,
             llm_model=request.llm_model,
+            tags=request.tags,
         )
 
         # Execute agent

@@ -1486,6 +1486,12 @@ def chat(
         "--azure-deployment",
         help="Azure deployment name",
     ),
+    tags: Optional[list[str]] = typer.Option(
+        None,
+        "--tag",
+        "-t",
+        help="Tag for request filtering and analysis (can be specified multiple times, e.g. --tag study-xyz --tag rubin-lsst)",
+    ),
 ) -> None:
     """Launch interactive RAG chat.
 
@@ -1508,6 +1514,9 @@ def chat(
 
         Use Azure OpenAI:
             llmaven agentic chat --provider azure --azure-endpoint https://myresource.openai.azure.com --azure-deployment gpt-4o
+
+        Tag requests for a study:
+            llmaven agentic chat --tag study-xyz --tag rubin-lsst
     """
     from rich.markdown import Markdown
     from rich.panel import Panel
@@ -1538,6 +1547,7 @@ def chat(
             collection_name=collection,
             llm_provider=provider,
             llm_model=model,
+            tags=tags or None,
         )
 
         console.print(

@@ -60,6 +60,7 @@ class RAGAgent:
         hybrid_searcher: HybridSearcher | None = None,
         llm_provider: str | None = None,
         llm_model: str | None = None,
+        tags: list[str] | None = None,
     ):
         """Initialize RAG Agent.
 
@@ -68,6 +69,7 @@ class RAGAgent:
             hybrid_searcher: HybridSearcher instance (creates new if None)
             llm_provider: LLM provider override (defaults to config)
             llm_model: LLM model override (defaults to config)
+            tags: Optional tags for request filtering and analysis in log data
 
         Raises:
             AgenticRAGError: If agent initialization fails
@@ -86,7 +88,7 @@ class RAGAgent:
 
         # Create LLM model using provider factory
         try:
-            llm = create_llm_model()
+            llm = create_llm_model(tags=tags)
             logger.info(
                 f"Initializing RAG Agent with provider: {config.llm_provider}, model: {config.llm_model}"
             )
