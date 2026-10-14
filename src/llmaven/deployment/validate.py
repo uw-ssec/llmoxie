@@ -347,6 +347,14 @@ def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[st
     return not has_hardcoded_secrets, messages
 
 
+# Pulumi state store: a Standard LRS storage account that holds the Pulumi
+# state blobs. State files are small and transaction volume is low, so the cost
+# is modest, but every Azure deployment provisions one (auto-created when
+# project.pulumi_state_store is not supplied), so it is always included.
+STATE_STORE_MIN_COST = 1.0
+STATE_STORE_MAX_COST = 3.0
+
+
 def estimate_monthly_cost(config: LLMavenConfig) -> Tuple[float, float]:
     """Estimate monthly Azure cost based on configuration.
 
@@ -381,6 +389,10 @@ def estimate_monthly_cost(config: LLMavenConfig) -> Tuple[float, float]:
     # Blob Storage (rough estimate)
     min_cost += 2.0
     max_cost += 5.0
+
+    # Pulumi state store (separate storage account used as the Pulumi backend)
+    min_cost += STATE_STORE_MIN_COST
+    max_cost += STATE_STORE_MAX_COST
 
     # Container Apps (based on CPU/memory allocation)
     if config.mlflow and config.mlflow.enabled:
