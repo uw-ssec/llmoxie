@@ -3,14 +3,14 @@
 This module provides the implementation for the 'llmaven validate' command.
 """
 
-import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
 from ..infrastructure.config.schema import LLMavenConfig
+from ..infrastructure.utils.secrets import get_llmaven_secrets
 
 
 class ValidationError(Exception):
@@ -146,51 +146,6 @@ def check_required_providers(subscription_id: str) -> Tuple[bool, str]:
         return False, "Provider check timed out"
     except Exception as e:
         return False, f"Failed to check providers: {e}"
-
-
-def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
-    """Get all LLMAVEN_SECRETS_* environment variables.
-
-    Args:
-        env_file_path: Optional path to .env file to load secrets from
-
-    Returns:
-        Dictionary mapping secret names (kebab-case) to values
-    """
-    # Load from .env file if provided
-    if env_file_path is not None:
-        if not env_file_path.exists():
-            raise FileNotFoundError(f"Environment file not found: {env_file_path}")
-
-        try:
-            from dotenv import dotenv_values
-        except ImportError:
-            raise ImportError(
-                "python-dotenv is required to load .env files. "
-                "Install it with: pip install python-dotenv"
-            )
-
-        # Load the .env file
-        env_vars = dotenv_values(env_file_path)
-
-        # Only set LLMAVEN_SECRETS_* variables, and don't override existing ones
-        prefix = "LLMAVEN_SECRETS_"
-        for key, value in env_vars.items():
-            if key.startswith(prefix) and value is not None:
-                # Only set if not already in environment (env vars take precedence)
-                if key not in os.environ:
-                    os.environ[key] = value
-
-    secrets = {}
-    prefix = "LLMAVEN_SECRETS_"
-
-    for key, value in os.environ.items():
-        if key.startswith(prefix):
-            # Remove prefix and convert to kebab-case
-            secret_name = key[len(prefix) :].lower().replace("_", "-")
-            secrets[secret_name] = value
-
-    return secrets
 
 
 def check_secrets(
