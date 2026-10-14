@@ -52,8 +52,7 @@ jobs:
             --tb=short \
             --color=yes \
             --ignore=tests/agentic/ \
-            --ignore=tests/v1/ \
-            || echo "Core tests completed with status: $?"
+            --ignore=tests/v1/
 
       - name: Run agentic tests (excluding CLI integration tests)
         run: |

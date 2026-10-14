@@ -1,10 +1,12 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
+
 from llmaven.main import app
 
 client = TestClient(app)
 
-# Sample documents for testing
 sample_documents = [
     {
         "page_content": "FastAPI is a modern web framework for building APIs with Python.",
@@ -17,7 +19,6 @@ sample_documents = [
 ]
 
 
-# Define test cases
 @pytest.mark.parametrize(
     "query,expected_status",
     [
@@ -25,32 +26,49 @@ sample_documents = [
         ("Explain vector databases", 200),
     ],
 )
-def test_retrieve_endpoint(query, expected_status):
-    """
-    Test the retrieval API endpoint.
-    """
+def test_retrieve_endpoint(query: str, expected_status: int) -> None:
+    """Verify the retrieve endpoint contract without spinning up Qdrant or embeddings."""
+    fake_response = {
+        "docs": [
+            {"metadata": doc["metadata"], "page_content": doc["page_content"][:500]}
+            for doc in sample_documents
+        ],
+        "status_code": 200,
+    }
+
+    embedding_model = "sentence-transformers/all-MiniLM-L12-v2"
     payload = {
         "documents": sample_documents,
         "query": query,
         "existing_collection": None,
         "existing_qdrant_path": None,
-        "embedding_model": "sentence-transformers/all-MiniLM-L12-v2",
+        "embedding_model": embedding_model,
     }
 
-    response = client.post("/api/retrieve/", json=payload)
+    with patch(
+        "llmaven.v1.endpoints.retrieve.perform_retrieval",
+        return_value=fake_response,
+    ) as mock_retrieve:
+        response = client.post("/v1/retrieve", json=payload)
 
     assert response.status_code == expected_status
-    assert "docs" in response.json()
-    assert isinstance(response.json()["docs"], list)
-    assert response.json()["status_code"] == 200
-
-    retrieved_docs = response.json()["docs"]
-    assert len(retrieved_docs) > 0  # Ensure that some documents are retrieved
-
-    for doc in retrieved_docs:
+    body = response.json()
+    assert "docs" in body
+    assert isinstance(body["docs"], list)
+    assert body["status_code"] == 200
+    assert len(body["docs"]) > 0
+    for doc in body["docs"]:
         assert "metadata" in doc
         assert "page_content" in doc
-        assert len(doc["page_content"]) > 0  # Check content preview is non-empty
+        assert len(doc["page_content"]) > 0
+
+    mock_retrieve.assert_called_once_with(
+        sample_documents,
+        query,
+        None,
+        None,
+        embedding_model,
+    )
 
 
 if __name__ == "__main__":

@@ -1,11 +1,13 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
+
 from llmaven.main import app
 
 client = TestClient(app)
 
 
-# Define test cases
 @pytest.mark.parametrize(
     "prompt,generation_model,expected_status",
     [
@@ -17,20 +19,27 @@ client = TestClient(app)
         ),
     ],
 )
-def test_generate_endpoint(prompt, generation_model, expected_status):
-    """
-    Test the text generation API endpoint.
-    """
-    payload = {"prompt": prompt, "generation_model": generation_model}
+def test_generate_endpoint(
+    prompt: str, generation_model: str, expected_status: int
+) -> None:
+    """Verify the generate endpoint contract without invoking a real LLM."""
+    fake_response = {"answer": f"mocked answer for: {prompt}", "status_code": 200}
 
-    response = client.post("/api/generate/", json=payload)
+    with patch(
+        "llmaven.v1.endpoints.generate.generate_answer",
+        return_value=fake_response,
+    ) as mock_generate:
+        response = client.post(
+            "/v1/generate",
+            json={"prompt": prompt, "generation_model": generation_model},
+        )
 
     assert response.status_code == expected_status
-    assert "answer" in response.json()
-    assert isinstance(response.json()["answer"], str)
-    assert len(response.json()["answer"]) > 0  # Ensure the model generates text
-
-    print(f"✅ Test passed for prompt: {prompt}")
+    body = response.json()
+    assert "answer" in body
+    assert isinstance(body["answer"], str)
+    assert len(body["answer"]) > 0
+    mock_generate.assert_called_once_with(prompt, generation_model)
 
 
 if __name__ == "__main__":

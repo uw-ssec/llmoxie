@@ -7,6 +7,7 @@ in PR #79 (exists, file_okay, dir_okay=False, readable, resolve_path).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,14 @@ import pytest
 from typer.testing import CliRunner
 
 from llmaven.cli import app
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI color escape codes so substring asserts survive Typer's colorized output."""
+    return _ANSI_ESCAPE_RE.sub("", text)
 
 
 @pytest.fixture()
@@ -31,7 +40,7 @@ class TestInfraValidateEnvFile:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--env-file'" in result.output
+        assert "Invalid value for '--env-file'" in _strip_ansi(result.output)
 
     def test_rejects_env_file_that_is_a_directory(
         self, runner: CliRunner, tmp_path: Path
@@ -45,7 +54,7 @@ class TestInfraValidateEnvFile:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--env-file'" in result.output
+        assert "Invalid value for '--env-file'" in _strip_ansi(result.output)
 
     @patch("llmaven.deployment.validate.validate_config")
     def test_accepts_valid_env_file_and_passes_path_through(
@@ -95,7 +104,7 @@ class TestInfraDeployEnvFile:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--env-file'" in result.output
+        assert "Invalid value for '--env-file'" in _strip_ansi(result.output)
 
     def test_rejects_env_file_that_is_a_directory(
         self, runner: CliRunner, tmp_path: Path
@@ -109,7 +118,7 @@ class TestInfraDeployEnvFile:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--env-file'" in result.output
+        assert "Invalid value for '--env-file'" in _strip_ansi(result.output)
 
     @patch("llmaven.deployment.deploy.deploy_infrastructure")
     def test_accepts_valid_env_file_and_passes_path_through(

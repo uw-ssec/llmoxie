@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 import json
 import os
+import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -19,6 +20,14 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from llmaven.cli import _serialize_to_jsonl, _utc_date_to_epoch_ms, app
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI color escape codes so substring asserts survive Typer's colorized output."""
+    return _ANSI_ESCAPE_RE.sub("", text)
 
 
 class TestSerializeToJsonl:
@@ -86,7 +95,7 @@ class TestInfraExtract:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--out'" in result.output
+        assert "Invalid value for '--out'" in _strip_ansi(result.output)
 
     def test_mkdir_failure_exits(self, runner: CliRunner, tmp_path: Path):
         base_dir = tmp_path / "no-write"
