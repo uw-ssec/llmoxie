@@ -1,0 +1,10 @@
+name: llmaven-hf
+runtime: python
+description: LLMaven HuggingFace PostgreSQL deployment
+
+config:
+  pulumi:tags:
+    value:
+      project: llmaven
+      component: hf
+      managed-by: pulumi

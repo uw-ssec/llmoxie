@@ -55,9 +55,18 @@ python-dotenv = ">=1.1.1,<2"
 typer = ">=0.20.0,<0.21"
 rich = ">=14.2.0,<15"
 
+[feature.infra.activation.env]
+# small hack to make the shared infrastructure code importable in the Pulumi
+# program. Adding a depdency on the full llmaven feature brings in too many dependencies
+# and causes conflicts.
+PYTHONPATH = "$PIXI_PROJECT_ROOT/src"
+
 [feature.infra.pypi-dependencies]
 pulumi = ">=3.203.0, <4"
 pulumi-azure-native = ">=3.8.0, <4"
+pulumi-random = ">=4.0.0, <5"
+pydantic = ">=2.0.0, <3"
+pyyaml = ">=6.0.0"
 
 [feature.proxy.dependencies]
 python = "3.11.*"
@@ -89,6 +98,7 @@ llmaven = { features = [
 frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
+    "pulumi",
 ], solve-group = "infra", no-default-feature = true }
 proxy = { features = [
     "proxy",
