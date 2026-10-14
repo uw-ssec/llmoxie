@@ -4,6 +4,8 @@ This module tests the RAGAgent functionality including initialization,
 tool registration, agent execution, and error handling.
 """
 
+import asyncio
+
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
 
@@ -12,6 +14,7 @@ from llmaven.agentic.agent.models import RAGResponse, Citation
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
 from llmaven.agentic.search.models import SearchResult
 from llmaven.agentic.exceptions import AgenticRAGError
+from llmaven.agentic.settings import config as agentic_config
 
 
 class TestRAGAgentDependencies:
@@ -399,3 +402,155 @@ class TestRAGAgentSystemPrompt:
         assert "search_knowledge_base" in system_prompt.lower()
         assert "cite" in system_prompt.lower()
         assert "confidence" in system_prompt.lower()
+
+
+class TestRAGAgentGlobalConfigContamination:
+    """Regression tests for cross-request global-config contamination.
+
+    `RAGAgent.__init__()` currently mutates the module-level `config`
+    singleton when `llm_provider`/`llm_model` overrides are supplied. That
+    mutation persists across subsequent `RAGAgent` constructions and across
+    concurrent requests, so a later request that supplies no override
+    silently uses the previously-set provider/model instead of the env
+    default. These tests pin that behavior and will fail on `main` until
+    `__init__` stops mutating the global.
+    """
+
+    # Sentinel values used as the per-test baseline. Chosen to be distinct
+    # from any provider/model literal used by other tests in this file so
+    # the regression assertion is deterministic regardless of test order
+    # (earlier tests in this suite leak overrides like "ollama"/"llama2"
+    # into the global, which is itself a symptom of the bug under test).
+    BASELINE_PROVIDER = "openai"
+    BASELINE_MODEL = "regression-baseline-sentinel"
+
+    @pytest.fixture(autouse=True)
+    def _force_known_baseline(self):
+        """Force the global config to a known baseline before each test.
+
+        Without this, the order-dependent state left behind by earlier
+        tests would let the regression assertions pass by accident
+        whenever a previous test happened to pollute the global with
+        the same override values used here.
+        """
+        original_provider = agentic_config.llm_provider
+        original_model = agentic_config.llm_model
+        agentic_config.llm_provider = self.BASELINE_PROVIDER
+        agentic_config.llm_model = self.BASELINE_MODEL
+        try:
+            yield
+        finally:
+            agentic_config.llm_provider = original_provider
+            agentic_config.llm_model = original_model
+
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
+    @patch("llmaven.agentic.agent.rag_agent.Agent")
+    @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
+    def test_init_does_not_mutate_global_config(
+        self, mock_searcher_cls, mock_agent_cls, mock_create_llm
+    ):
+        """Constructing a RAGAgent with overrides must not change the global config.
+
+        After RAGAgent(llm_provider=..., llm_model=...) returns, the
+        module-level `config` should still hold the values it had before the
+        call (the env-driven default). Today it does NOT — `__init__` writes
+        to `config.llm_provider` / `config.llm_model` directly, so a
+        subsequent default-construction silently picks up the override.
+        """
+        mock_searcher_cls.return_value = Mock()
+        mock_agent_cls.return_value = Mock()
+        mock_create_llm.return_value = Mock()
+
+        baseline_provider = agentic_config.llm_provider
+        baseline_model = agentic_config.llm_model
+
+        RAGAgent(llm_provider="ollama", llm_model="llama2")
+
+        # The bug: these two assertions fail on `main` because __init__
+        # mutated the singleton instead of using a local override.
+        assert agentic_config.llm_provider == baseline_provider, (
+            "RAGAgent.__init__ mutated the global config.llm_provider; "
+            f"expected {baseline_provider!r}, got {agentic_config.llm_provider!r}"
+        )
+        assert agentic_config.llm_model == baseline_model, (
+            "RAGAgent.__init__ mutated the global config.llm_model; "
+            f"expected {baseline_model!r}, got {agentic_config.llm_model!r}"
+        )
+
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
+    @patch("llmaven.agentic.agent.rag_agent.Agent")
+    @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
+    def test_default_construction_after_override_uses_env_default(
+        self, mock_searcher_cls, mock_agent_cls, mock_create_llm
+    ):
+        """A no-override RAGAgent built after an override must use the env default.
+
+        Demonstrates the cross-request contamination scenario from the
+        endpoint layer: request 1 supplies overrides, request 2 supplies
+        none — request 2's factory call should still see the env default.
+        """
+        mock_searcher_cls.return_value = Mock()
+        mock_agent_cls.return_value = Mock()
+        mock_create_llm.return_value = Mock()
+
+        baseline_provider = agentic_config.llm_provider
+        baseline_model = agentic_config.llm_model
+
+        # Simulate request 1 (with overrides) then request 2 (no overrides).
+        RAGAgent(llm_provider="ollama", llm_model="llama2")
+        RAGAgent()
+
+        # The second construction did not pass overrides, so the global
+        # config seen by its create_llm_model() call should still be the
+        # env-driven baseline. On `main` the global has been clobbered to
+        # "ollama"/"llama2" and stays that way.
+        assert agentic_config.llm_provider == baseline_provider, (
+            "Global provider leaked from a previous RAGAgent override; "
+            f"expected {baseline_provider!r}, got {agentic_config.llm_provider!r}"
+        )
+        assert agentic_config.llm_model == baseline_model, (
+            "Global model leaked from a previous RAGAgent override; "
+            f"expected {baseline_model!r}, got {agentic_config.llm_model!r}"
+        )
+
+    @patch("llmaven.agentic.agent.rag_agent.create_llm_model")
+    @patch("llmaven.agentic.agent.rag_agent.Agent")
+    @patch("llmaven.agentic.agent.rag_agent.HybridSearcher")
+    @pytest.mark.asyncio
+    async def test_concurrent_init_does_not_corrupt_global_config(
+        self, mock_searcher_cls, mock_agent_cls, mock_create_llm
+    ):
+        """Concurrent RAGAgent constructions must not leave the global mutated.
+
+        Fires N concurrent constructions with distinct overrides. After they
+        all complete, the global `config` should be unchanged from its
+        pre-test baseline. Today it ends up holding whichever override
+        happened to write last.
+        """
+        mock_searcher_cls.return_value = Mock()
+        mock_agent_cls.return_value = Mock()
+        mock_create_llm.return_value = Mock()
+
+        baseline_provider = agentic_config.llm_provider
+        baseline_model = agentic_config.llm_model
+
+        async def _build(provider: str, model: str) -> None:
+            # RAGAgent.__init__ is sync; wrap so we can gather it.
+            RAGAgent(llm_provider=provider, llm_model=model)
+
+        overrides = [
+            ("ollama", "llama2"),
+            ("huggingface", "mistral-7b"),
+            ("litellm", "claude-3"),
+            ("ollama", "phi-3"),
+        ]
+        await asyncio.gather(*(_build(p, m) for p, m in overrides))
+
+        assert agentic_config.llm_provider == baseline_provider, (
+            "Concurrent RAGAgent constructions corrupted global llm_provider; "
+            f"expected {baseline_provider!r}, got {agentic_config.llm_provider!r}"
+        )
+        assert agentic_config.llm_model == baseline_model, (
+            "Concurrent RAGAgent constructions corrupted global llm_model; "
+            f"expected {baseline_model!r}, got {agentic_config.llm_model!r}"
+        )

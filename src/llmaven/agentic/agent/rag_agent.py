@@ -78,17 +78,17 @@ class RAGAgent:
             collection_name=self.collection_name
         )
 
-        # Override config if provider/model specified
-        if llm_provider:
-            config.llm_provider = llm_provider
-        if llm_model:
-            config.llm_model = llm_model
+        # Resolve effective provider/model locally; RAGAgent is constructed
+        # per-request and writing back to the global singleton would leak the
+        # override to subsequent requests that didn't ask for it.
+        effective_provider = llm_provider or config.llm_provider
+        effective_model = llm_model or config.llm_model
 
         # Create LLM model using provider factory
         try:
-            llm = create_llm_model()
+            llm = create_llm_model(provider=llm_provider, model=llm_model)
             logger.info(
-                f"Initializing RAG Agent with provider: {config.llm_provider}, model: {config.llm_model}"
+                f"Initializing RAG Agent with provider: {effective_provider}, model: {effective_model}"
             )
 
             # Create the agent with structured output
@@ -104,7 +104,7 @@ class RAGAgent:
 
             logger.info(
                 f"RAG Agent initialized for collection '{self.collection_name}' "
-                f"with provider '{config.llm_provider}' and model '{config.llm_model}'"
+                f"with provider '{effective_provider}' and model '{effective_model}'"
             )
 
         except ProviderConfigurationError:

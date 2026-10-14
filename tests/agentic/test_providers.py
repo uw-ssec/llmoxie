@@ -111,13 +111,12 @@ class TestOpenAIProvider:
         """Test creating OpenAI model directly."""
         from unittest.mock import ANY
 
-        with patch("llmaven.agentic.providers.factory.config") as mock_config:
-            mock_config.llm_model = "gpt-4o-mini"
+        with patch("llmaven.agentic.providers.factory.config"):
             mock_provider_instance = MagicMock()
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_openai_model()
+            result = _create_openai_model("gpt-4o-mini")
 
             mock_provider_class.assert_called_once_with(http_client=ANY)
             mock_model_class.assert_called_once_with(
@@ -134,13 +133,12 @@ class TestOllamaProvider:
     @patch.dict("os.environ", {}, clear=True)
     def test_create_ollama_model_defaults(self, mock_provider_class, mock_model_class):
         """Test creating Ollama model with default settings."""
-        with patch("llmaven.agentic.providers.factory.config") as mock_config:
-            mock_config.llm_model = "llama2"
+        with patch("llmaven.agentic.providers.factory.config"):
             mock_provider_instance = MagicMock()
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_ollama_model()
+            result = _create_ollama_model("llama2")
 
             from unittest.mock import ANY
 
@@ -165,13 +163,12 @@ class TestOllamaProvider:
         self, mock_provider_class, mock_model_class
     ):
         """Test creating Ollama model with custom environment variables."""
-        with patch("llmaven.agentic.providers.factory.config") as mock_config:
-            mock_config.llm_model = "llama2"
+        with patch("llmaven.agentic.providers.factory.config"):
             mock_provider_instance = MagicMock()
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_ollama_model()
+            result = _create_ollama_model("llama2")
 
             from unittest.mock import ANY
 
@@ -198,12 +195,11 @@ class TestLiteLLMProvider:
             mock_config.litellm_api_base = "http://localhost:4000"
             mock_config.litellm_api_key = "test-key"
             mock_config.litellm_model_prefix = "openai/"
-            mock_config.llm_model = "gpt-4o-mini"
             mock_provider_instance = MagicMock()
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_litellm_model()
+            result = _create_litellm_model("gpt-4o-mini")
 
             from unittest.mock import ANY
 
@@ -228,12 +224,11 @@ class TestLiteLLMProvider:
             mock_config.litellm_api_base = "http://localhost:4000"
             mock_config.litellm_api_key = None
             mock_config.litellm_model_prefix = ""
-            mock_config.llm_model = "gpt-4o-mini"
             mock_provider_instance = MagicMock()
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_litellm_model()
+            result = _create_litellm_model("gpt-4o-mini")
 
             from unittest.mock import ANY
 
@@ -257,7 +252,7 @@ class TestLiteLLMProvider:
                 ProviderConfigurationError,
                 match="AGENTIC_LITELLM_API_BASE is required for LiteLLM provider",
             ):
-                _create_litellm_model()
+                _create_litellm_model("gpt-4o-mini")
 
 
 class TestAzureProvider:
@@ -274,7 +269,6 @@ class TestAzureProvider:
             mock_config.azure_endpoint = "https://myresource.openai.azure.com"
             mock_config.azure_api_key = "test-key"
             mock_config.azure_deployment_name = "gpt-4o-deployment"
-            mock_config.llm_model = "gpt-4o"
             mock_config.azure_api_version = "2024-10-21"
             mock_http_client_instance = MagicMock()
             mock_http_client_class.return_value = mock_http_client_instance
@@ -282,7 +276,7 @@ class TestAzureProvider:
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_azure_model()
+            result = _create_azure_model("gpt-4o")
 
             mock_http_client_class.assert_called_once()
             http_call_kwargs = mock_http_client_class.call_args[1]
@@ -315,7 +309,6 @@ class TestAzureProvider:
             mock_config.azure_endpoint = "https://myresource.openai.azure.com"
             mock_config.azure_api_key = "test-key"
             mock_config.azure_deployment_name = None
-            mock_config.llm_model = "gpt-4o"
             mock_config.azure_api_version = "2024-10-21"
             mock_http_client_instance = MagicMock()
             mock_http_client_class.return_value = mock_http_client_instance
@@ -323,7 +316,7 @@ class TestAzureProvider:
             mock_provider_class.return_value = mock_provider_instance
             mock_model_class.return_value = MagicMock()
 
-            result = _create_azure_model()
+            result = _create_azure_model("gpt-4o")
 
             mock_provider_class.assert_called_once()
             provider_call_kwargs = mock_provider_class.call_args[1]
@@ -348,7 +341,7 @@ class TestAzureProvider:
                 ProviderConfigurationError,
                 match="AGENTIC_AZURE_ENDPOINT is required for Azure provider",
             ):
-                _create_azure_model()
+                _create_azure_model("gpt-4o")
 
     def test_create_azure_model_missing_api_key(self):
         """Test that missing Azure API key raises error."""
@@ -360,7 +353,7 @@ class TestAzureProvider:
                 ProviderConfigurationError,
                 match="AGENTIC_AZURE_API_KEY is required for Azure provider",
             ):
-                _create_azure_model()
+                _create_azure_model("gpt-4o")
 
 
 class TestHuggingFaceProvider:
