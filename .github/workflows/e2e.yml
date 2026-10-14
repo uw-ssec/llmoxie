@@ -1,0 +1,112 @@
+name: End-to-End Validation
+
+# Validates that the package installs, the CLI runs, and the API server starts
+# without errors. Does not test LLM/RAG output correctness — that belongs in
+# unit and integration tests.
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PIXI_VERSION: v0.63.2
+  API_PORT: 18000
+
+jobs:
+  e2e:
+    name: End-to-End Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.9.4
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          cache: true
+          cache-write:
+            ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          environments: llmaven
+
+      - name: Install dependencies
+        run: pixi install -e llmaven
+
+      - name: Verify CLI is importable and version command works
+        run: pixi run -e llmaven llmaven --version
+
+      - name: Verify CLI help renders without errors
+        run: pixi run -e llmaven llmaven --help
+
+      - name: Start API server in background
+        run: |
+          pixi run -e llmaven llmaven server serve \
+            --host 127.0.0.1 \
+            --port ${{ env.API_PORT }} \
+            --env development \
+            --no-access-log &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for API server on port ${{ env.API_PORT }}..."
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:${{ env.API_PORT }}/ping > /dev/null 2>&1; then
+              echo "Server is ready (attempt $i)"
+              exit 0
+            fi
+            echo "  attempt $i/30 — not ready yet, retrying in 2s"
+            sleep 2
+          done
+          echo "Server did not become ready in 60s"
+          exit 1
+
+      - name: Check root endpoint returns expected fields
+        run: |
+          RESPONSE=$(curl -sf http://127.0.0.1:${{ env.API_PORT }}/)
+          echo "Root response: $RESPONSE"
+          echo "$RESPONSE" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          assert 'message' in data, 'missing key: message'
+          assert 'version' in data, 'missing key: version'
+          print('Root endpoint OK')
+          "
+
+      - name: Check ping endpoint returns pong
+        run: |
+          RESPONSE=$(curl -sf http://127.0.0.1:${{ env.API_PORT }}/ping)
+          echo "Ping response: $RESPONSE"
+          echo "$RESPONSE" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          assert data == 'pong', f'Expected pong, got: {data}'
+          print('Ping endpoint OK')
+          "
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill "$SERVER_PID" 2>/dev/null || true
+          fi
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## End-to-End Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| CLI importable (\`llmaven --version\`) | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API server starts without error | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`/\` endpoint responds | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`/ping\` returns \`pong\` | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
