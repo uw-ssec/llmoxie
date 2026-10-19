@@ -4,14 +4,15 @@ This module tests the HybridSearcher functionality including query embedding
 generation, prefetch logic, combination strategy, reranking, and error handling.
 """
 
-import pytest
 from unittest.mock import Mock, patch
-import numpy as np
 
+import numpy as np
+import pytest
+from qdrant_client.models import ScoredPoint
+
+from llmaven.agentic.exceptions import EmbeddingError, SearchError
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
 from llmaven.agentic.search.models import SearchResult
-from llmaven.agentic.exceptions import SearchError, EmbeddingError
-from qdrant_client.models import ScoredPoint
 
 
 class MockSparseEmbedding:

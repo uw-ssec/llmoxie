@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from urllib.request import urlretrieve
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 # Set the base directory for Rubin-RAG
 BASE_DIR = (

@@ -47,9 +47,9 @@ def _create_openai_model() -> OpenAIChatModel:
     Returns:
         OpenAIChatModel: OpenAI model instance.
     """
+    import httpx
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
-    import httpx
 
     # Create HTTP client with timeout configuration
     http_client = httpx.AsyncClient(
@@ -68,9 +68,9 @@ def _create_ollama_model() -> OpenAIChatModel:
     Returns:
         OpenAIChatModel: Ollama model configured with OpenAI compatibility.
     """
+    import httpx
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.ollama import OllamaProvider
-    import httpx
 
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     api_key = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama doesn't require a real key
@@ -139,9 +139,9 @@ def _create_azure_model() -> OpenAIChatModel:
     Raises:
         ProviderConfigurationError: If required Azure configuration is missing.
     """
+    import httpx
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
-    import httpx
 
     if not config.azure_endpoint:
         raise ProviderConfigurationError(

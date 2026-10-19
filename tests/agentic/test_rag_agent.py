@@ -4,14 +4,15 @@ This module tests the RAGAgent functionality including initialization,
 tool registration, agent execution, and error handling.
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+
+from llmaven.agentic.agent.models import Citation, RAGResponse
 from llmaven.agentic.agent.rag_agent import RAGAgent, RAGAgentDependencies
-from llmaven.agentic.agent.models import RAGResponse, Citation
+from llmaven.agentic.exceptions import AgenticRAGError
 from llmaven.agentic.search.hybrid_searcher import HybridSearcher
 from llmaven.agentic.search.models import SearchResult
-from llmaven.agentic.exceptions import AgenticRAGError
 
 
 class TestRAGAgentDependencies:

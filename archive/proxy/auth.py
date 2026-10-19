@@ -4,15 +4,14 @@ User authentication module for API key validation.
 Manages user API keys stored in Azure Table Storage with in-memory caching.
 """
 
+import asyncio
 import logging
 import os
-from typing import Optional, Dict
 from datetime import datetime, timedelta
-import asyncio
 
-from azure.data.tables import TableServiceClient
-from azure.core.exceptions import ResourceNotFoundError
 from azure.core.credentials import AzureNamedKeyCredential
+from azure.core.exceptions import ResourceNotFoundError
+from azure.data.tables import TableServiceClient
 
 logger = logging.getLogger(__name__)
 TABLE_NAME = "userkeys"
@@ -47,7 +46,7 @@ class UserKeyStore:
         self.table_client = self.table_service.get_table_client(TABLE_NAME)
 
         # In-memory cache: {api_key: {user_id, user_name, created_at}}
-        self.key_cache: Dict[str, Dict[str, str]] = {}
+        self.key_cache: dict[str, dict[str, str]] = {}
 
         # Cache refresh settings
         self.cache_ttl = timedelta(minutes=5)
@@ -105,7 +104,7 @@ class UserKeyStore:
             return True
         return datetime.utcnow() - self.last_refresh > self.cache_ttl
 
-    def validate_api_key(self, api_key: str) -> Optional[Dict[str, str]]:
+    def validate_api_key(self, api_key: str) -> dict[str, str] | None:
         """
         Validate an API key and return user information.
 

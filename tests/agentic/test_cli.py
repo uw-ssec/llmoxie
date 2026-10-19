@@ -6,8 +6,9 @@ This module tests the CLI commands for agentic RAG operations:
 - chat: Interactive RAG chat
 """
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 try:
     from typer.testing import CliRunner
@@ -15,8 +16,8 @@ except ImportError:
     # Fallback if typer.testing is not available
     CliRunner = None
 
-from llmaven.agentic.search.models import SearchResult
 from llmaven.agentic.exceptions import AgenticRAGError
+from llmaven.agentic.search.models import SearchResult
 
 
 @pytest.fixture
@@ -91,8 +92,9 @@ class TestIngestCommand:
         self, mock_console_err, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest validates directory exists."""
-        from llmaven.cli import ingest
         import typer
+
+        from llmaven.cli import ingest
 
         mock_path = Mock()
         mock_path.exists.return_value = False
@@ -110,8 +112,9 @@ class TestIngestCommand:
         self, mock_console_err, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest validates directory is actually a directory."""
-        from llmaven.cli import ingest
         import typer
+
+        from llmaven.cli import ingest
 
         mock_path = Mock()
         mock_path.exists.return_value = True
@@ -155,8 +158,9 @@ class TestIngestCommand:
         self, mock_console_err, mock_pipeline_cls, mock_path_cls
     ):
         """Test that ingest handles AgenticRAGError correctly."""
-        from llmaven.cli import ingest
         import typer
+
+        from llmaven.cli import ingest
 
         mock_path = Mock()
         mock_path.exists.return_value = True
@@ -233,8 +237,9 @@ class TestSearchCommand:
     @patch("llmaven.cli.console_err")
     def test_search_handles_agentic_error(self, mock_console_err, mock_searcher_cls):
         """Test that search handles AgenticRAGError correctly."""
-        from llmaven.cli import search
         import typer
+
+        from llmaven.cli import search
 
         mock_searcher_instance = Mock()
         mock_searcher_instance.search = Mock(

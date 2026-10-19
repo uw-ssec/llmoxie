@@ -1,4 +1,5 @@
 from langchain.schema import Document
+
 from ..core.retriever.retriever import Retriever
 
 
