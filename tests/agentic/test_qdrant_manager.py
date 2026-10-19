@@ -4,8 +4,9 @@ This module tests the QdrantManager functionality including collection creation,
 point upsertion, search operations, and error handling.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from qdrant_client.models import (
     Distance,
     MultiVectorComparator,
@@ -13,11 +14,11 @@ from qdrant_client.models import (
     ScoredPoint,
 )
 
-from llmaven.agentic.vector_store.qdrant_manager import QdrantManager
 from llmaven.agentic.exceptions import (
-    QdrantConnectionError,
     CollectionNotFoundError,
+    QdrantConnectionError,
 )
+from llmaven.agentic.vector_store.qdrant_manager import QdrantManager
 
 
 class TestQdrantManagerInitialization:

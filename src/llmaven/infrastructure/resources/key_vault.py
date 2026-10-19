@@ -36,7 +36,6 @@ Usage:
 """
 
 import os
-from typing import Dict, Optional
 
 import pulumi
 import pulumi_azure_native as azure_native
@@ -50,8 +49,8 @@ def create_key_vault(
     location: str,
     tenant_id: str,
     config: LLMavenConfig,
-    tags: Dict[str, str],
-    deployer_object_id: Optional[str] = None,
+    tags: dict[str, str],
+    deployer_object_id: str | None = None,
 ) -> azure_native.keyvault.Vault:
     """
     Create Azure Key Vault with access policies.
@@ -78,7 +77,7 @@ def create_key_vault(
     """
     project_name = config.project.name
     environment = config.project.environment
-    kv_config = config.security.key_vault  # noqa: F841
+    kv_config = config.security.key_vault
 
     # Key Vault name (must be globally unique, 3-24 chars, alphanumeric and hyphens)
     # Format: kv-{project}-{env}-{region_suffix} (e.g., kv-llmaven-dev-wu2)
@@ -189,7 +188,7 @@ def create_secret(
     secret_name: str,
     secret_value: Output[str],
     environment: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.keyvault.Secret:
     """
     Create or update a secret in Key Vault.
@@ -235,7 +234,7 @@ def create_secret(
     return secret
 
 
-def get_llmaven_secrets_from_env() -> Dict[str, str]:
+def get_llmaven_secrets_from_env() -> dict[str, str]:
     """
     Read all environment variables with LLMAVEN_SECRETS_ prefix.
 
@@ -303,7 +302,7 @@ def create_secrets_from_environment(
     resource_group_name: Output[str],
     vault_name: Output[str],
     environment: str,
-) -> Dict[str, azure_native.keyvault.Secret]:
+) -> dict[str, azure_native.keyvault.Secret]:
     """
     Create Key Vault secrets from LLMAVEN_SECRETS_* environment variables.
 
@@ -354,7 +353,7 @@ def grant_key_vault_access(
     resource_group_name: Output[str],
     tenant_id: str,
     permissions_level: str = "read",
-    principal_name: Optional[str] = None,
+    principal_name: str | None = None,
 ) -> azure_native.keyvault.AccessPolicy:
     """
     Grant a principal (user or managed identity) access to Key Vault using access policies.

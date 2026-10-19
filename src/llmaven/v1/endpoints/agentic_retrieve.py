@@ -7,14 +7,13 @@ with multi-vector retrieval (Dense, Sparse, ColBERT).
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from llmaven.agentic.exceptions import AgenticRAGError
 from llmaven.agentic.search import HybridSearcher
 from llmaven.agentic.search.models import SearchResult
-from llmaven.agentic.exceptions import AgenticRAGError
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +32,12 @@ class AgenticRetrieveRequest(BaseModel):
     """
 
     query: str = Field(..., description="Search query text", min_length=1)
-    collection: Optional[str] = Field(None, description="Collection name")
-    top_k: Optional[int] = Field(None, description="Number of results to return", gt=0)
-    prefetch_k: Optional[int] = Field(
+    collection: str | None = Field(None, description="Collection name")
+    top_k: int | None = Field(None, description="Number of results to return", gt=0)
+    prefetch_k: int | None = Field(
         None, description="Number of prefetch candidates per method", gt=0
     )
-    enable_rerank: Optional[bool] = Field(
+    enable_rerank: bool | None = Field(
         None, description="Whether to apply ColBERT reranking"
     )
 
@@ -106,4 +105,4 @@ async def agentic_retrieve(request: AgenticRetrieveRequest):
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error in agentic retrieve: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}")

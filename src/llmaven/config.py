@@ -5,8 +5,6 @@ This module provides API-specific configuration using Pydantic Settings.
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,12 +34,12 @@ class WebServiceConfig(BaseSettings):
     api_version: str = "0.1.0"
 
     # CORS configuration
-    cors_origins: List[str] = [
+    cors_origins: list[str] = [
         "*"  # Allow everything
     ]
     cors_allow_credentials: bool = True
-    cors_allow_methods: List[str] = ["*"]
-    cors_allow_headers: List[str] = ["*"]
+    cors_allow_methods: list[str] = ["*"]
+    cors_allow_headers: list[str] = ["*"]
 
 
 # Global configuration instance
