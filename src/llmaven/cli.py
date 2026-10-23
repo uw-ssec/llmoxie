@@ -431,6 +431,12 @@ def deploy(
         help="Automatically approve deployment",
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
+    expect_no_changes: bool = typer.Option(
+        False,
+        "--expect-no-changes",
+        is_flag=True,
+        help="Fail without deploying if the preview plans any resource change",
+    ),
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -443,6 +449,9 @@ def deploy(
 
         Deploy with auto-approval:
             llmaven infra deploy --yes
+
+        Deploy only if nothing would change (e.g., to sync state safely):
+            llmaven infra deploy --expect-no-changes
 
         Deploy specific config:
             llmaven infra deploy --config llmaven-config.staging.yaml
@@ -462,6 +471,7 @@ def deploy(
             preview=preview,
             auto_approve=auto_approve,
             env_file_path=env_file,
+            expect_no_changes=expect_no_changes,
         )
     except DeploymentError as e:
         typer.echo(f"✗ Deployment failed: {e}", err=True)
