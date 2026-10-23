@@ -121,6 +121,8 @@ def create_container_app_with_key_vault_secrets(
     tags: Optional[Dict[str, str]] = None,
     enable_ingress: bool = True,
     ingress_external: bool = True,
+    revision_suffix: Optional[str] = None,
+    refresh_trigger: Optional[str] = None,
     opts: Optional[pulumi.ResourceOptions] = None,
 ) -> azure_native.app.ContainerApp:
     """
@@ -152,6 +154,8 @@ def create_container_app_with_key_vault_secrets(
         tags: Resource tags
         enable_ingress: Enable HTTP ingress
         ingress_external: Make ingress externally accessible
+        revision_suffix: Revision name suffix (optional)
+        refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
 
     Returns:
         ContainerApp resource
@@ -163,7 +167,7 @@ def create_container_app_with_key_vault_secrets(
     env_list.append(
         azure_native.app.EnvironmentVarArgs(
             name="REFRESH_TRIGGER",
-            value=datetime.datetime.utcnow().isoformat(),
+            value=refresh_trigger or datetime.datetime.utcnow().isoformat(),
         )
     )
 
@@ -252,6 +256,7 @@ def create_container_app_with_key_vault_secrets(
             ingress=ingress_config,
             secrets=secrets_list if secrets_list else None,
             active_revisions_mode="Single",
+            registries=[],
         ),
         # Template
         template=azure_native.app.TemplateArgs(
@@ -266,7 +271,29 @@ def create_container_app_with_key_vault_secrets(
                         memory=memory,
                     ),
                     env=env_list if env_list else None,
+                    # Liveness and readiness match the TCP probes Azure adds by
+                    # default, so declaring them keeps deploys from removing them.
                     probes=[
+                        azure_native.app.ContainerAppProbeArgs(
+                            type="Liveness",
+                            tcp_socket=azure_native.app.ContainerAppProbeTcpSocketArgs(
+                                port=container_port,
+                            ),
+                            period_seconds=10,
+                            timeout_seconds=5,
+                            success_threshold=1,
+                            failure_threshold=3,
+                        ),
+                        azure_native.app.ContainerAppProbeArgs(
+                            type="Readiness",
+                            tcp_socket=azure_native.app.ContainerAppProbeTcpSocketArgs(
+                                port=container_port,
+                            ),
+                            period_seconds=5,
+                            timeout_seconds=5,
+                            success_threshold=1,
+                            failure_threshold=48,
+                        ),
                         azure_native.app.ContainerAppProbeArgs(
                             type="Startup",
                             http_get=azure_native.app.ContainerAppProbeHttpGetArgs(
@@ -276,7 +303,7 @@ def create_container_app_with_key_vault_secrets(
                             initial_delay_seconds=10,
                             period_seconds=10,
                             failure_threshold=30,
-                        )
+                        ),
                     ],
                 )
             ],
@@ -295,6 +322,7 @@ def create_container_app_with_key_vault_secrets(
                 ],
             ),
             volumes=volumes if volumes else None,
+            revision_suffix=revision_suffix,
         ),
         # Managed identity configuration
         # Use system-assigned if no user-assigned identity provided

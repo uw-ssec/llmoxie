@@ -83,6 +83,8 @@ def create_storage_account(
             if not config.security.enable_private_endpoints
             else azure_native.storage.DefaultAction.DENY,
             bypass=azure_native.storage.Bypass.AZURE_SERVICES,
+            ip_rules=[],
+            virtual_network_rules=[],
         ),
         # Access tier
         access_tier=azure_native.storage.AccessTier.HOT,

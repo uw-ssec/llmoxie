@@ -397,6 +397,8 @@ def create_pulumi_program(config_path: Path):
                     )
                 ),
                 extra_modules=[adl_logger_path],
+                revision_suffix=config.litellm.revision_suffix,
+                refresh_trigger=config.litellm.refresh_trigger,
             )
 
             # Export LiteLLM URL
@@ -424,7 +426,9 @@ def create_pulumi_program(config_path: Path):
 
                 from llmaven.infrastructure.resources import get_connection_string
 
-                db_name = urlparse(os.environ.get("DATABASE_URL", "")).path.lstrip("/")
+                db_name = config.backup_job.database or urlparse(
+                    os.environ.get("DATABASE_URL", "")
+                ).path.lstrip("/")
                 pulumi.log.info(f"Backup target database: {db_name!r}")
                 db_url = get_connection_string(
                     postgres_server.fully_qualified_domain_name,

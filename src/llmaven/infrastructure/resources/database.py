@@ -81,6 +81,7 @@ def create_postgres_server(
         # Storage configuration
         storage=azure_native.dbforpostgresql.StorageArgs(
             storage_size_gb=db_config.storage_size_gb,
+            type=db_config.storage_type,
         ),
         # Backup configuration
         backup=azure_native.dbforpostgresql.BackupArgs(
