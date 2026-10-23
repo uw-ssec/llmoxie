@@ -1,0 +1,64 @@
+name: Feature Request
+description: Suggest a new feature or improvement for LLMaven
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make LLMaven better! Please describe the feature you have in mind.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description:
+        What problem does this feature solve? What use case does it enable?
+      placeholder: I'm trying to do X but currently have to Y instead...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description:
+        Describe the feature you'd like to see. Include any API or CLI design
+        ideas.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description:
+        Any alternative approaches or workarounds you've thought about?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project does this touch?
+      multiple: true
+      options:
+        - CLI
+        - Infrastructure / Pulumi
+        - Agentic RAG
+        - API (FastAPI)
+        - Frontend (Streamlit)
+        - Docker / local stack
+        - Documentation
+        - CI / testing
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that would help — links, references, prior art.
+    validations:
+      required: false

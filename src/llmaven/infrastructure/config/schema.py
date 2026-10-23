@@ -262,6 +262,10 @@ class KeyVaultConfig(BaseModel):
     soft_delete_retention_days: int = Field(
         default=90, description="Soft delete retention days", ge=7, le=90
     )
+    enable_soft_delete: bool = Field(default=False, description="Enable soft delete")
+    enable_purge_protection: Optional[bool] = Field(
+        default=None, description="Enable purge protection"
+    )
 
 
 class NetworkSecurityConfig(BaseModel):
@@ -309,9 +313,8 @@ class BackupJobConfig(BaseModel):
     replica_timeout: int = Field(
         default=1800, description="Max job runtime in seconds", ge=60
     )
-    database: Optional[str] = Field(
-        default=None,
-        description="Database to back up (defaults to the one in DATABASE_URL)",
+    database: str = Field(
+        description="Name of the PostgreSQL database to back up (must match one of database.databases)",
     )
     connection_string_env: str = Field(
         default="LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING",
@@ -380,3 +383,12 @@ class LLMavenConfig(BaseModel):
         # Sync project tag with project name
         if "Project" in self.tags:
             self.tags["Project"] = self.project.name
+
+        if (
+            self.backup_job.enabled
+            and self.backup_job.database not in self.database.databases
+        ):
+            raise ValueError(
+                f"backup_job.database '{self.backup_job.database}' is not in "
+                f"database.databases {self.database.databases}"
+            )

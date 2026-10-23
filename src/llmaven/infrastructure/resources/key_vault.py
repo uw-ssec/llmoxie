@@ -139,8 +139,9 @@ def create_key_vault(
             enable_rbac_authorization=False,
             access_policies=access_policies if access_policies else None,
             # Soft delete configuration
-            enable_soft_delete=False,
-            # soft_delete_retention_in_days=kv_config.soft_delete_retention_days,
+            enable_soft_delete=kv_config.enable_soft_delete,
+            soft_delete_retention_in_days=kv_config.soft_delete_retention_days,
+            enable_purge_protection=kv_config.enable_purge_protection,
             # Network ACLs
             network_acls=azure_native.keyvault.NetworkRuleSetArgs(
                 bypass=azure_native.keyvault.NetworkRuleBypassOptions.AZURE_SERVICES,
