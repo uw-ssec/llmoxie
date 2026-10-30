@@ -6,7 +6,6 @@ This module provides command-line interface functionality for the LLMaven projec
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from enum import Enum
 from time import sleep
 from datetime import datetime, time, timezone, timedelta
@@ -163,10 +162,10 @@ def validate(
             env_file_path=env_file,
         )
     except ValidationError:
-        sys.exit(1)
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Validation failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Validation failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -235,11 +234,11 @@ def deploy(
             expect_no_changes=expect_no_changes,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -285,11 +284,11 @@ def destroy(
     try:
         destroy_infrastructure(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -322,11 +321,11 @@ def status(
     try:
         show_deployment_status(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -370,11 +369,11 @@ def refresh(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
 
 
 class ExtractSource(str, Enum):
@@ -1013,11 +1012,11 @@ def cancel(
     try:
         cancel_stack_operation(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="deploy")
@@ -1072,11 +1071,11 @@ def backup_infra_deploy(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="output")
@@ -1125,13 +1124,13 @@ def backup_infra_output(
     )
 
     if secret is None and name is None:
-        typer.echo(
-            "✗ Provide --secret <output-name> or --name <output-name>.", err=True
+        console_err.print(
+            "[red]✗[/red] Provide --secret <output-name> or --name <output-name>."
         )
-        sys.exit(1)
+        raise typer.Exit(code=1)
     if secret is not None and name is not None:
-        typer.echo("✗ --secret and --name are mutually exclusive.", err=True)
-        sys.exit(1)
+        console_err.print("[red]✗[/red] --secret and --name are mutually exclusive.")
+        raise typer.Exit(code=1)
 
     config_path = Path(config)
     output_name = secret if secret is not None else name
@@ -1143,13 +1142,14 @@ def backup_infra_output(
             output_name=output_name,
             reveal_secret=reveal,
         )
+        # Shell-captured values must bypass Rich's wrapping and tab expansion.
         typer.echo(value)
     except DeploymentError as e:
-        typer.echo(f"✗ {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Failed to retrieve output: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Failed to retrieve output: {e}")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1157,7 +1157,7 @@ def version() -> None:
     """Display the LLMaven version."""
     from llmaven import __version__
 
-    typer.echo(f"LLMaven version {__version__}")
+    console.print(f"LLMaven version {__version__}")
 
 
 def main() -> None:
