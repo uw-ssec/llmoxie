@@ -45,7 +45,7 @@ testing, and verification.
 | `llmaven`   | `docker`, `llmaven`, `pulumi`, `pre-commit`, `gh-cli`, `okf`  | Development, tests, pre-commit, `verify`, CI  |
 | `infra`     | `infra`                                                       | Pulumi/Azure tooling                          |
 | `backup`    | `backup`                                                      | `pixi run -e backup backup` (Postgres backup) |
-| `default`   | top-level `[dependencies]` only (legacy notebook/panel stack) | Legacy `archive/` tooling; not for new work   |
+| `default`   | top-level `[dependencies]` only (legacy notebook/panel stack) | Not for development work                      |
 
 ## Adding Dependencies
 
