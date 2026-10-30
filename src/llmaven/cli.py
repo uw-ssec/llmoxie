@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-import sys
 from enum import Enum
 from time import sleep
 from datetime import datetime, time, timezone, timedelta
@@ -165,10 +164,10 @@ def validate(
             env_file_path=env_file,
         )
     except ValidationError:
-        sys.exit(1)
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Validation failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Validation failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -237,11 +236,11 @@ def deploy(
             expect_no_changes=expect_no_changes,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -287,11 +286,11 @@ def destroy(
     try:
         destroy_infrastructure(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -324,11 +323,11 @@ def status(
     try:
         show_deployment_status(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -372,11 +371,11 @@ def refresh(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
 
 
 class ExtractSource(str, Enum):
@@ -441,10 +440,12 @@ def _prepare_extract_output_file(
     source: "ExtractSource",
     from_date: str,
     to_date: str,
+    use_zip: bool = True,
 ) -> Path:
     use_default_path = output_file is None
     filename_prefix = "llmaven_"
-    filename_suffix = f"_{from_date}_to_{to_date}.zip"
+    base_suffix = f"_{from_date}_to_{to_date}"
+    filename_suffix = f"{base_suffix}.zip" if use_zip else base_suffix
 
     if source.value == ExtractSource.litellm:
         path = output_file or Path(
@@ -457,9 +458,17 @@ def _prepare_extract_output_file(
     else:
         _fail_extract(f"Source is not supported: {source}")
 
-    # Guard only for the default path (Typer can't validate a value that wasn't provided)
-    if use_default_path and path.exists() and path.is_dir():
-        _fail_extract(f"Default output path is a directory: {path}")
+    # Ensure the output path's type matches the chosen mode (zip vs directory).
+    if path.exists():
+        if use_zip and path.is_dir():
+            _fail_extract(
+                f"Output path is a directory but zip mode is enabled: {path}. "
+                "Pass --no-zip to write JSONL files into a directory."
+            )
+        if not use_zip and path.is_file():
+            _fail_extract(
+                f"Output path is a file but --no-zip writes to a directory: {path}"
+            )
 
     # If user provided --out, ensure parent exists (argument parsing doesn’t create directories)
     if not use_default_path:
@@ -475,14 +484,120 @@ def _prepare_extract_output_file(
     return path
 
 
+class _ExtractWriter:
+    """Write per-day JSONL entries to either a zip archive or a directory.
+
+    Why: lets the extract pipeline stay shape-identical whether `--no-zip` is
+    used or not, instead of branching on every writestr call.
+    """
+
+    def __init__(self, output_path: Path, *, use_zip: bool, file_prefix: str) -> None:
+        self._output_path = output_path
+        self._use_zip = use_zip
+        # Only files named `<file_prefix>*.jsonl` are treated as previous extract
+        # output; everything else in a reused directory belongs to the user.
+        self._file_prefix = file_prefix
+        self._zipf_ctx = None
+        self._zipf = None
+
+    def __enter__(self) -> "_ExtractWriter":
+        if self._use_zip:
+            import zipfile
+
+            self._zipf_ctx = zipfile.ZipFile(
+                self._output_path, mode="w", compression=zipfile.ZIP_DEFLATED
+            )
+            # Use the __enter__ return value so callers (and test mocks) see the
+            # post-__enter__ object, matching a plain `with zipfile.ZipFile(...)`.
+            self._zipf = self._zipf_ctx.__enter__()
+        else:
+            # If the directory previously existed and the user confirmed overwrite,
+            # remove stale output from a previous extract of the same source so it
+            # doesn't linger alongside new output. Unrelated files are left alone.
+            if self._output_path.is_dir():
+                for child in self._output_path.glob(f"{self._file_prefix}*.jsonl"):
+                    if child.is_file():
+                        child.unlink()
+            self._output_path.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._zipf_ctx is not None:
+            self._zipf_ctx.__exit__(exc_type, exc, tb)
+            self._zipf_ctx = None
+            self._zipf = None
+
+    def writestr(self, name: str, data: str) -> None:
+        if self._zipf is not None:
+            self._zipf.writestr(name, data)
+        else:
+            (self._output_path / name).write_text(data, encoding="utf-8")
+
+
+class _TransientHTTPError(Exception):
+    """Marker raised internally so the retry helper knows a response should be retried."""
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# Retry config for transient HTTP failures (5xx + 429) and connection errors.
+# Exposed at module scope so tests can monkey-patch a no-wait variant.
+_RETRY_MAX_ATTEMPTS = 5
+_RETRY_WAIT_MULTIPLIER = 1.0
+_RETRY_WAIT_MIN_SECONDS = 1.0
+_RETRY_WAIT_MAX_SECONDS = 10.0
+
+
+def _is_transient_http_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
+
+
+def _http_get_with_retry(
+    client,
+    *,
+    url: str,
+    params: dict,
+    headers: dict,
+):
+    """Issue an HTTP GET, retrying on transient HTTP failures and connection errors.
+
+    Retries on:
+      - httpx.RequestError (connect timeouts, DNS failures, etc.)
+      - HTTP 429 (rate limited)
+      - HTTP 5xx (server errors)
+
+    Non-retryable HTTP errors (e.g. 4xx other than 429) surface immediately
+    via raise_for_status().
+    """
+    import httpx
+
+    for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+        try:
+            resp = client.get(url, params=params, headers=headers)
+            if _is_transient_http_status(resp.status_code):
+                raise _TransientHTTPError(
+                    f"transient HTTP {resp.status_code} from {url}",
+                    status_code=resp.status_code,
+                )
+            resp.raise_for_status()
+            return resp
+        except (_TransientHTTPError, httpx.RequestError):
+            if attempt == _RETRY_MAX_ATTEMPTS:
+                raise
+            # Exponential backoff: multiplier * 2**(attempt-1), clamped to [min, max].
+            wait = _RETRY_WAIT_MULTIPLIER * 2 ** (attempt - 1)
+            sleep(max(_RETRY_WAIT_MIN_SECONDS, min(wait, _RETRY_WAIT_MAX_SECONDS)))
+
+
 def _extract_litellm_logs(
     start_date_obj: "date",
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
+    use_zip: bool = True,
 ) -> None:
-    import zipfile
-
     import httpx
 
     litellm_base_url, litellm_master_key = _get_litellm_credentials(env_file)
@@ -497,11 +612,9 @@ def _extract_litellm_logs(
 
     total_records = 0
 
-    # TODO: Make zipfile output optional (https://github.com/uw-ssec/llmaven/issues/87).
-    with zipfile.ZipFile(
-        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    with _ExtractWriter(
+        output_file, use_zip=use_zip, file_prefix="litellm_spend_logs_"
     ) as zipf:
-        # TODO: Add retry logic (https://github.com/uw-ssec/llmaven/issues/88).
         with httpx.Client(timeout=30.0) as http_client:
             current_date = start_date_obj
             while current_date <= end_date_obj:
@@ -519,21 +632,15 @@ def _extract_litellm_logs(
                 }
 
                 try:
-                    resp = http_client.get(endpoint, params=params, headers=headers)
-                    resp.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code >= 500:
-                        print(
-                            f"Server error for {date_str}: {exc.response.status_code}. Cooling off for 60 seconds..."
-                        )
-                        sleep(60)  # brief pause before retrying on server errors
-                    else:
-                        _fail_extract(
-                            f"LiteLLM /spend/logs failed for {date_str}: {exc}"
-                        )
-                except httpx.HTTPError as exc:
-                    # Transport errors have no response to read; don't fall
-                    # through to a stale or unbound `resp`.
+                    resp = _http_get_with_retry(
+                        http_client,
+                        url=endpoint,
+                        params=params,
+                        headers=headers,
+                    )
+                except (_TransientHTTPError, httpx.HTTPError) as exc:
+                    # Retries are exhausted or the error is not transient; fail
+                    # rather than fall through to a stale or unbound `resp`.
                     _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
 
                 try:
@@ -672,8 +779,8 @@ def _extract_mlflow_logs(
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
+    use_zip: bool = True,
 ) -> None:
-    import zipfile
     from collections import defaultdict
 
     import mlflow
@@ -707,8 +814,8 @@ def _extract_mlflow_logs(
     total_records = 0
     total_files_written = 0
 
-    with zipfile.ZipFile(
-        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    with _ExtractWriter(
+        output_file, use_zip=use_zip, file_prefix="mlflow_traces_"
     ) as zipf:
         current_date = start_date_obj
 
@@ -801,12 +908,21 @@ def extract(
     output_file: Optional[Path] = typer.Option(
         None,
         "--out",
-        help="Output zip file path",
-        dir_okay=False,
+        help="Output path (zip file, or directory when --no-zip is used)",
+        dir_okay=True,
         file_okay=True,
         writable=True,
         resolve_path=True,
         path_type=Path,
+    ),
+    no_zip: bool = typer.Option(
+        False,
+        "--no-zip",
+        help=(
+            "Write raw JSONL files into a directory instead of bundling them "
+            "into a zip archive. Useful for small date ranges where unzipping "
+            "is just an extra step."
+        ),
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
@@ -837,12 +953,15 @@ def extract(
     if start_date_obj > end_date_obj:
         _fail_extract("--from must be <= --to")
 
+    use_zip = not no_zip
+
     # Validate output file
     output_file = _prepare_extract_output_file(
         output_file,
         source,
         from_date,
         to_date,
+        use_zip=use_zip,
     )
 
     if source == ExtractSource.litellm:
@@ -851,6 +970,7 @@ def extract(
             end_date_obj,
             output_file,
             env_file,
+            use_zip=use_zip,
         )
     elif source == ExtractSource.mlflow:
         _extract_mlflow_logs(
@@ -858,6 +978,7 @@ def extract(
             end_date_obj,
             output_file,
             env_file,
+            use_zip=use_zip,
         )
     # else: source is validated in the initial check.
 
@@ -893,11 +1014,11 @@ def cancel(
     try:
         cancel_stack_operation(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
 
 
 def _print_loadtest_results(results: "LoadTestResults") -> None:
@@ -1125,11 +1246,11 @@ def backup_infra_deploy(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="output")
@@ -1178,13 +1299,13 @@ def backup_infra_output(
     )
 
     if secret is None and name is None:
-        typer.echo(
-            "✗ Provide --secret <output-name> or --name <output-name>.", err=True
+        console_err.print(
+            "[red]✗[/red] Provide --secret <output-name> or --name <output-name>."
         )
-        sys.exit(1)
+        raise typer.Exit(code=1)
     if secret is not None and name is not None:
-        typer.echo("✗ --secret and --name are mutually exclusive.", err=True)
-        sys.exit(1)
+        console_err.print("[red]✗[/red] --secret and --name are mutually exclusive.")
+        raise typer.Exit(code=1)
 
     config_path = Path(config)
     output_name = secret if secret is not None else name
@@ -1196,13 +1317,14 @@ def backup_infra_output(
             output_name=output_name,
             reveal_secret=reveal,
         )
+        # Shell-captured values must bypass Rich's wrapping and tab expansion.
         typer.echo(value)
     except DeploymentError as e:
-        typer.echo(f"✗ {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Failed to retrieve output: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Failed to retrieve output: {e}")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1210,7 +1332,7 @@ def version() -> None:
     """Display the LLMaven version."""
     from llmaven import __version__
 
-    typer.echo(f"LLMaven version {__version__}")
+    console.print(f"LLMaven version {__version__}")
 
 
 def main() -> None:

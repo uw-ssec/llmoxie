@@ -40,7 +40,6 @@ infrastructure that can be installed on cloud and HPC systems:
 │   ├── copilot-instructions.md -> ../AGENTS.md  # Copilot reads the same entry point
 │   ├── pull_request_template.md # PR template (includes AI disclosure)
 │   └── workflows/               # ci.yml (tests + pre-commit), container builds, zizmor
-├── archive/                     # Legacy code — DO NOT MODIFY
 ├── docker/
 │   ├── docker-compose.yml       # Local stack mirroring the cloud architecture
 │   ├── config.yaml              # LiteLLM config for the local stack
