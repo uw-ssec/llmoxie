@@ -73,6 +73,10 @@ class DatabaseConfig(BaseModel):
         description="SKU name (B_Standard_B1ms, GP_Standard_D2s_v3, etc.)",
     )
     storage_size_gb: int = Field(default=32, description="Storage size in GB", ge=32)
+    storage_type: Optional[str] = Field(
+        default=None,
+        description="Storage type (e.g., Premium_LRS); Azure default if unset",
+    )
     backup_retention_days: int = Field(
         default=7, description="Backup retention in days", ge=7, le=35
     )
@@ -171,6 +175,15 @@ class ContainerAppConfig(BaseModel):
     )
     key_vault_secret_refs: Dict[str, str] = Field(
         default_factory=dict, description="Key/Value mapping for Key Vault secrets"
+    )
+    revision_suffix: Optional[str] = Field(
+        default=None,
+        description="Revision name suffix (must change whenever the template changes)",
+    )
+    refresh_trigger: Optional[str] = Field(
+        default=None,
+        description="Fixed REFRESH_TRIGGER value; defaults to the deploy timestamp, "
+        "which forces a new revision on every deploy",
     )
 
 
@@ -301,6 +314,7 @@ class BackupJobConfig(BaseModel):
         default=1800, description="Max job runtime in seconds", ge=60
     )
     database: str = Field(
+        default="llmaven",
         description="Name of the PostgreSQL database to back up (must match one of database.databases)",
     )
     connection_string_env: str = Field(

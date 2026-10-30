@@ -30,7 +30,8 @@ includes:
   workflows
 - **PostgreSQL**: Relational database for storing configurations, metrics, and
   experiment data
-- **MinIO**: S3-compatible object storage for artifacts, logs, and model storage
+- **Azurite**: Local Azure Blob Storage emulator for MLflow artifacts and
+  LiteLLM request logs
 
 All services are orchestrated using Docker Compose and can be managed either
 directly with `docker-compose` commands or through convenient Pixi tasks.
@@ -43,6 +44,7 @@ docker/
 ├── .env.example                # Template for environment variables
 ├── config.yaml                 # LiteLLM proxy configuration
 ├── create_service_dbs.sql      # PostgreSQL database initialization
+├── ensure_blob_container.py    # Creates the MLflow blob container in Azurite
 ├── dockerfiles/
 │   ├── litellm.dockerfile      # Custom LiteLLM image with mlflow
 │   └── mlflow.dockerfile       # Custom MLflow image with dependencies
@@ -64,7 +66,7 @@ graph TB
 
         subgraph "Data Layer"
             PostgreSQL["🗄️ PostgreSQL<br/>Port 5432<br/><br/>Databases:<br/>• mlflow_db<br/>• litellm_db<br/>• llmaven"]
-            MinIO["💾 MinIO S3 Storage<br/>API: 9000 | Console: 9001<br/><br/>Buckets:<br/>• mlflow (artifacts)<br/>• llmaven (general)"]
+            Azurite["💾 Azurite Blob Storage<br/>Port 10000<br/><br/>Containers:<br/>• mlflow (artifacts)<br/>• litellm-logs (request logs)"]
         end
 
         subgraph "External"
@@ -77,13 +79,14 @@ graph TB
     LiteLLM -->|"Route requests"| Providers
     LiteLLM -->|"Log requests/<br/>responses"| MLflow
     LiteLLM -->|"Store config<br/>& metrics"| PostgreSQL
-    MLflow -->|"Store artifacts<br/>(models, plots)"| MinIO
+    LiteLLM -->|"Write request<br/>logs"| Azurite
+    MLflow -->|"Store artifacts<br/>(models, plots)"| Azurite
     MLflow -->|"Store metadata<br/>(runs, params)"| PostgreSQL
 
     style LiteLLM fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     style MLflow fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style PostgreSQL fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    style MinIO fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style Azurite fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     style Apps fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
     style Providers fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
 ```
@@ -95,9 +98,11 @@ graph TB
 2. **Request Routing**: LiteLLM routes requests to configured LLM providers
    (Azure OpenAI, OpenAI, Anthropic, etc.)
 3. **Automatic Logging**: All requests and responses are automatically logged to
-   MLflow for experiment tracking and analysis
+   MLflow for experiment tracking and analysis, and written as JSON request logs
+   to the Azurite `litellm-logs` blob container
 4. **Artifact Storage**: MLflow stores model artifacts, plots, and experiment
-   data in MinIO S3-compatible storage
+   data in the Azurite `mlflow` blob container (real Azure Blob Storage in
+   production)
 5. **Metadata Storage**: Configuration, metrics, and run metadata are stored in
    PostgreSQL databases (mlflow_db, litellm_db)
 
@@ -122,8 +127,7 @@ graph TB
   - 4000: LiteLLM Proxy
   - 5432: PostgreSQL
   - 8080: MLflow
-  - 9000: MinIO API
-  - 9001: MinIO Console
+  - 10000: Azurite Blob service
 
 ## Quick Start
 
@@ -193,9 +197,8 @@ Once all services are healthy:
 - **LiteLLM UI**: http://localhost:4000
 - **LiteLLM API Documentation**: http://localhost:4000/docs
 - **MLflow UI**: http://localhost:8080
-- **MinIO Console**: http://localhost:9001
-  - Username: `minioadmin` (or your configured `MINIO_ROOT_USER`)
-  - Password: `minioadmin` (or your configured `MINIO_ROOT_PASSWORD`)
+- **Azurite Blob endpoint**: http://127.0.0.1:10000/devstoreaccount1 (no web UI;
+  see [Managing Storage with Azurite](#managing-storage-with-azurite))
 
 ## Services
 
@@ -229,7 +232,8 @@ Once all services are healthy:
 
 **Network**: `llmaven-network`
 
-**Dependencies**: Waits for PostgreSQL (healthy) and MLflow (healthy)
+**Dependencies**: Waits for PostgreSQL (healthy), MLflow (healthy), and Azurite
+(healthy)
 
 **Startup Command**:
 
@@ -244,13 +248,16 @@ automatically)
 - Timeout: 10s
 - Retries: 3
 - Start period: 40s (grace period before first check)
-- Command: `wget --no-verbose --tries=1 http://localhost:4000/health/liveliness`
+- Uses Python urllib to check the `/health/liveliness` endpoint (the image has
+  no `wget` or `curl`)
 
 **Key Environment Variables**:
 
 - `LITELLM_MASTER_KEY`: Master authentication key
 - `DATABASE_URL`: PostgreSQL connection string for LiteLLM data
 - `MLFLOW_TRACKING_URI`: MLflow server endpoint for logging
+- `AZURE_STORAGE_CONNECTION_STRING`: Azurite connection for request logs
+- `ADLS_CONTAINER`: Blob container for request logs (default: `litellm-logs`)
 
 ### MLflow
 
@@ -259,7 +266,8 @@ automatically)
 **Image**: Custom build from `dockerfiles/mlflow.dockerfile`
 
 - Base image: `ghcr.io/mlflow/mlflow:v3.6.0`
-- Pre-installed packages: `psycopg2-binary==2.9.11`, `boto3==1.40.73`
+- Pre-installed packages: `psycopg2-binary==2.9.11`,
+  `azure-storage-blob==12.31.0`
 
 **Ports**:
 
@@ -270,7 +278,7 @@ automatically)
 
 - Experiment tracking and comparison
 - Model versioning and registry
-- Artifact storage in MinIO
+- Artifact storage in Azure Blob Storage (Azurite locally)
 - Metrics visualization
 - Model deployment capabilities
 - CORS enabled for cross-origin requests
@@ -278,16 +286,17 @@ automatically)
 
 **Database**: Uses `mlflow_db` in PostgreSQL for backend storage
 
-**Artifact Storage**: Uses MinIO bucket `mlflow` for artifacts
+**Artifact Storage**: Uses the Azurite blob container `mlflow` for artifacts
 
 **Container Name**: `llmaven_mlflow`
 
 **Network**: `llmaven-network`
 
-**Dependencies**: Waits for PostgreSQL (healthy), MinIO (healthy), and
-createbuckets (completed successfully)
+**Dependencies**: Waits for PostgreSQL (healthy) and Azurite (healthy)
 
-**Startup Command**: MLflow server with:
+**Startup Command**: The compose file overrides the entrypoint to run
+`ensure_blob_container.py` (mounted read-only at `/opt/llmaven/`), which creates
+the `mlflow` blob container if it is missing, then `exec mlflow server` with:
 
 - `--allowed-hosts '*'`: Accepts connections from any hostname
 - `--cors-allowed-origins '*'`: Enables CORS for all origins
@@ -304,10 +313,10 @@ createbuckets (completed successfully)
 **Key Environment Variables**:
 
 - `MLFLOW_BACKEND_STORE_URI`: PostgreSQL connection for metadata
-- `MLFLOW_DEFAULT_ARTIFACT_ROOT`: S3 path for artifacts (s3://mlflow/)
-- `MLFLOW_S3_ENDPOINT_URL`: MinIO endpoint for S3-compatible storage
-- `AWS_ACCESS_KEY_ID`: MinIO access credentials
-- `AWS_SECRET_ACCESS_KEY`: MinIO secret credentials
+- `MLFLOW_DEFAULT_ARTIFACT_ROOT`: Blob path for artifacts
+  (`wasbs://mlflow@devstoreaccount1.blob.core.windows.net/`)
+- `AZURE_STORAGE_CONNECTION_STRING`: Azurite connection string; supplies the
+  real blob endpoint (`http://azurite:10000/devstoreaccount1`)
 
 ### PostgreSQL
 
@@ -358,62 +367,56 @@ startup
 - `POSTGRES_DB`: Default database name
 - `POSTGRES_PORT`: Exposed port (default: 5432)
 
-### MinIO
+### Azurite
 
-**Purpose**: S3-compatible object storage for artifacts and logs
+**Purpose**: Local Azure Blob Storage emulator for MLflow artifacts and LiteLLM
+request logs. Production uses the same Blob mechanism against real Azure
+Storage.
 
-**Image**: `minio/minio:latest`
+**Image**: `mcr.microsoft.com/azure-storage/azurite`
 
-**Buckets Created**:
+**Blob Containers**:
 
-- `mlflow`: MLflow artifacts (models, plots, data)
-- `llmaven`: General LLMaven storage
+- `mlflow`: MLflow artifacts (models, plots, data), created by
+  `ensure_blob_container.py` before MLflow starts
+- `litellm-logs`: LiteLLM request logs (`ADLS_CONTAINER`), created by the
+  LiteLLM ADLS logger on startup
 
 **Ports**:
 
-- `9000:9000`: MinIO API (S3-compatible) - hardcoded mapping
-- `9001:9001`: Web Console UI - hardcoded mapping
+- `10000:10000`: Blob service - hardcoded mapping
 
 **Volume Mounts**:
 
-- `minio_data:/data`: MinIO data directory
+- `azurite_data:/data`: Azurite data directory
 
-**Server Command**: `server /data --console-address ":9001"`
+**Server Command**:
+`azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data --skipApiVersionCheck`
 
-- Serves data from `/data` directory
-- Exposes console on port 9001
+- Runs only the Blob service on port 10000
+- Persists data in `/data`
 
-**Data Persistence**: Uses volume `minio_data` (local driver)
+**Data Persistence**: Uses named volume `llmaven_azurite_data`
 
-**Bucket Creation**: Automated via `createbuckets` service on startup
-
-- Uses MinIO Client (`mc`) image: `quay.io/minio/mc:latest`
-- Creates buckets: `mlflow` and `llmaven`
-- Restart policy: `on-failure` - retries only if it fails
-- Uses alias `dockerminio` for MinIO connection
-- Exits successfully (code 0) after creating buckets
-
-**Container Name**: `llmaven_minio`
+**Container Name**: `llmaven_azurite`
 
 **Network**: `llmaven-network` (bridge driver)
 
-**Restart Policy**: `always` - automatically restarts if the container stops
+**Restart Policy**: Not explicitly set (defaults to `no` - doesn't restart
+automatically)
 
 **Health Check**:
 
-- Interval: 30s
-- Timeout: 20s
-- Retries: 3
-- Command: `curl -f http://localhost:9000/minio/health/live`
+- Interval: 5s
+- Timeout: 3s
+- Retries: 10
+- Start period: 5s
+- Command: `nc -z 127.0.0.1 10000`
 
-**Key Environment Variables**:
-
-- `MINIO_ROOT_USER`: Admin username (default: minioadmin, or uses
-  AWS_ACCESS_KEY_ID)
-- `MINIO_ROOT_PASSWORD`: Admin password (default: minioadmin, or uses
-  AWS_SECRET_ACCESS_KEY)
-- `S3_ENDPOINT_URL`: MinIO API endpoint (constructed from MINIO_HOST and
-  MINIO_PORT)
+**Credentials**: Azurite uses the well-known development account
+`devstoreaccount1` and its public account key (see `.env.example`). Services
+connect through `AZURE_STORAGE_CONNECTION_STRING`, whose `BlobEndpoint` uses the
+compose hostname `azurite`.
 
 ## Configuration
 
@@ -437,24 +440,19 @@ POSTGRES_PASSWORD=dbpassword9090    # Change in production!
 POSTGRES_PORT=5432                  # PostgreSQL port
 ```
 
-#### MinIO/S3 Configuration
+#### Azurite Configuration
 
 ```bash
-# MinIO Configuration
-MINIO_HOST=${MINIO_HOST:-minio}                               # MinIO hostname (defaults to 'minio')
-MINIO_PORT=9000                                               # MinIO API port
-MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID:-minioadmin}             # MinIO admin user
-MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY:-minioadmin}     # MinIO admin password
-S3_ENDPOINT_URL=http://${MINIO_HOST}:${MINIO_PORT}           # Internal S3 endpoint (uses variables)
-
-# AWS/S3 Credentials (set to MinIO credentials)
-AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}                         # Uses MinIO root user
-AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}                 # Uses MinIO root password
+# Azurite — MLflow artifacts and the ADLS logger
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=<well-known Azurite key>;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+ADLS_CONTAINER=litellm-logs                                    # Blob container for LiteLLM request logs
 ```
 
-**Note**: The MinIO and AWS credentials use variable references to keep them in
-sync. By default, both use `minioadmin`, but you can override them by setting
-`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+**Note**: The account key is the well-known public Azurite development key; the
+full value is in `.env.example`. The `azurite` hostname resolves only inside the
+compose network. From the host, use
+`BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1` with the same account
+name and key.
 
 #### MLflow Configuration
 
@@ -463,13 +461,16 @@ sync. By default, both use `minioadmin`, but you can override them by setting
 MLFLOW_HOST=${MLFLOW_HOST:-mlflow}                                                              # MLflow hostname (defaults to 'mlflow')
 MLFLOW_PORT=8080                                                                                 # MLflow UI/API port
 MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/mlflow_db
-MLFLOW_DEFAULT_ARTIFACT_ROOT=s3://mlflow/
-MLFLOW_S3_ENDPOINT_URL=${S3_ENDPOINT_URL}                                                       # Uses S3_ENDPOINT_URL variable
-MLFLOW_S3_IGNORE_TLS="true"                                                                     # Required for local MinIO
+MLFLOW_DEFAULT_ARTIFACT_ROOT=wasbs://mlflow@devstoreaccount1.blob.core.windows.net/
 ```
 
-**Note**: The MLflow Docker image is built with `psycopg2-binary` and `boto3`
-pre-installed (see `dockerfiles/mlflow.dockerfile`).
+**Note**: MLflow's parser requires the account hostname form
+(`devstoreaccount1.blob.core.windows.net`) in the artifact URI. The real
+endpoint comes from `AZURE_STORAGE_CONNECTION_STRING`, which points at Azurite
+locally.
+
+**Note**: The MLflow Docker image is built with `psycopg2-binary` and
+`azure-storage-blob` pre-installed (see `dockerfiles/mlflow.dockerfile`).
 
 #### LiteLLM Configuration
 
@@ -519,6 +520,7 @@ model_list:
 litellm_settings:
   success_callback: ["mlflow"]
   failure_callback: ["mlflow"]
+  callbacks: adl_logger.proxy_handler_instance
 
 # General settings
 general_settings:
@@ -549,38 +551,20 @@ model_list:
 
 Then add the corresponding API keys to your `.env` file.
 
-#### Alternative: S3 Logging
+#### Request Logging to Azure Blob Storage
 
-To enable S3 logging instead of MLflow logging, edit `config.yaml` and replace
-the current `litellm_settings` section with:
+In addition to MLflow, `config.yaml` registers the ADLS logger
+(`src/llmaven/infrastructure/resources/adl_logger.py`, mounted into the LiteLLM
+container at `/app/adl_logger.py`):
 
 ```yaml
 litellm_settings:
-  set_verbose: true
-  success_callback: ["s3"]
-  failure_callback: ["s3"]
-  s3_callback_params:
-    s3_bucket_name: os.environ/S3_BUCKET_NAME
-    s3_region_name: os.environ/S3_REGION_NAME
-    s3_aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
-    s3_aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
-    s3_endpoint_url: os.environ/AWS_ENDPOINT_URL
-    s3_path: os.environ/S3_PATH_PREFIX
+  callbacks: adl_logger.proxy_handler_instance
 ```
 
-Then add the corresponding environment variables to your `.env` file and rebuild
-the LiteLLM image:
-
-```bash
-# Add to .env
-S3_BUCKET_NAME=llmaven
-S3_REGION_NAME=us-east-1
-S3_PATH_PREFIX=litellm-logs/
-
-# Rebuild LiteLLM image to include updated config.yaml
-docker-compose build litellm
-docker-compose up -d litellm
-```
+It writes one JSON file per request to the `ADLS_CONTAINER` blob container
+(default `litellm-logs`) using `AZURE_STORAGE_CONNECTION_STRING`, which points
+at Azurite locally.
 
 ### Custom Docker Images
 
@@ -594,12 +578,14 @@ Located at `dockerfiles/mlflow.dockerfile`:
 ```dockerfile
 FROM ghcr.io/mlflow/mlflow:v3.6.0
 
-RUN pip install --no-cache-dir "psycopg2-binary==2.9.11" "boto3==1.40.73"
+RUN pip install --no-cache-dir "psycopg2-binary==2.9.11" "azure-storage-blob==12.31.0"
 
 ENTRYPOINT ["mlflow", "server"]
 ```
 
-Pre-installs PostgreSQL database adapter and AWS S3 client for artifact storage.
+Pre-installs PostgreSQL database adapter and Azure Blob Storage client for
+artifact storage. The image's `ENTRYPOINT` is unchanged; only the local compose
+file overrides it to run `ensure_blob_container.py` first.
 
 #### LiteLLM Dockerfile
 
@@ -730,61 +716,93 @@ runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
 print(runs[['run_id', 'metrics.total_cost', 'params.model']])
 ```
 
-### Managing Storage with MinIO
+### Managing Storage with Azurite
 
-Access the MinIO console at http://localhost:9001 to:
-
-- Browse buckets and objects
-- Upload/download files
-- Manage access policies
-- Monitor storage usage
-
-#### Using MinIO Client (mc)
+Azurite has no web console. Use the Azure CLI, Azure Storage Explorer, or the
+Python SDK against the host endpoint. The connection string in `.env` uses the
+hostname `azurite`, which resolves only inside the compose network; from the
+host, use `127.0.0.1` instead:
 
 ```bash
-# Configure MinIO client (use 'dockerminio' as alias to match the setup)
-docker exec -it llmaven_minio mc alias set dockerminio http://localhost:9000 minioadmin minioadmin
-
-# List buckets
-docker exec -it llmaven_minio mc ls dockerminio/
-
-# List objects in mlflow bucket
-docker exec -it llmaven_minio mc ls dockerminio/mlflow/
-
-# Copy file to bucket
-docker exec -it llmaven_minio mc cp myfile.txt dockerminio/llmaven/
+export AZURITE_CONN="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 ```
 
-**Note**: The `createbuckets` service uses the alias `dockerminio` internally.
-You can use any alias name for your own `mc` commands.
+The account key is the well-known public Azurite development key from
+`.env.example`.
 
-#### Using Python boto3
+#### Using Azure CLI
+
+```bash
+# List blob containers
+az storage container list --connection-string "$AZURITE_CONN" -o table
+
+# List MLflow artifacts
+az storage blob list --container-name mlflow --connection-string "$AZURITE_CONN" -o table
+
+# List LiteLLM request logs
+az storage blob list --container-name litellm-logs --connection-string "$AZURITE_CONN" -o table
+```
+
+#### Using Python azure-storage-blob
 
 ```python
-import boto3
-from botocore.client import Config
+import os
 
-# Configure S3 client for MinIO
-s3_client = boto3.client(
-    's3',
-    endpoint_url='http://localhost:9000',
-    aws_access_key_id='minioadmin',
-    aws_secret_access_key='minioadmin',
-    config=Config(signature_version='s3v4'),
-    region_name='us-east-1'
-)
+from azure.storage.blob import BlobServiceClient
 
-# List buckets
-response = s3_client.list_buckets()
-for bucket in response['Buckets']:
-    print(bucket['Name'])
+client = BlobServiceClient.from_connection_string(os.environ["AZURITE_CONN"])
 
-# Upload file
-s3_client.upload_file('local_file.txt', 'llmaven', 'remote_file.txt')
+# List containers
+for container in client.list_containers():
+    print(container.name)
 
-# Download file
-s3_client.download_file('llmaven', 'remote_file.txt', 'downloaded_file.txt')
+# List MLflow artifacts
+for blob in client.get_container_client("mlflow").list_blobs():
+    print(blob.name)
 ```
+
+#### Upgrading from MinIO
+
+Earlier versions of this stack stored MLflow artifacts in MinIO. Two things do
+not change on their own when you pull this version:
+
+- Your existing `docker/.env` still sets
+  `MLFLOW_DEFAULT_ARTIFACT_ROOT=s3://mlflow/`. Updating `.env.example` does not
+  touch it, and with that value even new experiments get an `s3://` location
+  that the MLflow image can no longer write to.
+- Existing MLflow experiments, including `Default`, keep the `s3://mlflow/...`
+  artifact location stored in Postgres. Changing the default root only affects
+  experiments created afterwards.
+
+Upgrade in this order:
+
+1. Edit your existing `docker/.env` in place, keeping your API keys and other
+   credentials. Set
+   `MLFLOW_DEFAULT_ARTIFACT_ROOT=wasbs://mlflow@devstoreaccount1.blob.core.windows.net/`
+   and check that `AZURE_STORAGE_CONNECTION_STRING` matches `.env.example`
+   (`BlobEndpoint=http://azurite:10000/devstoreaccount1`). The old `MINIO_*`,
+   `S3_ENDPOINT_URL`, `MLFLOW_S3_*` and `AWS_*` lines are unused and can be
+   removed.
+2. Rebuild MLflow and recreate the stack. `pixi run -e llmaven up` runs
+   `docker-compose up -d` without `--build`, so build explicitly from `docker/`:
+
+   ```bash
+   docker-compose up -d --build --remove-orphans
+   ```
+
+   `--remove-orphans` removes the leftover MinIO containers only. It does not
+   delete volumes, so the old MinIO data stays on disk unless you deliberately
+   remove that volume yourself.
+
+3. Create a new experiment in the MLflow UI (<http://localhost:8080> by default,
+   or your `MLFLOW_PORT`) and check that its artifact location starts with
+   `wasbs://mlflow@`.
+4. Point LiteLLM at it: set `MLFLOW_EXPERIMENT_NAME` in `docker/.env` to the new
+   experiment's name, then run `docker-compose up -d litellm` to recreate
+   LiteLLM with the new value.
+
+Runs in the old experiments keep their metadata, but MLflow can no longer read
+their artifacts. Keep the old MinIO running separately if you need them.
 
 ## Docker Compose Infrastructure
 
@@ -796,8 +814,8 @@ The Docker Compose setup uses two persistent volumes:
 volumes:
   postgres_data:
     name: llmaven_postgres_data # Named volume for Postgres data persistence
-  minio_data:
-    driver: local # Local driver for MinIO data
+  azurite_data:
+    name: llmaven_azurite_data # Named volume for Azurite blob data (MLflow artifacts, LiteLLM logs)
 ```
 
 - **llmaven_postgres_data**: Named volume for PostgreSQL database files
@@ -805,10 +823,10 @@ volumes:
   - Explicitly named as `llmaven_postgres_data`
   - Contains all PostgreSQL databases (`llmaven`, `mlflow_db`, `litellm_db`)
 
-- **minio_data**: Local volume for MinIO object storage
-  - Persists S3-compatible object data (artifacts, logs, models)
-  - Uses default local driver
-  - Contains all MinIO buckets (`mlflow`, `llmaven`)
+- **llmaven_azurite_data**: Named volume for Azurite blob storage
+  - Mounted at `/data` (Azurite `--location /data`)
+  - Persists blob data (MLflow artifacts, LiteLLM request logs)
+  - Contains the `mlflow` and `litellm-logs` blob containers
 
 ### Networks
 
@@ -823,7 +841,7 @@ networks:
 - **llmaven-network**: Bridge network connecting all services
   - Driver: `bridge` (default Docker network driver)
   - Enables container-to-container communication
-  - Services can reference each other by service name (e.g., `db`, `minio`,
+  - Services can reference each other by service name (e.g., `db`, `azurite`,
     `mlflow`, `litellm`)
   - Internal DNS resolution provided by Docker
   - Isolated from host network for security
@@ -833,11 +851,12 @@ networks:
 The services have the following startup order enforced by `depends_on`:
 
 1. **PostgreSQL (`db`)**: Starts first (no dependencies)
-2. **MinIO (`minio`)**: Starts first (no dependencies)
-3. **Create Buckets (`createbuckets`)**: Waits for MinIO to be healthy
-4. **MLflow (`mlflow`)**: Waits for PostgreSQL (healthy), MinIO (healthy), and
-   createbuckets (completed)
-5. **LiteLLM (`litellm`)**: Waits for PostgreSQL (healthy) and MLflow (healthy)
+2. **Azurite (`azurite`)**: Starts first, in parallel with PostgreSQL (no
+   dependencies)
+3. **MLflow (`mlflow`)**: Waits for PostgreSQL (healthy) and Azurite (healthy);
+   creates the `mlflow` blob container before the server starts
+4. **LiteLLM (`litellm`)**: Waits for PostgreSQL (healthy), MLflow (healthy),
+   and Azurite (healthy)
 
 This dependency chain ensures all required infrastructure is ready before
 dependent services start.
@@ -933,8 +952,8 @@ docker-compose exec db psql -U llmaven-admin -d llmaven
 # Check liveness (used by Docker health check)
 curl http://localhost:4000/health/liveliness
 
-# Alternative using wget
-wget --no-verbose --tries=1 http://localhost:4000/health/liveliness
+# Inside the container (as used by Docker health check)
+docker exec llmaven_litellm python -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=5)"
 ```
 
 #### MLflow Health Check
@@ -947,11 +966,14 @@ curl http://localhost:8080/health
 python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 ```
 
-#### MinIO Health Check
+#### Azurite Health Check
 
 ```bash
-# Check MinIO health
-curl http://localhost:9000/minio/health/live
+# Check the Blob port (as used by Docker health check)
+docker-compose exec azurite nc -z 127.0.0.1 10000
+
+# From the host
+nc -z 127.0.0.1 10000
 ```
 
 ### Viewing Logs
@@ -978,8 +1000,8 @@ docker-compose logs -f mlflow
 # PostgreSQL logs
 docker-compose logs -f db
 
-# MinIO logs
-docker-compose logs -f minio
+# Azurite logs
+docker-compose logs -f azurite
 ```
 
 #### Last N Lines
@@ -1028,8 +1050,7 @@ docker-compose logs <service-name>
    lsof -i :4000
    lsof -i :5432
    lsof -i :8080
-   lsof -i :9000
-   lsof -i :9001
+   lsof -i :10000
    ```
 
    **Solution**: Stop conflicting services or change ports in `.env`
@@ -1077,46 +1098,48 @@ curl http://localhost:4000/health/liveliness
 
 ### MLflow Cannot Store Artifacts
 
-**Symptom**: MLflow logs show S3 connection errors
+**Symptom**: MLflow logs show Azure Blob connection errors
 
 **Diagnosis**:
 
 ```bash
-# Check MLflow logs
+# Check MLflow logs (includes ensure_blob_container.py output)
 docker-compose logs mlflow
 
-# Verify MinIO is running
-docker-compose ps minio
+# Verify Azurite is running
+docker-compose ps azurite
 
-# Check MinIO buckets
-docker exec -it llmaven_minio mc ls local/
+# Check Azurite logs
+docker-compose logs azurite
 ```
 
 **Common Causes**:
 
-1. **MinIO not ready**: Buckets not created
+1. **Azurite not ready**: Azurite is not healthy, so MLflow does not start
 
-   **Solution**: Verify `createbuckets` service completed successfully:
+   **Solution**: Check `docker-compose logs azurite` and ensure port 10000 is
+   free
+
+2. **Wrong connection string**: `AZURE_STORAGE_CONNECTION_STRING` missing or
+   incorrect
+
+   **Solution**: Ensure it matches `.env.example` and that `BlobEndpoint` uses
+   the `azurite` hostname (not `127.0.0.1`) inside the compose stack
+
+3. **Missing container**: The `mlflow` blob container doesn't exist
+
+   **Solution**: `ensure_blob_container.py` creates it on every MLflow start;
+   restart MLflow and check its logs:
 
    ```bash
-   docker-compose logs createbuckets
+   docker-compose restart mlflow
+   docker-compose logs mlflow | grep -i "blob container"
    ```
 
-2. **Incorrect S3 credentials**: MinIO credentials mismatch
+4. **Old experiments still point at MinIO**: Experiments created before the
+   switch keep their old artifact location
 
-   **Solution**: Ensure `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` match
-   MinIO configuration
-
-3. **Missing bucket**: MLflow bucket doesn't exist
-
-   **Solution**: Manually create bucket:
-
-   ```bash
-   # First set up the alias if not already done
-   docker exec -it llmaven_minio mc alias set dockerminio http://localhost:9000 minioadmin minioadmin
-   # Then create the bucket
-   docker exec -it llmaven_minio mc mb dockerminio/mlflow
-   ```
+   **Solution**: See [Upgrading from MinIO](#upgrading-from-minio)
 
 ### Database Connection Refused
 
@@ -1176,7 +1199,7 @@ pixi run -e llmaven up
 
 - PostgreSQL databases
 - MLflow experiments
-- MinIO stored objects
+- Azurite blob data (MLflow artifacts, LiteLLM request logs)
 
 ## Advanced Topics
 
@@ -1190,7 +1213,6 @@ pixi run -e llmaven up
    # In .env
    POSTGRES_PASSWORD=<strong-random-password>
    LITELLM_MASTER_KEY=sk-<strong-random-key>
-   MINIO_ROOT_PASSWORD=<strong-random-password>
    ```
 
 2. **Use Secret Management**:
@@ -1214,10 +1236,9 @@ pixi run -e llmaven up
    - Configure connection pooling
    - Set up replication for high availability
 
-2. **MinIO**:
-   - Use managed S3 service (AWS S3, Azure Blob, Google Cloud Storage)
-   - Enable distributed mode for multi-node setup
-   - Configure erasure coding for data protection
+2. **Azurite**:
+   - Local development only; use Azure Blob Storage in production (same
+     `wasbs://` artifact root and connection-string mechanism)
 
 3. **LiteLLM**:
    - Run multiple instances behind load balancer
@@ -1241,11 +1262,12 @@ pixi run -e llmaven up
    docker-compose exec -T db psql -U llmaven-admin < backup_20240101.sql
    ```
 
-2. **MinIO Backup**:
+2. **Azurite Backup**:
 
    ```bash
-   # Mirror bucket to another MinIO instance
-   docker exec -it llmaven_minio mc mirror dockerminio/mlflow remote/mlflow-backup
+   # Download MLflow artifacts from Azurite to a local directory
+   az storage blob download-batch --source mlflow --destination ./mlflow-backup \
+     --connection-string "$AZURITE_CONN"
    ```
 
 3. **Automated Backups**:
@@ -1383,10 +1405,8 @@ export LITELLM_API_KEY=sk-1234
 # MLflow Tracking
 export MLFLOW_TRACKING_URI=http://localhost:8080
 
-# MinIO S3
-export AWS_ACCESS_KEY_ID=minioadmin
-export AWS_SECRET_ACCESS_KEY=minioadmin
-export AWS_ENDPOINT_URL=http://localhost:9000
+# Azurite Blob Storage (host endpoint, well-known Azurite account key)
+export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 ```
 
 #### Using with Jupyter Notebooks
@@ -1433,9 +1453,9 @@ with mlflow.start_run():
   - [Models](https://mlflow.org/docs/latest/models.html)
   - [Model Registry](https://mlflow.org/docs/latest/model-registry.html)
 
-- **MinIO**: https://min.io/docs/minio/linux/index.html
-  - [Docker Deployment](https://min.io/docs/minio/container/index.html)
-  - [S3 Compatibility](https://min.io/docs/minio/linux/integrations/aws-cli-with-minio.html)
+- **Azurite**:
+  https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite
+  - [Connect to Azurite](https://learn.microsoft.com/en-us/azure/storage/common/storage-connect-azurite?tabs=blob-storage)
 
 - **PostgreSQL**: https://www.postgresql.org/docs/16/
   - [Docker Official Images](https://hub.docker.com/_/postgres)
@@ -1451,7 +1471,6 @@ with mlflow.start_run():
 
 - **LiteLLM Discord**: https://discord.com/invite/wuPM9dRgDw
 - **MLflow Slack**: https://mlflow.org/slack
-- **MinIO Slack**: https://slack.min.io/
 
 ---
 

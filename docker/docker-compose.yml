@@ -1,20 +1,4 @@
 services:
-  # Qdrant Service
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: llmaven_qdrant
-    ports:
-      - "6333:6333"
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - llmaven-network
-
   # Postgresql Service
   db:
     image: postgres:16
@@ -35,43 +19,6 @@ services:
     networks:
       - llmaven-network
 
-  # MinIO Service
-  minio:
-    image: minio/minio:latest
-    container_name: llmaven_minio
-    ports:
-      - "9000:9000" # MinIO API
-      - "9001:9001" # MinIO Console
-    env_file:
-      - .env
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-    restart: always
-    networks:
-      - llmaven-network
-
-  # MinIO Create Buckets service
-  createbuckets:
-    image: quay.io/minio/mc:latest
-    depends_on:
-      - minio
-    env_file:
-      - .env
-    restart: on-failure
-    entrypoint: >
-      /bin/sh -c " sleep 5; /usr/bin/mc alias set dockerminio
-      $${S3_ENDPOINT_URL} $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
-      /usr/bin/mc mb dockerminio/mlflow; /usr/bin/mc mb dockerminio/llmaven;
-      exit 0; "
-    networks:
-      - llmaven-network
-
   # MLFlow observability service
   mlflow:
     build:
@@ -82,6 +29,15 @@ services:
       - .env
     ports:
       - "${MLFLOW_PORT}:${MLFLOW_PORT}" # MLflow UI
+    # Create the MLflow artifact container in Azurite before the server starts.
+    # Overriding the entrypoint here keeps the published image unchanged.
+    entrypoint:
+      - sh
+      - -c
+      - python /opt/llmaven/ensure_blob_container.py && exec mlflow server "$$@"
+      - mlflow-entrypoint
+    volumes:
+      - ./ensure_blob_container.py:/opt/llmaven/ensure_blob_container.py:ro
     command:
       - --allowed-hosts
       - "*"
@@ -90,10 +46,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio:
+      azurite:
         condition: service_healthy
-      createbuckets:
-        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -115,9 +69,12 @@ services:
     image: mcr.microsoft.com/azure-storage/azurite
     container_name: llmaven_azurite
     command:
-      "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
+      "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data
+      --skipApiVersionCheck"
     ports:
       - "10000:10000"
+    volumes:
+      - azurite_data:/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 10000 || exit 1"]
       interval: 5s
@@ -152,11 +109,17 @@ services:
       - /app/config.yaml
     healthcheck:
       # Defines the health check configuration for the container
-      test: [
-          "CMD-SHELL",
-          "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness
-          || exit 1",
-        ] # Command to execute for health check
+      # The LiteLLM image has no wget or curl; use its Python instead.
+      # urlopen raises on connection errors and non-2xx responses.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;
+          urllib.request.urlopen('http://localhost:4000/health/liveliness',
+          timeout=5)",
+        ]
       interval: 30s # Perform health check every 30 seconds
       timeout: 10s # Health check command times out after 10 seconds
       retries: 3 # Retry up to 3 times if health check fails
@@ -167,8 +130,8 @@ services:
 volumes:
   postgres_data:
     name: llmaven_postgres_data # Named volume for Postgres data persistence
-  minio_data:
-    driver: local
+  azurite_data:
+    name: llmaven_azurite_data # Named volume for Azurite blob data (MLflow artifacts, LiteLLM logs)
 
 networks:
   llmaven-network:

@@ -166,6 +166,12 @@ def create_key_vault(
                 else azure_native.keyvault.PublicNetworkAccess.ENABLED
             ),
         ),
+        # Vault updates replace the whole access policy list, which would wipe
+        # policies added by separate AccessPolicy resources (see
+        # grant_key_vault_access). The inline list only applies at creation.
+        opts=pulumi.ResourceOptions(
+            ignore_changes=["properties.accessPolicies"],
+        ),
     )
 
     pulumi.export(f"key_vault_name_{environment}", key_vault.name)
