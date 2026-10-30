@@ -166,6 +166,8 @@ def update_config_fields(
 
     yaml_rt = YAML()
     yaml_rt.preserve_quotes = True
+    # Match list indentation in the generated deployment configuration.
+    yaml_rt.indent(mapping=2, sequence=4, offset=2)
     # Prevent ruamel from re-wrapping long scalars/comments onto new lines.
     yaml_rt.width = 4096
     # Render None as the explicit literal `null` (matching the template style)

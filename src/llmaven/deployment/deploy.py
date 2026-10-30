@@ -330,11 +330,38 @@ def get_stack(
         raise DeploymentError(f"Failed to initialize stack: {e}")
 
 
+# Preview operations that leave resources untouched
+NO_CHANGE_OPS = {"same", "read"}
+
+
+def _raise_if_changes(change_summary: dict) -> None:
+    """Raise DeploymentError if a preview change summary contains any change.
+
+    Args:
+        change_summary: Operation counts from a Pulumi preview
+
+    Raises:
+        DeploymentError: If any operation other than same/read is planned
+    """
+    changes = {
+        op: count
+        for op, count in change_summary.items()
+        if op not in NO_CHANGE_OPS and count
+    }
+    if changes:
+        summary = ", ".join(f"{op}: {count}" for op, count in sorted(changes.items()))
+        raise DeploymentError(
+            f"--expect-no-changes was set but the preview plans changes ({summary}). "
+            "Nothing was deployed."
+        )
+
+
 def deploy_infrastructure(
     config_path: Path,
     preview: bool = False,
     auto_approve: bool = False,
     env_file_path: Path | None = None,
+    expect_no_changes: bool = False,
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -343,6 +370,8 @@ def deploy_infrastructure(
         preview: Preview changes without deploying
         auto_approve: Automatically approve deployment
         env_file_path: Optional path to .env file to load secrets from
+        expect_no_changes: Fail without deploying if the preview plans any
+            resource change
 
     Raises:
         DeploymentError: If deployment fails
@@ -365,6 +394,19 @@ def deploy_infrastructure(
     print()
     print("=" * 70)
     print()
+
+    # Step 2 creates the resource group and state storage when they are not
+    # configured, which would be a change outside the Pulumi preview
+    if expect_no_changes:
+        backend_config = load_config(config_path)
+        if not (
+            backend_config.azure.resource_group
+            and backend_config.project.pulumi_state_store
+        ):
+            raise DeploymentError(
+                "--expect-no-changes requires an existing deployment: "
+                "azure.resource_group and project.pulumi_state_store must be set."
+            )
 
     # Initialize Azure infrastructure for Pulumi state management and subsequent deployments
     print("Step 2: Initializing Azure infrastructure...")
@@ -442,9 +484,23 @@ def deploy_infrastructure(
                 f"Resources to delete: {preview_result.change_summary.get('delete', 0)}"
             )
             print()
+            if expect_no_changes:
+                _raise_if_changes(preview_result.change_summary)
             print("To deploy, run:")
             print(f"  llmaven infra deploy --config {config_path}")
         else:
+            if expect_no_changes:
+                # stack.up() runs with --skip-preview, so its expect_no_changes
+                # only errors after applying changes. Preview first to refuse
+                # before anything is touched.
+                print("Checking that the deployment makes no changes...")
+                print()
+                check = stack.preview(on_output=lambda msg: print(msg))
+                print()
+                _raise_if_changes(check.change_summary)
+                print("✓ Preview plans no changes")
+                print()
+
             # Confirm deployment
             if not auto_approve:
                 print("⚠️  This will deploy infrastructure to Azure.")
@@ -462,9 +518,11 @@ def deploy_infrastructure(
             print("Running Pulumi deployment...")
             print()
 
-            # Run update
+            # Run update. With expect_no_changes, this still errors (after the
+            # fact) if something drifted between the preview and the update.
             up_result = stack.up(
                 on_output=lambda msg: print(msg),
+                expect_no_changes=expect_no_changes or None,
             )
 
             print()

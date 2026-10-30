@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from llmaven.infrastructure.config.defaults import get_config_template_yaml
 from llmaven.infrastructure.config.loader import (
     ConfigLoadError,
     update_config_fields,
@@ -222,3 +223,26 @@ def test_untouched_null_fields_stay_null(tmp_path):
     assert (
         "pulumi_state_store: null  # Azure Storage account (auto-generated)" in result
     )
+
+
+@pytest.mark.parametrize("environment", ["dev", "staging", "prod"])
+def test_generated_template_keeps_untouched_lines(environment, tmp_path):
+    original = get_config_template_yaml(environment)
+    config_path = _write(tmp_path, original)
+
+    update_config_fields(
+        config_path,
+        {
+            "azure.resource_group": "rg-llmaven-dev",
+            "project.pulumi_state_store": "llmavenstate",
+        },
+    )
+
+    def untouched_lines(content):
+        return [
+            line
+            for line in content.splitlines(keepends=True)
+            if not line.startswith(("  resource_group:", "  pulumi_state_store:"))
+        ]
+
+    assert untouched_lines(config_path.read_text()) == untouched_lines(original)

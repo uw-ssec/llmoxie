@@ -45,6 +45,7 @@ def invoke_extract(
     source: str | None,
     output_file: Path | None = None,
     input: str | None = None,
+    no_zip: bool = False,
 ) -> Result:
     args = ["infra", "extract"]
     if source is not None:
@@ -52,24 +53,32 @@ def invoke_extract(
     args += ["--from", from_date, "--to", to_date]
     if output_file is not None:
         args += ["--out", str(output_file)]
+    if no_zip:
+        args += ["--no-zip"]
 
     return runner.invoke(app, args, input=input)
 
 
 class TestInfraExtract:
     def test_rejects_invalid_date_format(self, runner: CliRunner):
-        result = invoke_extract(runner, from_date="2026-99-01", to_date="2026-01-02")
+        result = invoke_extract(
+            runner, from_date="2026-99-01", to_date="2026-01-02", source=None
+        )
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
 
     def test_rejects_inverted_date_range(self, runner: CliRunner):
-        result = invoke_extract(runner, from_date="2026-01-03", to_date="2026-01-02")
+        result = invoke_extract(
+            runner, from_date="2026-01-03", to_date="2026-01-02", source=None
+        )
 
         assert result.exit_code == 1
         assert "--from must be <= --to" in result.output
 
-    def test_rejects_output_directory(self, runner: CliRunner, tmp_path: Path):
+    def test_rejects_output_directory_in_zip_mode(
+        self, runner: CliRunner, tmp_path: Path
+    ):
         out_dir = tmp_path / "output-dir"
         out_dir.mkdir()
 
@@ -81,8 +90,26 @@ class TestInfraExtract:
             output_file=out_dir,
         )
 
-        assert result.exit_code == 2
-        assert "Invalid value for '--out'" in result.output
+        assert result.exit_code == 1
+        assert "Output path is a directory but zip mode is enabled" in result.output
+
+    def test_rejects_file_output_in_no_zip_mode(
+        self, runner: CliRunner, tmp_path: Path
+    ):
+        out_file = tmp_path / "already-a-file"
+        out_file.write_text("preexisting", encoding="utf-8")
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=out_file,
+            no_zip=True,
+        )
+
+        assert result.exit_code == 1
+        assert "--no-zip writes to a directory" in result.output
 
     def test_mkdir_failure_exits(self, runner: CliRunner, tmp_path: Path):
         base_dir = tmp_path / "no-write"
@@ -181,26 +208,24 @@ class TestInfraExtract:
     ):
         output_file = tmp_path / "out.zip"
 
-        # httpx client mock
-        resp1 = Mock()
-        resp1.raise_for_status.return_value = None
-        resp1.json.return_value = [
-            {
-                "request_id": "a",
-                "api_key": "SECRET",
-                "startTime": "2026-01-01T00:00:00Z",
-            }
-        ]
+        record = {
+            "request_id": "a",
+            "api_key": "SECRET",
+            "startTime": "2026-01-01T00:00:00Z",
+        }
 
-        resp2 = Mock()
-        resp2.raise_for_status.return_value = None
-        resp2.json.return_value = []  # no records day 2
+        # v1 returns a plain list. One request per day.
+        def _make_resp(records):
+            r = Mock()
+            r.status_code = 200
+            r.raise_for_status.return_value = None
+            r.json.return_value = records
+            return r
 
         http_client = Mock()
-        http_client.get.side_effect = [resp1, resp2]
+        http_client.get.side_effect = [_make_resp([record]), _make_resp([])]
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
 
-        # zipfile mock
         zipf = Mock()
         mock_zip_cls.return_value.__enter__.return_value = zipf
 
@@ -214,7 +239,7 @@ class TestInfraExtract:
 
         assert result.exit_code == 0
 
-        # Verify request calls (endpoint + headers + params)
+        # One request per day
         assert http_client.get.call_count == 2
         (url0,), kwargs0 = http_client.get.call_args_list[0]
         assert url0 == "http://litellm/spend/logs"
@@ -223,14 +248,11 @@ class TestInfraExtract:
         assert kwargs0["params"]["end_date"] == "2026-01-02"
         assert kwargs0["params"]["summarize"] == "false"
 
-        # Verify zip writes (one jsonl per date)
-        assert zipf.writestr.call_count == 2
+        # Only the day with records gets a file written
+        assert zipf.writestr.call_count == 1
         name0, payload0 = zipf.writestr.call_args_list[0][0]
         assert name0 == "litellm_spend_logs_2026-01-01.jsonl"
         assert '"request_id": "a"' in payload0
-        name1, payload1 = zipf.writestr.call_args_list[1][0]
-        assert name1 == "litellm_spend_logs_2026-01-02.jsonl"
-        assert payload1 == ""
 
         assert "1 total records" in result.output
 
@@ -238,27 +260,186 @@ class TestInfraExtract:
         "llmaven.cli._get_llmaven_secrets",
         return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
     )
+    @patch("httpx.Client")
+    def test_no_zip_writes_jsonl_files_into_directory(
+        self,
+        mock_httpx_client_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_dir = tmp_path / "spend-logs"
+
+        resp1 = Mock(status_code=200)
+        resp1.raise_for_status.return_value = None
+        resp1.json.return_value = [
+            {"request_id": "a", "startTime": "2026-01-01T00:00:00Z"}
+        ]
+
+        resp2 = Mock(status_code=200)
+        resp2.raise_for_status.return_value = None
+        resp2.json.return_value = []
+
+        http_client = Mock()
+        http_client.get.side_effect = [resp1, resp2]
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-02",
+            source=None,
+            output_file=output_dir,
+            no_zip=True,
+        )
+
+        assert result.exit_code == 0
+        assert output_dir.is_dir()
+
+        day1 = output_dir / "litellm_spend_logs_2026-01-01.jsonl"
+        day2 = output_dir / "litellm_spend_logs_2026-01-02.jsonl"
+        assert day1.exists()
+        # Days with no records are skipped, matching zip mode.
+        assert not day2.exists()
+
+        day1_text = day1.read_text(encoding="utf-8")
+        assert '"request_id": "a"' in day1_text
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("httpx.Client")
+    def test_no_zip_overwrite_keeps_unrelated_files(
+        self,
+        mock_httpx_client_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        output_dir = tmp_path / "spend-logs"
+        output_dir.mkdir()
+        stale = output_dir / "litellm_spend_logs_2025-12-31.jsonl"
+        stale.write_text("stale\n", encoding="utf-8")
+        other_source = output_dir / "mlflow_traces_2026-01-01_experiment_1.jsonl"
+        other_source.write_text("mlflow\n", encoding="utf-8")
+        notes = output_dir / "notes.txt"
+        notes.write_text("keep me", encoding="utf-8")
+
+        resp = Mock(status_code=200)
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [{"request_id": "a"}]
+        http_client = Mock()
+        http_client.get.return_value = resp
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=output_dir,
+            no_zip=True,
+            input="y\n",
+        )
+
+        assert result.exit_code == 0
+        assert not stale.exists()
+        assert other_source.read_text(encoding="utf-8") == "mlflow\n"
+        assert notes.read_text(encoding="utf-8") == "keep me"
+        assert (output_dir / "litellm_spend_logs_2026-01-01.jsonl").exists()
+
+    def test_no_zip_default_path_has_no_zip_suffix(
+        self, runner: CliRunner, tmp_path: Path
+    ):
+        # Force resolution path: we just want the typer-side handling to accept
+        # --no-zip without exploding before any extraction runs.
+        with (
+            patch("llmaven.cli._extract_litellm_logs") as mock_litellm,
+            patch(
+                "llmaven.cli._prepare_extract_output_file",
+                return_value=tmp_path / "stub",
+            ) as mock_prepare,
+        ):
+            result = invoke_extract(
+                runner,
+                from_date="2026-01-01",
+                to_date="2026-01-01",
+                source=None,
+                no_zip=True,
+            )
+
+        assert result.exit_code == 0
+        mock_prepare.assert_called_once()
+        assert mock_prepare.call_args.kwargs["use_zip"] is False
+        mock_litellm.assert_called_once()
+        assert mock_litellm.call_args.kwargs["use_zip"] is False
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("llmaven.cli.sleep")
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_http_error_exits(
+    def test_persistent_5xx_fails_instead_of_skipping_day(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
+        mock_sleep,
         _mock_secrets,
         runner: CliRunner,
         tmp_path: Path,
     ):
         output_file = tmp_path / "out.zip"
 
-        resp = Mock()
-        import httpx
-
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "boom", request=Mock(), response=Mock()
-        )
+        bad_resp = Mock()
+        bad_resp.status_code = 503
 
         http_client = Mock()
-        http_client.get.return_value = resp
+        http_client.get.return_value = bad_resp
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+
+        zipf = Mock()
+        mock_zip_cls.return_value.__enter__.return_value = zipf
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-02",
+            source=None,
+            output_file=output_file,
+        )
+
+        # A day that never recovers must fail the extract, not be silently
+        # dropped from an otherwise "successful" archive.
+        assert result.exit_code == 1
+        assert "LiteLLM /spend/logs failed for 2026-01-01" in result.output
+        assert "skipping" not in result.output
+        assert zipf.writestr.call_count == 0
+        assert http_client.get.call_count == 5
+        assert [c.args[0] for c in mock_sleep.call_args_list] == [1.0, 2.0, 4.0, 8.0]
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("llmaven.cli.sleep")
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_transport_error_exits(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_sleep,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        import httpx
+
+        http_client = Mock()
+        http_client.get.side_effect = httpx.ConnectError("refused")
         mock_httpx_client_cls.return_value.__enter__.return_value = http_client
         mock_zip_cls.return_value.__enter__.return_value = Mock()
 
@@ -267,11 +448,13 @@ class TestInfraExtract:
             from_date="2026-01-01",
             to_date="2026-01-01",
             source=None,
-            output_file=output_file,
+            output_file=tmp_path / "out.zip",
         )
 
         assert result.exit_code == 1
         assert "LiteLLM /spend/logs failed for 2026-01-01" in result.output
+        # Transport errors are retried before giving up.
+        assert http_client.get.call_count == 5
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -279,7 +462,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_json_decode_error_exits(
+    def test_json_decode_error_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -290,6 +473,7 @@ class TestInfraExtract:
         output_file = tmp_path / "out.zip"
 
         resp = Mock()
+        resp.status_code = 200
         resp.raise_for_status.return_value = None
         resp.json.side_effect = json.JSONDecodeError("bad", "doc", 0)
 
@@ -306,8 +490,8 @@ class TestInfraExtract:
             output_file=output_file,
         )
 
-        assert result.exit_code == 1
-        assert "Invalid JSON response for 2026-01-01" in result.output
+        assert result.exit_code == 0
+        assert "skipping" in result.output
 
     @patch(
         "llmaven.cli._get_llmaven_secrets",
@@ -315,7 +499,7 @@ class TestInfraExtract:
     )
     @patch("zipfile.ZipFile")
     @patch("httpx.Client")
-    def test_non_list_json_exits(
+    def test_non_list_json_skips_day_and_continues(
         self,
         mock_httpx_client_cls,
         mock_zip_cls,
@@ -326,6 +510,7 @@ class TestInfraExtract:
         output_file = tmp_path / "out.zip"
 
         resp = Mock()
+        resp.status_code = 200
         resp.raise_for_status.return_value = None
         resp.json.return_value = {"not": "a list"}
 
@@ -342,8 +527,196 @@ class TestInfraExtract:
             output_file=output_file,
         )
 
+        assert result.exit_code == 0
+        assert "skipping" in result.output
+
+
+class TestExtractLiteLLMRetry:
+    """Verify retry behavior on transient HTTP failures (issue #88)."""
+
+    @pytest.fixture(autouse=True)
+    def _fast_retries(self, monkeypatch):
+        monkeypatch.setattr("llmaven.cli._RETRY_WAIT_MULTIPLIER", 0)
+        monkeypatch.setattr("llmaven.cli._RETRY_WAIT_MIN_SECONDS", 0)
+        monkeypatch.setattr("llmaven.cli._RETRY_WAIT_MAX_SECONDS", 0)
+
+    @staticmethod
+    def _ok(records):
+        resp = Mock()
+        resp.status_code = 200
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = records
+        return resp
+
+    @staticmethod
+    def _status(code):
+        resp = Mock()
+        resp.status_code = code
+        # raise_for_status only matters if we don't preempt with our transient check
+        resp.raise_for_status.side_effect = __import__("httpx").HTTPStatusError(
+            f"{code}", request=Mock(), response=Mock(status_code=code)
+        )
+        return resp
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_succeeds_first_try_no_retry(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        http_client = Mock()
+        http_client.get.return_value = self._ok([{"request_id": "a"}])
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=tmp_path / "out.zip",
+        )
+
+        assert result.exit_code == 0
+        assert http_client.get.call_count == 1
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_retries_on_503_then_succeeds(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        http_client = Mock()
+        http_client.get.side_effect = [
+            self._status(503),
+            self._status(503),
+            self._ok([{"request_id": "a"}]),
+        ]
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=tmp_path / "out.zip",
+        )
+
+        assert result.exit_code == 0
+        assert http_client.get.call_count == 3
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_retries_on_429_then_succeeds(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        http_client = Mock()
+        http_client.get.side_effect = [
+            self._status(429),
+            self._ok([]),
+        ]
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=tmp_path / "out.zip",
+        )
+
+        assert result.exit_code == 0
+        assert http_client.get.call_count == 2
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_does_not_retry_on_401(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        http_client = Mock()
+        http_client.get.return_value = self._status(401)
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=tmp_path / "out.zip",
+        )
+
         assert result.exit_code == 1
-        assert "Invalid JSON response for 2026-01-01" in result.output
+        assert http_client.get.call_count == 1
+        assert "LiteLLM /spend/logs failed" in result.output
+
+    @patch(
+        "llmaven.cli._get_llmaven_secrets",
+        return_value={"litellm-master-key": "mk", "litellm-base-url": "http://litellm"},
+    )
+    @patch("zipfile.ZipFile")
+    @patch("httpx.Client")
+    def test_exhausts_retries_on_persistent_503(
+        self,
+        mock_httpx_client_cls,
+        mock_zip_cls,
+        _mock_secrets,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        http_client = Mock()
+        http_client.get.return_value = self._status(503)
+        mock_httpx_client_cls.return_value.__enter__.return_value = http_client
+        mock_zip_cls.return_value.__enter__.return_value = Mock()
+
+        result = invoke_extract(
+            runner,
+            from_date="2026-01-01",
+            to_date="2026-01-01",
+            source=None,
+            output_file=tmp_path / "out.zip",
+        )
+
+        assert result.exit_code == 1
+        # max_attempts = 5
+        assert http_client.get.call_count == 5
+        assert "transient HTTP 503" in result.output
 
 
 class MockPagedList(list):
@@ -979,7 +1352,7 @@ class TestInfraExtractMLflow:
             )
 
         assert result.exit_code == 1
-        assert "Default output path is a directory" in result.output
+        assert "Output path is a directory but zip mode is enabled" in result.output
         mock_litellm_extract.assert_not_called()
 
     @patch("llmaven.cli._extract_mlflow_logs")
