@@ -52,6 +52,7 @@ Load the rule file whose trigger matches what you are about to do.
 | [troubleshooting.md](.agents/rules/troubleshooting.md)                 | A documented command fails or behaves unexpectedly                               |
 | [code-conventions.md](.agents/rules/code-conventions.md)               | Naming a new module, class, function, or constant, or a style question           |
 | [infrastructure.md](.agents/rules/infrastructure.md)                   | Pulumi/Azure code under `infrastructure*/` or `deployment/`, or `infra` commands |
+| [pulumi-state-recovery.md](.agents/rules/pulumi-state-recovery.md)     | Reviewing or planning recovery after losing Pulumi state                         |
 
 The agentic RAG system now lives in
 [uw-ssec/llmoxie-rag](https://github.com/uw-ssec/llmoxie-rag).

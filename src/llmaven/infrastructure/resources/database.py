@@ -104,7 +104,18 @@ def create_postgres_server(
         # Administrator credentials
         administrator_login=db_config.admin_login,
         administrator_login_password=admin_password,
-        opts=pulumi.ResourceOptions(depends_on=[vnet_link]),
+        opts=pulumi.ResourceOptions(
+            depends_on=[vnet_link],
+            # Preserve imported fields that this program does not configure.
+            ignore_changes=[
+                "authConfig",
+                "availabilityZone",
+                "dataEncryption",
+                "maintenanceWindow",
+                "replica",
+                "replicationRole",
+            ],
+        ),
         tags=tags,
     )
 
