@@ -368,6 +368,8 @@ def create_pulumi_program(config_path: Path):
                     depends_on=[shared_kv_access_policy, storage_conn_str_secret]
                 ),
                 extra_modules=[adl_logger_path],
+                revision_suffix=config.litellm.revision_suffix,
+                refresh_trigger=config.litellm.refresh_trigger,
             )
 
             # Export LiteLLM URL

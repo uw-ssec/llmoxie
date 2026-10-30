@@ -22,11 +22,8 @@
     "memory": "16gb",
     "storage": "32gb"
   },
-  "containerEnv": {
-    "OLMO_MODEL_FILE": "OLMo-7B-Instruct-Q4_K_M.gguf"
-  },
   "onCreateCommand": {
-    "pixi-install": "pixi install"
+    "pixi-install": "pixi install -e llmaven"
   },
   "postCreateCommand": {
     "create-shell-hook": "pixi shell-hook --shell bash > /etc/profile.d/pixi.sh"
@@ -39,5 +36,5 @@
   "securityOpt": [
     "seccomp=unconfined" // Relax security for Docker operations
   ],
-  "forwardPorts": [8501]
+  "forwardPorts": [4000, 8080]
 }

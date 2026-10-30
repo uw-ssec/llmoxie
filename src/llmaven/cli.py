@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 from enum import Enum
+from time import sleep
 from datetime import datetime, time, timezone, timedelta
 from typing import TYPE_CHECKING, NoReturn, Optional
 
@@ -29,14 +30,6 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# Create subcommand for server operations
-server_app = typer.Typer(
-    name="server",
-    help="Server management commands",
-    add_completion=False,
-)
-app.add_typer(server_app)
-
 # Create subcommand for infrastructure management
 infra_app = typer.Typer(
     name="infra",
@@ -53,14 +46,6 @@ backup_infra_app = typer.Typer(
 )
 app.add_typer(backup_infra_app)
 
-# Create subcommand for agentic RAG operations
-agentic_app = typer.Typer(
-    name="agentic",
-    help="Agentic RAG commands",
-    add_completion=False,
-)
-app.add_typer(agentic_app)
-
 
 # Shared --env-file option: enforces consistent Typer Path validation
 # across `infra validate`, `infra deploy`, and `infra extract`.
@@ -76,230 +61,6 @@ ENV_FILE_OPTION = typer.Option(
     resolve_path=True,
     path_type=Path,
 )
-
-
-class Environment(str, Enum):
-    """Environment modes for the server."""
-
-    development = "development"
-    production = "production"
-
-
-@server_app.command()
-def serve(
-    host: str = typer.Option(
-        "0.0.0.0",
-        "--host",
-        "-h",
-        help="Host to bind the server to",
-    ),
-    port: int = typer.Option(
-        8000,
-        "--port",
-        "-p",
-        help="Port to bind the server to",
-    ),
-    env: Environment = typer.Option(
-        Environment.development,
-        "--env",
-        "-e",
-        help="Environment mode (development or production)",
-        case_sensitive=False,
-    ),
-    workers: Optional[int] = typer.Option(
-        None,
-        "--workers",
-        "-w",
-        help="Number of worker processes (production mode only, defaults to CPU count + 1)",
-    ),
-    reload: bool = typer.Option(
-        False,
-        "--reload",
-        "-r",
-        is_flag=True,
-        help="Enable auto-reload on code changes (development mode only)",
-    ),
-    access_log: bool = typer.Option(
-        True,
-        is_flag=True,
-        help="Enable access logging",
-    ),
-) -> None:
-    """Start the LLMaven API server.
-
-    Uses uvicorn for development mode and gunicorn with uvicorn workers for production mode.
-
-    Examples:
-        Development mode with auto-reload:
-            llmaven serve --env development --reload
-
-        Production mode with 4 workers:
-            llmaven serve --env production --workers 4
-
-        Custom host and port:
-            llmaven serve --host 127.0.0.1 --port 5000
-    """
-    if env == Environment.development:
-        # Use uvicorn for development
-        try:
-            import uvicorn
-        except ImportError:
-            typer.echo(
-                "Error: uvicorn is not installed. "
-                "Please install it with: pip install uvicorn",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        typer.echo(f"Starting LLMaven API in development mode on {host}:{port}")
-        if reload:
-            typer.echo("Auto-reload enabled - watching for file changes")
-
-        uvicorn.run(
-            "llmaven.main:app",
-            host=host,
-            port=port,
-            reload=reload,
-            access_log=access_log,
-            log_level="info",
-        )
-
-    else:
-        # Use gunicorn for production
-        try:
-            import gunicorn.app.base
-        except ImportError:
-            typer.echo(
-                "Error: gunicorn is not installed. "
-                "Please install it with: pip install gunicorn",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        if reload:
-            typer.echo(
-                "Warning: --reload flag is ignored in production mode",
-                err=True,
-            )
-
-        # Calculate workers if not specified
-        if workers is None:
-            import multiprocessing
-
-            workers = (multiprocessing.cpu_count() * 2) + 1
-
-        typer.echo(
-            f"Starting LLMaven API in production mode on {host}:{port} "
-            f"with {workers} workers"
-        )
-
-        class StandaloneApplication(gunicorn.app.base.BaseApplication):
-            """Gunicorn application wrapper."""
-
-            def __init__(self, app_uri: str, options: dict | None = None):
-                self.options = options or {}
-                self.app_uri = app_uri
-                super().__init__()
-
-            def load_config(self):
-                """Load gunicorn configuration."""
-                for key, value in self.options.items():
-                    if key in self.cfg.settings and value is not None:
-                        self.cfg.set(key.lower(), value)
-
-            def load(self):
-                """Load the application."""
-                return self.app_uri
-
-        options = {
-            "bind": f"{host}:{port}",
-            "workers": workers,
-            "worker_class": "uvicorn.workers.UvicornWorker",
-            "accesslog": "-" if access_log else None,
-            "errorlog": "-",
-            "loglevel": "info",
-        }
-
-        StandaloneApplication("llmaven.main:app", options).run()
-
-
-@server_app.command()
-def ui(
-    host: str = typer.Option(
-        "localhost",
-        "--host",
-        "-h",
-        help="Host to bind the Streamlit app to",
-    ),
-    port: int = typer.Option(
-        8501,
-        "--port",
-        "-p",
-        help="Port to bind the Streamlit app to",
-    ),
-    browser: bool = typer.Option(
-        True,
-        is_flag=True,
-        help="Automatically open the app in a browser",
-    ),
-) -> None:
-    """Launch the LLMaven Streamlit UI.
-
-    This starts the Streamlit frontend application for interacting with LLMaven.
-
-    Examples:
-        Launch UI on default port (8501):
-            llmaven ui
-
-        Launch on custom host and port:
-            llmaven ui --host 0.0.0.0 --port 8080
-
-        Launch without opening browser:
-            llmaven ui --no-browser
-    """
-    import subprocess
-    from pathlib import Path
-
-    # Get the path to the frontend app
-    frontend_app = Path(__file__).parent / "frontend" / "app.py"
-
-    if not frontend_app.exists():
-        typer.echo(
-            f"Error: Streamlit app not found at {frontend_app}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    # Build streamlit command
-    cmd = [
-        "streamlit",
-        "run",
-        str(frontend_app),
-        "--server.address",
-        host,
-        "--server.port",
-        str(port),
-    ]
-
-    if not browser:
-        cmd.extend(["--server.headless", "true"])
-
-    typer.echo(f"Starting LLMaven UI on {host}:{port}")
-    if browser:
-        typer.echo("Opening browser...")
-
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        typer.echo(f"Error: Failed to start Streamlit app: {e}", err=True)
-        raise typer.Exit(code=1)
-    except FileNotFoundError:
-        typer.echo(
-            "Error: streamlit is not installed. "
-            "Please install it with: pip install streamlit",
-            err=True,
-        )
-        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -433,6 +194,12 @@ def deploy(
         help="Automatically approve deployment",
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
+    expect_no_changes: bool = typer.Option(
+        False,
+        "--expect-no-changes",
+        is_flag=True,
+        help="Fail without deploying if the preview plans any resource change",
+    ),
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -445,6 +212,9 @@ def deploy(
 
         Deploy with auto-approval:
             llmaven infra deploy --yes
+
+        Deploy only if nothing would change (e.g., to sync state safely):
+            llmaven infra deploy --expect-no-changes
 
         Deploy specific config:
             llmaven infra deploy --config llmaven-config.staging.yaml
@@ -464,6 +234,7 @@ def deploy(
             preview=preview,
             auto_approve=auto_approve,
             env_file_path=env_file,
+            expect_no_changes=expect_no_changes,
         )
     except DeploymentError as e:
         typer.echo(f"✗ Deployment failed: {e}", err=True)
@@ -617,7 +388,6 @@ def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
     """Wrapper to keep secrets import local and easy to mock in tests."""
     from llmaven.infrastructure.utils.secrets import get_llmaven_secrets
 
-    # TODO: Deduplicate the get_llmaven_secrets definition method across codebase (https://github.com/uw-ssec/llmaven/issues/89.
     return get_llmaven_secrets(env_file)
 
 
@@ -711,7 +481,6 @@ def _extract_litellm_logs(
     output_file: Path,
     env_file: Optional[Path],
 ) -> None:
-    import json
     import zipfile
 
     import httpx
@@ -737,43 +506,62 @@ def _extract_litellm_logs(
             current_date = start_date_obj
             while current_date <= end_date_obj:
                 date_str = current_date.isoformat()
-                next_date_str = (current_date + timedelta(days=1)).isoformat()
+                day_records: list[object] = []
+                # failed_hours: list[int] = []
 
+                # /spend/logs only accepts YYYY-MM-DD (no time component).
+                # summarize=false returns individual records instead of daily aggregates.
+                next_date_str = (current_date + timedelta(days=1)).isoformat()
                 params = {
                     "start_date": date_str,
-                    "end_date": next_date_str,  # exclusive upper bound
+                    "end_date": next_date_str,
                     "summarize": "false",
                 }
 
                 try:
                     resp = http_client.get(endpoint, params=params, headers=headers)
                     resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code >= 500:
+                        print(
+                            f"Server error for {date_str}: {exc.response.status_code}. Cooling off for 60 seconds..."
+                        )
+                        sleep(60)  # brief pause before retrying on server errors
+                    else:
+                        _fail_extract(
+                            f"LiteLLM /spend/logs failed for {date_str}: {exc}"
+                        )
                 except httpx.HTTPError as exc:
+                    # Transport errors have no response to read; don't fall
+                    # through to a stale or unbound `resp`.
                     _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
 
                 try:
-                    data = resp.json()
-                except json.JSONDecodeError as exc:
-                    _fail_extract(f"Invalid JSON response for {date_str}: {exc}")
-
-                if not isinstance(data, list):
-                    _fail_extract(
-                        f"Invalid JSON response for {date_str}: expected list"
+                    body = resp.json()
+                    if not isinstance(body, list):
+                        raise ValueError(f"expected list, got {type(body).__name__}")
+                    day_records.extend(body)
+                except Exception as exc:
+                    console_err.print(
+                        f"[yellow]![/yellow] {date_str}: skipping ({exc})"
                     )
 
-                total_records += len(data)
+                total_records += len(day_records)
 
                 try:
-                    jsonl_payload = _serialize_to_jsonl(data)
+                    jsonl_payload = _serialize_to_jsonl(day_records)
                 except Exception as exc:
                     _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
 
-                zipf.writestr(
-                    f"litellm_spend_logs_{date_str}.jsonl",
-                    jsonl_payload,
-                )
+                if day_records:
+                    zipf.writestr(
+                        f"litellm_spend_logs_{date_str}.jsonl",
+                        jsonl_payload,
+                    )
 
-                console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
+                console.print(
+                    f"[green]✓[/green] {date_str}: {len(day_records)} records"
+                )
                 current_date += timedelta(days=1)
 
     console.print(
@@ -1398,358 +1186,6 @@ def backup_infra_output(
     except Exception as e:
         typer.echo(f"✗ Failed to retrieve output: {e}", err=True)
         sys.exit(1)
-
-
-@agentic_app.command()
-def ingest(
-    directories: list[str] = typer.Argument(
-        ...,
-        help="One or more directories containing documents to ingest",
-    ),
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name (defaults to config)",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        is_flag=True,
-        help="Overwrite existing collection without confirmation",
-    ),
-    batch_size: int = typer.Option(
-        100,
-        "--batch-size",
-        "-b",
-        help="Number of documents to process per batch",
-    ),
-) -> None:
-    """Ingest documents into Qdrant collection.
-
-    Ingests documents from one or more directories into a Qdrant collection
-    with multi-vector embeddings (Dense, Sparse, ColBERT).
-
-    Examples:
-        Ingest documents from docs directory:
-            llmaven agentic ingest ./docs
-
-        Ingest from multiple directories:
-            llmaven agentic ingest ./docs ./papers
-
-        Force overwrite existing collection:
-            llmaven agentic ingest ./docs --force
-
-        Use custom collection name:
-            llmaven agentic ingest ./docs --collection my-collection
-    """
-    from pathlib import Path
-    from llmaven.agentic.ingestion import IngestionPipeline
-    from llmaven.agentic.exceptions import AgenticRAGError
-
-    try:
-        # Validate directories exist
-        dir_paths_str = []
-        for directory in directories:
-            path = Path(directory)
-            if not path.exists():
-                console_err.print(f"[red]✗[/red] Directory not found: {directory}")
-                raise typer.Exit(code=1)
-            if not path.is_dir():
-                console_err.print(f"[red]✗[/red] Not a directory: {directory}")
-                raise typer.Exit(code=1)
-            dir_paths_str.append(str(path))
-
-        console.print("[blue]→[/blue] Initializing ingestion pipeline...")
-
-        # Create ingestion pipeline
-        pipeline = IngestionPipeline(
-            collection_name=collection,
-            batch_size=batch_size,
-        )
-
-        # Ingest documents
-        console.print(
-            f"[blue]→[/blue] Ingesting documents from {len(dir_paths_str)} director{'y' if len(dir_paths_str) == 1 else 'ies'}..."
-        )
-
-        # Ingest all directories at once (ingest() accepts list of directory strings)
-        pipeline.ingest(directories=dir_paths_str, force=force)
-
-        console.print("\n[green]✓[/green] Ingestion complete!")
-
-    except AgenticRAGError as e:
-        console_err.print(f"[red]✗[/red] Ingestion failed: {e}")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
-        raise typer.Exit(code=1)
-
-
-@agentic_app.command()
-def search(
-    query: str = typer.Argument(
-        ...,
-        help="Search query",
-    ),
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name (defaults to config)",
-    ),
-    top_k: Optional[int] = typer.Option(
-        None,
-        "--top-k",
-        "-k",
-        help="Number of results to return (defaults to config)",
-    ),
-    prefetch_k: Optional[int] = typer.Option(
-        None,
-        "--prefetch-k",
-        "-p",
-        help="Number of prefetch candidates per method (defaults to config)",
-    ),
-    rerank: bool = typer.Option(
-        True,
-        "--rerank/--no-rerank",
-        help="Enable/disable ColBERT reranking",
-    ),
-) -> None:
-    """Search the knowledge base.
-
-    Executes a hybrid search query with Dense, Sparse, and optional
-    ColBERT reranking.
-
-    Examples:
-        Basic search:
-            llmaven agentic search "What is machine learning?"
-
-        Search with custom top-k:
-            llmaven agentic search "architecture patterns" --top-k 10
-
-        Search without reranking:
-            llmaven agentic search "deployment" --no-rerank
-
-        Search specific collection:
-            llmaven agentic search "query" --collection my-collection
-    """
-    from llmaven.agentic.search import HybridSearcher
-    from llmaven.agentic.exceptions import AgenticRAGError
-
-    try:
-        console.print(f"[blue]→[/blue] Searching for: [bold]{query}[/bold]")
-
-        # Create searcher
-        searcher = HybridSearcher(
-            collection_name=collection,
-            enable_rerank=rerank,
-            prefetch_top_k=prefetch_k,
-            final_top_k=top_k,
-        )
-
-        # Execute search
-        results = searcher.search(query=query, limit=top_k)
-
-        if not results:
-            console.print("[yellow]![/yellow] No results found")
-            return
-
-        # Display results
-        console.print(
-            f"\n[green]✓[/green] Found {len(results)} result{'s' if len(results) != 1 else ''}:\n"
-        )
-
-        for i, result in enumerate(results, 1):
-            console.print(
-                f"[bold cyan]Result {i}[/bold cyan] (score: {result.score:.4f})"
-            )
-            console.print(f"[dim]Source:[/dim] {result.file_path}")
-            if result.heading_hierarchy:
-                console.print(f"[dim]Section:[/dim] {result.heading_hierarchy}")
-            console.print(
-                f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}\n"
-            )
-
-    except AgenticRAGError as e:
-        console_err.print(f"[red]✗[/red] Search failed: {e}")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
-        raise typer.Exit(code=1)
-
-
-@agentic_app.command()
-def chat(
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name (defaults to config)",
-    ),
-    provider: Optional[str] = typer.Option(
-        None,
-        "--provider",
-        help="LLM provider override (openai, ollama, litellm, azure, huggingface)",
-    ),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        "-m",
-        help="LLM model override",
-    ),
-    litellm_base: Optional[str] = typer.Option(
-        None,
-        "--litellm-base",
-        help="LiteLLM proxy base URL (e.g., http://localhost:4000)",
-    ),
-    litellm_api_key: Optional[str] = typer.Option(
-        None,
-        "--litellm-api-key",
-        help="LiteLLM API key",
-    ),
-    litellm_model_prefix: Optional[str] = typer.Option(
-        None,
-        "--litellm-prefix",
-        help="LiteLLM model prefix (e.g., openai/, anthropic/)",
-    ),
-    azure_endpoint: Optional[str] = typer.Option(
-        None,
-        "--azure-endpoint",
-        help="Azure OpenAI endpoint URL (e.g., https://myresource.openai.azure.com)",
-    ),
-    azure_api_key: Optional[str] = typer.Option(
-        None,
-        "--azure-api-key",
-        help="Azure API key",
-    ),
-    azure_deployment: Optional[str] = typer.Option(
-        None,
-        "--azure-deployment",
-        help="Azure deployment name",
-    ),
-) -> None:
-    """Launch interactive RAG chat.
-
-    Starts an interactive REPL for conversing with the RAG agent.
-    The agent has access to the knowledge base and can provide
-    answers with citations.
-
-    Examples:
-        Start chat:
-            llmaven agentic chat
-
-        Chat with specific collection:
-            llmaven agentic chat --collection my-docs
-
-        Use different LLM:
-            llmaven agentic chat --provider ollama --model llama2
-
-        Use LiteLLM proxy:
-            llmaven agentic chat --provider litellm --litellm-base http://localhost:4000 --model gpt-4o-mini
-
-        Use Azure OpenAI:
-            llmaven agentic chat --provider azure --azure-endpoint https://myresource.openai.azure.com --azure-deployment gpt-4o
-    """
-    from rich.markdown import Markdown
-    from rich.panel import Panel
-
-    from llmaven.agentic.agent import RAGAgent
-    from llmaven.agentic.exceptions import AgenticRAGError
-    from llmaven.agentic.settings import config
-
-    try:
-        console.print("[blue]→[/blue] Initializing RAG agent...")
-
-        # Override config with CLI options
-        if litellm_base:
-            config.litellm_api_base = litellm_base
-        if litellm_api_key:
-            config.litellm_api_key = litellm_api_key
-        if litellm_model_prefix:
-            config.litellm_model_prefix = litellm_model_prefix
-        if azure_endpoint:
-            config.azure_endpoint = azure_endpoint
-        if azure_api_key:
-            config.azure_api_key = azure_api_key
-        if azure_deployment:
-            config.azure_deployment_name = azure_deployment
-
-        # Create agent
-        agent = RAGAgent(
-            collection_name=collection,
-            llm_provider=provider,
-            llm_model=model,
-        )
-
-        console.print(
-            Panel(
-                "[bold green]RAG Chat Session[/bold green]\n\n"
-                "Ask questions about your knowledge base.\n"
-                "Type 'exit' or 'quit' to end the session.",
-                border_style="green",
-            )
-        )
-
-        message_history = []
-
-        while True:
-            # Get user input
-            try:
-                query = console.input("\n[bold cyan]You:[/bold cyan] ")
-            except (KeyboardInterrupt, EOFError):
-                console.print("\n[yellow]![/yellow] Session ended")
-                break
-
-            if query.strip().lower() in ["exit", "quit"]:
-                console.print("[yellow]![/yellow] Session ended")
-                break
-
-            if not query.strip():
-                continue
-
-            # Get agent response
-            console.print("[blue]→[/blue] Thinking...")
-
-            try:
-                response = agent.run_sync(query=query, message_history=message_history)
-
-                # Display answer
-                console.print("\n[bold green]Assistant:[/bold green]")
-                console.print(Markdown(response.answer))
-
-                # Display citations
-                if response.citations:
-                    console.print(
-                        f"\n[dim]Citations ({len(response.citations)}):[/dim]"
-                    )
-                    for i, citation in enumerate(response.citations, 1):
-                        console.print(
-                            f"  [{i}] {citation.source_file} "
-                            f"(score: {citation.relevance_score:.2f})"
-                        )
-                        console.print(f"      {citation.quote[:100]}...")
-
-                console.print(
-                    f"\n[dim]Confidence: {response.confidence:.2f} | Sources: {response.sources_used}[/dim]"
-                )
-
-                # Update message history
-                message_history.append({"role": "user", "content": query})
-                message_history.append(
-                    {"role": "assistant", "content": response.answer}
-                )
-
-            except Exception as e:
-                console_err.print(f"[red]✗[/red] Error: {e}")
-
-    except AgenticRAGError as e:
-        console_err.print(f"[red]✗[/red] Failed to start chat: {e}")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
-        raise typer.Exit(code=1)
 
 
 @app.command()
