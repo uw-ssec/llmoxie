@@ -915,7 +915,13 @@ def _print_loadtest_results(results: "LoadTestResults") -> None:
         ("Failed requests", f"{results.failed_requests:,}"),
         ("  Content policy (400)", f"{results.content_policy_errors:,}"),
         ("Fallback requests", f"{results.fallback_requests:,}"),
-        ("Fallback rate", f"{results.fallback_rate_pct:.2f}%"),
+        (
+            "Fallback rate",
+            "unknown"
+            if results.fallback_rate_pct is None
+            else f"{results.fallback_rate_pct:.2f}%",
+        ),
+        ("  Unclassified", f"{results.fallback_unclassified_requests:,}"),
         ("Served model counts", results.served_model_counts_json),
         ("Error rate", f"{results.error_rate_pct:.2f}%"),
         ("Throughput", f"{results.throughput_rps:.1f} req/s"),

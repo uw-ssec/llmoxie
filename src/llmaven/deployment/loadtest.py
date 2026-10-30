@@ -35,7 +35,10 @@ class LoadTestResults:
     failed_requests: int
     content_policy_errors: int
     fallback_requests: int
-    fallback_rate_pct: float
+    # None when any successful response could not be classified, so a saved
+    # rate is never a false 0%.
+    fallback_rate_pct: float | None
+    fallback_unclassified_requests: int
     served_model_counts_json: str
     error_rate_pct: float
     throughput_rps: float
@@ -83,13 +86,32 @@ def _served_group(headers: Any, deployment_groups: dict[str, str]) -> str | None
     return deployment_groups.get(model_id) if model_id else None
 
 
+def _classify_fallback(
+    headers: Any, deployment_groups: dict[str, str], requested_model: Any
+) -> bool | None:
+    """Return whether a successful response was served by a fallback.
+
+    The response ``model`` cannot signal a fallback: it is the requested alias
+    on /v1/messages and the underlying model elsewhere. Use LiteLLM's fallback
+    header when present, else the serving model group. Returns ``None`` when
+    neither is available, so the caller can report the result as unknown.
+    """
+    if _attempted_fallbacks(headers) > 0:
+        return True
+    group = _served_group(headers, deployment_groups)
+    if group is None:
+        return None
+    return group != requested_model
+
+
 def fetch_deployment_groups(base_url: str, api_key: str) -> dict[str, str]:
     """Return ``{deployment id: model group}`` from the proxy's ``/model/info``.
 
     On ``/v1/messages`` LiteLLM echoes the requested alias as the response
     ``model`` and omits the attempted-fallbacks header, so the deployment id
     header is the only evidence of which model group served a request. Returns
-    an empty mapping (and logs a warning) if the endpoint is unavailable.
+    an empty mapping (and logs a warning) if the endpoint is unavailable; the
+    run then reports its fallback rate as unknown rather than 0%.
     """
     import httpx
 
@@ -383,7 +405,7 @@ def run_load_test(
     token_acc: dict[str, int] = {"in": 0, "out": 0, "n": 0}
     error_acc: dict[str, int] = {"n": 0}
     content_policy_acc: dict[str, int] = {"n": 0}
-    fallback_acc: dict[str, int] = {"n": 0}
+    fallback_acc: dict[str, int] = {"n": 0, "unclassified": 0}
     served_model_acc: dict[str, int] = {}
 
     # Capture locals for use inside the inner class.
@@ -438,13 +460,12 @@ def run_load_test(
                             _served_model_acc[served] = (
                                 _served_model_acc.get(served, 0) + 1
                             )
-                        # The response ``model`` cannot signal a fallback: it
-                        # is the requested alias on /v1/messages and the
-                        # underlying model elsewhere. Use the serving model
-                        # group, or LiteLLM's fallback header when present.
-                        if _attempted_fallbacks(resp.headers) > 0 or (
-                            group is not None and group != req.get("model")
-                        ):
+                        fell_back = _classify_fallback(
+                            resp.headers, _deployment_groups, req.get("model")
+                        )
+                        if fell_back is None:
+                            _fallback_acc["unclassified"] += 1
+                        elif fell_back:
                             _fallback_acc["n"] += 1
                         _token_acc["in"] += tokens_in
                         _token_acc["out"] += tokens_out
@@ -508,7 +529,10 @@ def run_load_test(
         failed_requests=failed,
         content_policy_errors=content_policy_acc["n"],
         fallback_requests=fallback_acc["n"],
-        fallback_rate_pct=(fallback_acc["n"] / successful * 100) if successful else 0.0,
+        fallback_rate_pct=_fallback_rate_pct(
+            fallback_acc["n"], fallback_acc["unclassified"], successful
+        ),
+        fallback_unclassified_requests=fallback_acc["unclassified"],
         served_model_counts_json=json.dumps(served_model_acc, sort_keys=True),
         error_rate_pct=(failed / total * 100) if total else 0.0,
         throughput_rps=stats.total_rps,
@@ -524,6 +548,15 @@ def run_load_test(
         dataset_size=len(dataset),
         unsent_requests=max(len(dataset) - total, 0),
     )
+
+
+def _fallback_rate_pct(
+    fallbacks: int, unclassified: int, successful: int
+) -> float | None:
+    """Return the fallback rate, or ``None`` if any success was unclassified."""
+    if unclassified:
+        return None
+    return (fallbacks / successful * 100) if successful else 0.0
 
 
 def save_results(results: LoadTestResults, output: Path) -> None:

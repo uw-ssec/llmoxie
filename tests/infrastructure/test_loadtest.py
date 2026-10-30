@@ -7,7 +7,9 @@ import pytest
 
 from llmaven.deployment.loadtest import (
     _attempted_fallbacks,
+    _classify_fallback,
     _extract_request,
+    _fallback_rate_pct,
     _load_requests,
     _parse_success_body,
     _run_deadline_seconds,
@@ -217,3 +219,25 @@ def test_served_group_maps_deployment_id_to_model_group() -> None:
     assert _served_group({"x-litellm-model-id": "dep-2"}, groups) == "backup"
     assert _served_group({"x-litellm-model-id": "unknown"}, groups) is None
     assert _served_group({}, groups) is None
+
+
+def test_classify_fallback_is_unknown_without_a_deployment_mapping() -> None:
+    groups = {"dep-1": "primary", "dep-2": "backup"}
+    backup = {"x-litellm-model-id": "dep-2"}
+
+    assert _classify_fallback(backup, groups, "primary") is True
+    assert (
+        _classify_fallback({"x-litellm-model-id": "dep-1"}, groups, "primary") is False
+    )
+    # /model/info unavailable: the backup id cannot be resolved.
+    assert _classify_fallback(backup, {}, "primary") is None
+    assert (
+        _classify_fallback({"x-litellm-attempted-fallbacks": "1"}, {}, "primary")
+        is True
+    )
+
+
+def test_fallback_rate_is_none_when_any_success_is_unclassified() -> None:
+    assert _fallback_rate_pct(fallbacks=0, unclassified=6, successful=6) is None
+    assert _fallback_rate_pct(fallbacks=6, unclassified=0, successful=6) == 100.0
+    assert _fallback_rate_pct(fallbacks=0, unclassified=0, successful=0) == 0.0
