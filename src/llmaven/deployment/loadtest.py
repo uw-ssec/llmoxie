@@ -21,7 +21,7 @@ class PreflightResult:
 
     @property
     def ok(self) -> bool:
-        return self.status_code == 200
+        return self.status_code == 200 and self.error is None
 
 
 class LoadTestError(Exception):
@@ -49,6 +49,7 @@ class LoadTestResults:
     tokens_out_avg: float
     workers: int
     dataset_size: int
+    unsent_requests: int
 
 
 _ANTHROPIC_API_PATH = "/v1/messages"
@@ -59,11 +60,96 @@ _ANTHROPIC_SAFE_FIELDS = {
     "messages",
     "system",
     "max_tokens",
+    "temperature",
+    "stop_sequences",
     "top_p",
     "top_k",
     "tools",
     "tool_choice",
 }
+
+
+def _attempted_fallbacks(headers: Any) -> int:
+    """Return LiteLLM's ``x-litellm-attempted-fallbacks`` count (0 if absent)."""
+    try:
+        return int(headers.get("x-litellm-attempted-fallbacks") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _served_group(headers: Any, deployment_groups: dict[str, str]) -> str | None:
+    """Map LiteLLM's ``x-litellm-model-id`` header to its model group name."""
+    model_id = headers.get("x-litellm-model-id")
+    return deployment_groups.get(model_id) if model_id else None
+
+
+def fetch_deployment_groups(base_url: str, api_key: str) -> dict[str, str]:
+    """Return ``{deployment id: model group}`` from the proxy's ``/model/info``.
+
+    On ``/v1/messages`` LiteLLM echoes the requested alias as the response
+    ``model`` and omits the attempted-fallbacks header, so the deployment id
+    header is the only evidence of which model group served a request. Returns
+    an empty mapping (and logs a warning) if the endpoint is unavailable.
+    """
+    import httpx
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(
+                base_url.rstrip("/") + "/model/info",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        resp.raise_for_status()
+        groups = {
+            entry["model_info"]["id"]: entry["model_name"]
+            for entry in resp.json().get("data", [])
+        }
+    except Exception as exc:
+        logger.warning(
+            "Could not read /model/info (%s); fallbacks served on "
+            "/v1/messages will not be detected",
+            exc,
+        )
+        return {}
+    return groups
+
+
+def _is_token_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _parse_success_body(text: str) -> tuple[str | None, int, int] | str:
+    """Validate an HTTP 200 Anthropic Messages response body.
+
+    Returns ``(served_model, input_tokens, output_tokens)`` for a usable
+    response, or a failure reason string when the body is not a successful
+    message (invalid JSON, an error object, or missing token usage).
+    """
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return "HTTP 200 with invalid JSON body"
+    if not isinstance(payload, dict):
+        return "HTTP 200 with a non-object JSON body"
+    if payload.get("type") == "error" or "error" in payload:
+        return f"HTTP 200 with an error body: {text[:200]}"
+    usage = payload.get("usage")
+    if not isinstance(usage, dict) or not (
+        _is_token_count(usage.get("input_tokens"))
+        and _is_token_count(usage.get("output_tokens"))
+    ):
+        return "HTTP 200 without valid token usage"
+    served_model = payload.get("model")
+    if not isinstance(served_model, str) or not served_model:
+        served_model = None
+    return served_model, usage["input_tokens"], usage["output_tokens"]
+
+
+def _run_deadline_seconds(dataset_size: int, workers: int) -> float:
+    """Upper bound on a full replay: each worker sends its share of requests
+    back to back, and each request can take up to the request timeout."""
+    per_worker = -(-dataset_size // workers)  # ceiling division
+    return per_worker * _REQUEST_TIMEOUT_SECONDS + 60.0
 
 
 def _is_anthropic_call_type(call_type: str) -> bool:
@@ -102,7 +188,7 @@ def _extract_request(
                 if not isinstance(block, dict):
                     cleaned.append(block)
                     continue
-                if block.get("type") == "thinking":
+                if block.get("type") in ("thinking", "redacted_thinking"):
                     continue
                 if block.get("type") == "image":
                     continue
@@ -122,8 +208,14 @@ def _extract_request(
                             {"type": "text", "text": "[image removed]"}
                         ]
                 cleaned.append(block)
+            if not cleaned:
+                # A message holding only thinking/image blocks would be sent
+                # with empty content, which the API rejects; drop it.
+                continue
             msg_copy["content"] = cleaned
         filtered_msgs.append(msg_copy)
+    if not filtered_msgs:
+        return None
     request["messages"] = filtered_msgs
 
     # Strip cache_control from tool definitions — it's a prompt-caching
@@ -149,6 +241,7 @@ def _extract_request(
 def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
     dataset: list[dict[str, Any]] = []
     skipped = 0
+    non_anthropic: dict[str, int] = {}
     with requests_file.open() as fh:
         for lineno, line in enumerate(fh, start=1):
             line = line.strip()
@@ -163,15 +256,9 @@ def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
 
             call_type = entry.get("call_type", "")
             if not _is_anthropic_call_type(call_type):
-                # raise LoadTestError(
-
-                logger.warning(
-                    f"Line {lineno}: expected Anthropic data (call_type='anthropic_messages')"
-                    f" but got call_type={call_type!r}. Only Anthropic requests are supported."
-                )
+                non_anthropic[call_type] = non_anthropic.get(call_type, 0) + 1
                 skipped += 1
                 continue
-                # )
 
             raw_req = entry.get("proxy_server_request")
             if not raw_req:
@@ -185,6 +272,12 @@ def _load_requests(requests_file: Path, model: str) -> list[dict[str, Any]]:
 
             dataset.append(result)
 
+    if non_anthropic:
+        logger.warning(
+            "Skipped non-Anthropic entries (only call_type='anthropic_messages' "
+            "is supported): %s",
+            json.dumps(non_anthropic, sort_keys=True),
+        )
     if skipped:
         logger.warning("Skipped %s line(s) in %s", skipped, requests_file)
     return dataset
@@ -207,11 +300,16 @@ def preflight_check(
     try:
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(url, json=sample_request, headers=headers)
+        error = None
+        if resp.status_code == 200:
+            parsed = _parse_success_body(resp.text)
+            if isinstance(parsed, str):
+                error = parsed
         return PreflightResult(
             url=url,
             status_code=resp.status_code,
             response_body=resp.text[:2000],
-            error=None,
+            error=error,
         )
     except httpx.ConnectError as exc:
         return PreflightResult(
@@ -244,12 +342,13 @@ def run_load_test(
 ) -> LoadTestResults:
     """Run a headless Locust load test against a LiteLLM proxy.
 
-    Each request from *requests_file* (JSONL of LiteLLM proxy log entries) is
-    sent exactly once. Requests are pulled from a shared queue by workers,
-    ensuring full replay. Requests are replayed against the same endpoint type
-    they were originally sent to, as determined by each entry's ``call_type``
-    field. Streaming is always disabled so token usage can be read from the
-    response.
+    Each Anthropic Messages entry from *requests_file* (JSONL of LiteLLM proxy
+    log entries) is sent exactly once to ``/v1/messages``. Requests are pulled
+    from a shared queue by workers, ensuring full replay; other ``call_type``
+    entries are skipped. Streaming is always disabled so token usage can be
+    read from the response. An HTTP 200 counts as a success only when its body
+    is a message with valid token usage. If the run exceeds its deadline, the
+    requests never sent are reported in ``unsent_requests``.
 
     Args:
         requests_file: Path to the JSONL file of proxy log entries.
@@ -295,6 +394,7 @@ def run_load_test(
     _content_policy_acc = content_policy_acc
     _fallback_acc = fallback_acc
     _served_model_acc = served_model_acc
+    _deployment_groups = fetch_deployment_groups(base_url, api_key)
     _error_log = error_log
     _max_errors = max_errors_logged
 
@@ -326,71 +426,73 @@ def run_load_test(
                 catch_response=True,
             ) as resp:
                 if resp.status_code == 200:
-                    try:
-                        payload = resp.json()
-                        usage = (
-                            payload.get("usage", {})
-                            if isinstance(payload, dict)
-                            else {}
-                        )
-                        if not isinstance(usage, dict):
-                            usage = {}
-
-                        requested_model = req.get("model")
-                        served_model = (
-                            payload.get("model") if isinstance(payload, dict) else None
-                        )
-                        if isinstance(served_model, str) and served_model:
-                            _served_model_acc[served_model] = (
-                                _served_model_acc.get(served_model, 0) + 1
+                    parsed = _parse_success_body(resp.text)
+                    if isinstance(parsed, str):
+                        failure = parsed
+                    else:
+                        resp.success()
+                        served_model, tokens_in, tokens_out = parsed
+                        group = _served_group(resp.headers, _deployment_groups)
+                        served = group or served_model
+                        if served:
+                            _served_model_acc[served] = (
+                                _served_model_acc.get(served, 0) + 1
                             )
-                            if requested_model and served_model != requested_model:
-                                _fallback_acc["n"] += 1
-
-                        _token_acc["in"] += usage.get("input_tokens", 0)
-                        _token_acc["out"] += usage.get("output_tokens", 0)
+                        # The response ``model`` cannot signal a fallback: it
+                        # is the requested alias on /v1/messages and the
+                        # underlying model elsewhere. Use the serving model
+                        # group, or LiteLLM's fallback header when present.
+                        if _attempted_fallbacks(resp.headers) > 0 or (
+                            group is not None and group != req.get("model")
+                        ):
+                            _fallback_acc["n"] += 1
+                        _token_acc["in"] += tokens_in
+                        _token_acc["out"] += tokens_out
                         _token_acc["n"] += 1
-                    except Exception as e:
-                        print(f"Error occurred while processing response: {e}")
-                    resp.success()
+                        return
                 else:
                     if (
                         resp.status_code == 400
                         and "ContentPolicyViolationError" in resp.text
                     ):
                         _content_policy_acc["n"] += 1
-                    resp.failure(f"HTTP {resp.status_code}: {resp.text[:200]}")
-                    if _error_log is not None and _error_acc["n"] < _max_errors:
-                        import datetime
+                    failure = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                resp.failure(failure)
+                if _error_log is not None and _error_acc["n"] < _max_errors:
+                    import datetime
 
-                        _error_acc["n"] += 1
-                        entry = {
-                            "ts": datetime.datetime.now(
-                                datetime.timezone.utc
-                            ).isoformat(),
-                            "status_code": resp.status_code,
-                            "model": req.get("model"),
-                            "request_preview": str(
-                                (req.get("messages") or [{}])[0].get("content", "")
-                            )[:200],
-                            "response": resp.text[:500],
-                        }
-                        with _error_log.open("a", encoding="utf-8") as fh:
-                            fh.write(json.dumps(entry) + "\n")
+                    _error_acc["n"] += 1
+                    entry = {
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "status_code": resp.status_code,
+                        "model": req.get("model"),
+                        "request_preview": str(
+                            (req.get("messages") or [{}])[0].get("content", "")
+                        )[:200],
+                        "response": resp.text[:500],
+                    }
+                    with _error_log.open("a", encoding="utf-8") as fh:
+                        fh.write(json.dumps(entry) + "\n")
 
     env = Environment(user_classes=[LiteLLMUser], host=base_url.rstrip("/"))
     runner = env.create_local_runner()
     runner.start(user_count=workers, spawn_rate=workers, wait=True)
     gevent.sleep(2)
-    n = 0  # Wait for ramp-up to finish
+    deadline = _run_deadline_seconds(len(dataset), workers)
+    n = 0  # Wait for every worker to drain the queue and stop.
     while runner.user_count > 0:
         if n % 20 == 0:
             left = len(_request_queue)
             print(f"{left} requests left... {runner.user_count} users active")
         gevent.sleep(0.1)
         n += 1
-        if n > 20000:  # sanity check to prevent infinite loop
-            print("Waited too long for test to complete, exiting...")
+        if n * 0.1 > deadline:
+            logger.warning(
+                "Load test exceeded its %.0fs deadline; stopping with "
+                "%s request(s) still queued",
+                deadline,
+                len(_request_queue),
+            )
             break
     runner.stop()
 
@@ -420,6 +522,7 @@ def run_load_test(
         tokens_out_avg=token_acc["out"] / n_tokens if n_tokens else 0.0,
         workers=workers,
         dataset_size=len(dataset),
+        unsent_requests=max(len(dataset) - total, 0),
     )
 
 

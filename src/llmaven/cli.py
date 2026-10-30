@@ -911,6 +911,7 @@ def _print_loadtest_results(results: "LoadTestResults") -> None:
         ("Workers", str(results.workers)),
         ("Dataset size", f"{results.dataset_size:,} request(s)"),
         ("Total requests sent", f"{results.total_requests:,}"),
+        ("Requests not sent", f"{results.unsent_requests:,}"),
         ("Failed requests", f"{results.failed_requests:,}"),
         ("  Content policy (400)", f"{results.content_policy_errors:,}"),
         ("Fallback requests", f"{results.fallback_requests:,}"),
@@ -950,7 +951,7 @@ def loadtest(
         ...,
         "--model",
         "-m",
-        help="Model name to test (e.g. claude-haiku-4-5-20251001, gpt-4o). Must match a model configured on the proxy.",
+        help="Anthropic model name to test (e.g. claude-haiku-4-5-20251001). Must match a model configured on the proxy.",
     ),
     output: Optional[Path] = typer.Option(
         None,
@@ -965,19 +966,20 @@ def loadtest(
     """Load test the LiteLLM proxy using historical requests.
 
     Reads LLMAVEN_SECRETS_LITELLM_BASE_URL and LLMAVEN_SECRETS_LITELLM_MASTER_KEY
-    from the environment (or --env-file).  Each request is replayed to the same
-    endpoint type it was originally sent to (determined by call_type), so no format
-    conversion is needed.
+    from the environment (or --env-file).  Only Anthropic Messages entries
+    (call_type 'anthropic_messages') are replayed, each exactly once, to the
+    proxy's /v1/messages endpoint with --model substituted.  Failed responses,
+    including request previews, are logged to errors-<model>-<workers>-<ts>.log
+    in the current directory.
 
     Examples:
-        Quick smoke test (10 workers, 30 s):
+        Quick smoke test with 10 workers:
             llmaven infra loadtest requests.jsonl --model claude-haiku-4-5-20251001 --workers 10
 
-        Full concurrency test with results saved:
+        Higher concurrency with results appended to a CSV:
             llmaven infra loadtest requests.jsonl \\
                 --model claude-haiku-4-5-20251001 \\
-                --workers 150 --duration 120 --ramp-up 30 \\
-                --output results.json --env-file .env
+                --workers 150 --output results.csv --env-file .env
     """
     from llmaven.deployment.loadtest import (
         LoadTestError,
@@ -1015,6 +1017,8 @@ def loadtest(
     if pf.error:
         console_err.print(f"[red]✗[/red] Preflight failed — {pf.error}")
         console_err.print(f"  URL: {pf.url}")
+        if pf.response_body:
+            console_err.print(f"  Response: {pf.response_body}")
         raise typer.Exit(code=1)
     elif not pf.ok:
         console_err.print(
@@ -1054,6 +1058,13 @@ def loadtest(
     if error_log.exists():
         n = sum(1 for _ in error_log.open(encoding="utf-8"))
         console.print(f"[yellow]![/yellow] {n} error(s) logged to {error_log}")
+
+    if results.unsent_requests:
+        console_err.print(
+            f"[red]✗[/red] Load test stopped at its deadline with "
+            f"{results.unsent_requests:,} request(s) not sent; results are partial"
+        )
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="deploy")
