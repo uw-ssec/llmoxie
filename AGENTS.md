@@ -30,10 +30,9 @@ These apply to every task, in every session:
    `pixi run -e llmaven okf search --for-path <file>`. A `governance: hold` hit
    means stop and confirm with the user; a `governance: constraint` hit lists
    invariants the change must keep. See the `okf-memory` skill.
-7. **Never modify `archive/`.** It holds legacy code kept for reference only.
-8. **Never commit secrets or deployment config.** `llmaven-config*.yaml`,
+7. **Never commit secrets or deployment config.** `llmaven-config*.yaml`,
    `.env`, and `.env.*` are gitignored; only `*.example` files are tracked.
-9. **Never touch live infrastructure without explicit approval.**
+8. **Never touch live infrastructure without explicit approval.**
    `llmaven infra deploy` (including `--preview`), `llmaven infra destroy`, and
    `pixi run -e llmaven clean` (`docker-compose down -v`) change or delete real
    resources and data.

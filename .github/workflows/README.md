@@ -84,14 +84,6 @@ services.
 
 ---
 
-### Proxy Container Workflow (`proxy-container.yml`)
-
-**Purpose**: Builds and pushes the reverse proxy container image.
-
-**Triggers**: Similar to build-services.yml
-
----
-
 ## Local Testing
 
 ### Running Tests Locally
