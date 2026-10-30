@@ -284,6 +284,8 @@ def create_litellm_app(
     tags: Optional[Dict[str, str]] = None,
     opts: Optional[pulumi.ResourceOptions] = None,
     extra_modules: Optional[List[Path]] = None,
+    revision_suffix: Optional[str] = None,
+    refresh_trigger: Optional[str] = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -306,6 +308,8 @@ def create_litellm_app(
         tags: Resource tags
         opts: Pulumi resource options
         extra_modules: List of additional local Python modules to read and mount as secrets (for custom callbacks, etc.)
+        revision_suffix: Revision name suffix (optional)
+        refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
 
     Returns:
         ContainerApp resource
@@ -416,5 +420,7 @@ def create_litellm_app(
         tags=tags,
         enable_ingress=True,
         ingress_external=True,
+        revision_suffix=revision_suffix,
+        refresh_trigger=refresh_trigger,
         opts=opts,
     )

@@ -15,9 +15,36 @@ Closes #<!-- issue number -->
 
 <!-- How did you verify this works? Paste relevant test output or describe manual steps. -->
 
-- [ ] Existing tests pass (`pixi run -e llmaven pytest tests/`)
+- [ ] `pixi run -e llmaven verify` passes (pre-commit, `okf validate`, and the
+      full `pytest tests/` suite)
 - [ ] New tests added (if applicable)
-- [ ] `pre-commit run --all-files` passes
+
+## AI assistance disclosure
+
+<!-- Required by AI_POLICY.md. Disclosure is lightweight and shame-free; its
+     purpose is reviewer calibration, not judgment. Leaving the box unchecked
+     asserts that no AI assistance was used. -->
+
+- [ ] This PR is AI-assisted
+
+**Harness / model:**
+
+<!-- e.g. claude-code:claude-fable-5-1 — the same `<harness>:<model>` token as
+     the `Assisted-by:` trailer on the commits -->
+
+**I personally verified:**
+
+<!-- Required on AI-assisted PRs, e.g. ran the full test suite; deployed with
+     --preview against the dev stack -->
+
+**Less certain about:**
+
+<!-- Reviewers spend attention here, so be specific -->
+
+**AI-generated portions:**
+
+<!-- Which files or functions, and roughly how much. Mark AI-written text in
+     this description. -->
 
 ## Notes for reviewer
 

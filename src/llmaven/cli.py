@@ -6,8 +6,8 @@ This module provides command-line interface functionality for the LLMaven projec
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from enum import Enum
+from time import sleep
 from datetime import datetime, time, timezone, timedelta
 from typing import TYPE_CHECKING, NoReturn, Optional
 
@@ -27,14 +27,6 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# Create subcommand for server operations
-server_app = typer.Typer(
-    name="server",
-    help="Server management commands",
-    add_completion=False,
-)
-app.add_typer(server_app)
-
 # Create subcommand for infrastructure management
 infra_app = typer.Typer(
     name="infra",
@@ -51,14 +43,6 @@ backup_infra_app = typer.Typer(
 )
 app.add_typer(backup_infra_app)
 
-# Create subcommand for agentic RAG operations
-agentic_app = typer.Typer(
-    name="agentic",
-    help="Agentic RAG commands",
-    add_completion=False,
-)
-app.add_typer(agentic_app)
-
 
 # Shared --env-file option: enforces consistent Typer Path validation
 # across `infra validate`, `infra deploy`, and `infra extract`.
@@ -74,230 +58,6 @@ ENV_FILE_OPTION = typer.Option(
     resolve_path=True,
     path_type=Path,
 )
-
-
-class Environment(str, Enum):
-    """Environment modes for the server."""
-
-    development = "development"
-    production = "production"
-
-
-@server_app.command()
-def serve(
-    host: str = typer.Option(
-        "0.0.0.0",
-        "--host",
-        "-h",
-        help="Host to bind the server to",
-    ),
-    port: int = typer.Option(
-        8000,
-        "--port",
-        "-p",
-        help="Port to bind the server to",
-    ),
-    env: Environment = typer.Option(
-        Environment.development,
-        "--env",
-        "-e",
-        help="Environment mode (development or production)",
-        case_sensitive=False,
-    ),
-    workers: Optional[int] = typer.Option(
-        None,
-        "--workers",
-        "-w",
-        help="Number of worker processes (production mode only, defaults to CPU count + 1)",
-    ),
-    reload: bool = typer.Option(
-        False,
-        "--reload",
-        "-r",
-        is_flag=True,
-        help="Enable auto-reload on code changes (development mode only)",
-    ),
-    access_log: bool = typer.Option(
-        True,
-        is_flag=True,
-        help="Enable access logging",
-    ),
-) -> None:
-    """Start the LLMaven API server.
-
-    Uses uvicorn for development mode and gunicorn with uvicorn workers for production mode.
-
-    Examples:
-        Development mode with auto-reload:
-            llmaven serve --env development --reload
-
-        Production mode with 4 workers:
-            llmaven serve --env production --workers 4
-
-        Custom host and port:
-            llmaven serve --host 127.0.0.1 --port 5000
-    """
-    if env == Environment.development:
-        # Use uvicorn for development
-        try:
-            import uvicorn
-        except ImportError:
-            typer.echo(
-                "Error: uvicorn is not installed. "
-                "Please install it with: pip install uvicorn",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        typer.echo(f"Starting LLMaven API in development mode on {host}:{port}")
-        if reload:
-            typer.echo("Auto-reload enabled - watching for file changes")
-
-        uvicorn.run(
-            "llmaven.main:app",
-            host=host,
-            port=port,
-            reload=reload,
-            access_log=access_log,
-            log_level="info",
-        )
-
-    else:
-        # Use gunicorn for production
-        try:
-            import gunicorn.app.base
-        except ImportError:
-            typer.echo(
-                "Error: gunicorn is not installed. "
-                "Please install it with: pip install gunicorn",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        if reload:
-            typer.echo(
-                "Warning: --reload flag is ignored in production mode",
-                err=True,
-            )
-
-        # Calculate workers if not specified
-        if workers is None:
-            import multiprocessing
-
-            workers = (multiprocessing.cpu_count() * 2) + 1
-
-        typer.echo(
-            f"Starting LLMaven API in production mode on {host}:{port} "
-            f"with {workers} workers"
-        )
-
-        class StandaloneApplication(gunicorn.app.base.BaseApplication):
-            """Gunicorn application wrapper."""
-
-            def __init__(self, app_uri: str, options: dict | None = None):
-                self.options = options or {}
-                self.app_uri = app_uri
-                super().__init__()
-
-            def load_config(self):
-                """Load gunicorn configuration."""
-                for key, value in self.options.items():
-                    if key in self.cfg.settings and value is not None:
-                        self.cfg.set(key.lower(), value)
-
-            def load(self):
-                """Load the application."""
-                return self.app_uri
-
-        options = {
-            "bind": f"{host}:{port}",
-            "workers": workers,
-            "worker_class": "uvicorn.workers.UvicornWorker",
-            "accesslog": "-" if access_log else None,
-            "errorlog": "-",
-            "loglevel": "info",
-        }
-
-        StandaloneApplication("llmaven.main:app", options).run()
-
-
-@server_app.command()
-def ui(
-    host: str = typer.Option(
-        "localhost",
-        "--host",
-        "-h",
-        help="Host to bind the Streamlit app to",
-    ),
-    port: int = typer.Option(
-        8501,
-        "--port",
-        "-p",
-        help="Port to bind the Streamlit app to",
-    ),
-    browser: bool = typer.Option(
-        True,
-        is_flag=True,
-        help="Automatically open the app in a browser",
-    ),
-) -> None:
-    """Launch the LLMaven Streamlit UI.
-
-    This starts the Streamlit frontend application for interacting with LLMaven.
-
-    Examples:
-        Launch UI on default port (8501):
-            llmaven ui
-
-        Launch on custom host and port:
-            llmaven ui --host 0.0.0.0 --port 8080
-
-        Launch without opening browser:
-            llmaven ui --no-browser
-    """
-    import subprocess
-    from pathlib import Path
-
-    # Get the path to the frontend app
-    frontend_app = Path(__file__).parent / "frontend" / "app.py"
-
-    if not frontend_app.exists():
-        typer.echo(
-            f"Error: Streamlit app not found at {frontend_app}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    # Build streamlit command
-    cmd = [
-        "streamlit",
-        "run",
-        str(frontend_app),
-        "--server.address",
-        host,
-        "--server.port",
-        str(port),
-    ]
-
-    if not browser:
-        cmd.extend(["--server.headless", "true"])
-
-    typer.echo(f"Starting LLMaven UI on {host}:{port}")
-    if browser:
-        typer.echo("Opening browser...")
-
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        typer.echo(f"Error: Failed to start Streamlit app: {e}", err=True)
-        raise typer.Exit(code=1)
-    except FileNotFoundError:
-        typer.echo(
-            "Error: streamlit is not installed. "
-            "Please install it with: pip install streamlit",
-            err=True,
-        )
-        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -402,10 +162,10 @@ def validate(
             env_file_path=env_file,
         )
     except ValidationError:
-        sys.exit(1)
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Validation failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Validation failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -431,6 +191,12 @@ def deploy(
         help="Automatically approve deployment",
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
+    expect_no_changes: bool = typer.Option(
+        False,
+        "--expect-no-changes",
+        is_flag=True,
+        help="Fail without deploying if the preview plans any resource change",
+    ),
 ) -> None:
     """Deploy LLMaven infrastructure to Azure.
 
@@ -443,6 +209,9 @@ def deploy(
 
         Deploy with auto-approval:
             llmaven infra deploy --yes
+
+        Deploy only if nothing would change (e.g., to sync state safely):
+            llmaven infra deploy --expect-no-changes
 
         Deploy specific config:
             llmaven infra deploy --config llmaven-config.staging.yaml
@@ -462,13 +231,14 @@ def deploy(
             preview=preview,
             auto_approve=auto_approve,
             env_file_path=env_file,
+            expect_no_changes=expect_no_changes,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -514,11 +284,11 @@ def destroy(
     try:
         destroy_infrastructure(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Destruction failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Destruction failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -551,11 +321,11 @@ def status(
     try:
         show_deployment_status(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Status check failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Status check failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @infra_app.command()
@@ -599,11 +369,11 @@ def refresh(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Refresh failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Refresh failed: {e}")
+        raise typer.Exit(code=1)
 
 
 class ExtractSource(str, Enum):
@@ -615,7 +385,6 @@ def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
     """Wrapper to keep secrets import local and easy to mock in tests."""
     from llmaven.infrastructure.utils.secrets import get_llmaven_secrets
 
-    # TODO: Deduplicate the get_llmaven_secrets definition method across codebase (https://github.com/uw-ssec/llmaven/issues/89.
     return get_llmaven_secrets(env_file)
 
 
@@ -669,10 +438,12 @@ def _prepare_extract_output_file(
     source: "ExtractSource",
     from_date: str,
     to_date: str,
+    use_zip: bool = True,
 ) -> Path:
     use_default_path = output_file is None
     filename_prefix = "llmaven_"
-    filename_suffix = f"_{from_date}_to_{to_date}.zip"
+    base_suffix = f"_{from_date}_to_{to_date}"
+    filename_suffix = f"{base_suffix}.zip" if use_zip else base_suffix
 
     if source.value == ExtractSource.litellm:
         path = output_file or Path(
@@ -685,9 +456,17 @@ def _prepare_extract_output_file(
     else:
         _fail_extract(f"Source is not supported: {source}")
 
-    # Guard only for the default path (Typer can't validate a value that wasn't provided)
-    if use_default_path and path.exists() and path.is_dir():
-        _fail_extract(f"Default output path is a directory: {path}")
+    # Ensure the output path's type matches the chosen mode (zip vs directory).
+    if path.exists():
+        if use_zip and path.is_dir():
+            _fail_extract(
+                f"Output path is a directory but zip mode is enabled: {path}. "
+                "Pass --no-zip to write JSONL files into a directory."
+            )
+        if not use_zip and path.is_file():
+            _fail_extract(
+                f"Output path is a file but --no-zip writes to a directory: {path}"
+            )
 
     # If user provided --out, ensure parent exists (argument parsing doesn’t create directories)
     if not use_default_path:
@@ -703,15 +482,120 @@ def _prepare_extract_output_file(
     return path
 
 
+class _ExtractWriter:
+    """Write per-day JSONL entries to either a zip archive or a directory.
+
+    Why: lets the extract pipeline stay shape-identical whether `--no-zip` is
+    used or not, instead of branching on every writestr call.
+    """
+
+    def __init__(self, output_path: Path, *, use_zip: bool, file_prefix: str) -> None:
+        self._output_path = output_path
+        self._use_zip = use_zip
+        # Only files named `<file_prefix>*.jsonl` are treated as previous extract
+        # output; everything else in a reused directory belongs to the user.
+        self._file_prefix = file_prefix
+        self._zipf_ctx = None
+        self._zipf = None
+
+    def __enter__(self) -> "_ExtractWriter":
+        if self._use_zip:
+            import zipfile
+
+            self._zipf_ctx = zipfile.ZipFile(
+                self._output_path, mode="w", compression=zipfile.ZIP_DEFLATED
+            )
+            # Use the __enter__ return value so callers (and test mocks) see the
+            # post-__enter__ object, matching a plain `with zipfile.ZipFile(...)`.
+            self._zipf = self._zipf_ctx.__enter__()
+        else:
+            # If the directory previously existed and the user confirmed overwrite,
+            # remove stale output from a previous extract of the same source so it
+            # doesn't linger alongside new output. Unrelated files are left alone.
+            if self._output_path.is_dir():
+                for child in self._output_path.glob(f"{self._file_prefix}*.jsonl"):
+                    if child.is_file():
+                        child.unlink()
+            self._output_path.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._zipf_ctx is not None:
+            self._zipf_ctx.__exit__(exc_type, exc, tb)
+            self._zipf_ctx = None
+            self._zipf = None
+
+    def writestr(self, name: str, data: str) -> None:
+        if self._zipf is not None:
+            self._zipf.writestr(name, data)
+        else:
+            (self._output_path / name).write_text(data, encoding="utf-8")
+
+
+class _TransientHTTPError(Exception):
+    """Marker raised internally so the retry helper knows a response should be retried."""
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# Retry config for transient HTTP failures (5xx + 429) and connection errors.
+# Exposed at module scope so tests can monkey-patch a no-wait variant.
+_RETRY_MAX_ATTEMPTS = 5
+_RETRY_WAIT_MULTIPLIER = 1.0
+_RETRY_WAIT_MIN_SECONDS = 1.0
+_RETRY_WAIT_MAX_SECONDS = 10.0
+
+
+def _is_transient_http_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
+
+
+def _http_get_with_retry(
+    client,
+    *,
+    url: str,
+    params: dict,
+    headers: dict,
+):
+    """Issue an HTTP GET, retrying on transient HTTP failures and connection errors.
+
+    Retries on:
+      - httpx.RequestError (connect timeouts, DNS failures, etc.)
+      - HTTP 429 (rate limited)
+      - HTTP 5xx (server errors)
+
+    Non-retryable HTTP errors (e.g. 4xx other than 429) surface immediately
+    via raise_for_status().
+    """
+    import httpx
+
+    for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+        try:
+            resp = client.get(url, params=params, headers=headers)
+            if _is_transient_http_status(resp.status_code):
+                raise _TransientHTTPError(
+                    f"transient HTTP {resp.status_code} from {url}",
+                    status_code=resp.status_code,
+                )
+            resp.raise_for_status()
+            return resp
+        except (_TransientHTTPError, httpx.RequestError):
+            if attempt == _RETRY_MAX_ATTEMPTS:
+                raise
+            # Exponential backoff: multiplier * 2**(attempt-1), clamped to [min, max].
+            wait = _RETRY_WAIT_MULTIPLIER * 2 ** (attempt - 1)
+            sleep(max(_RETRY_WAIT_MIN_SECONDS, min(wait, _RETRY_WAIT_MAX_SECONDS)))
+
+
 def _extract_litellm_logs(
     start_date_obj: "date",
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
+    use_zip: bool = True,
 ) -> None:
-    import json
-    import zipfile
-
     import httpx
 
     litellm_base_url, litellm_master_key = _get_litellm_credentials(env_file)
@@ -726,52 +610,63 @@ def _extract_litellm_logs(
 
     total_records = 0
 
-    # TODO: Make zipfile output optional (https://github.com/uw-ssec/llmaven/issues/87).
-    with zipfile.ZipFile(
-        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    with _ExtractWriter(
+        output_file, use_zip=use_zip, file_prefix="litellm_spend_logs_"
     ) as zipf:
-        # TODO: Add retry logic (https://github.com/uw-ssec/llmaven/issues/88).
         with httpx.Client(timeout=30.0) as http_client:
             current_date = start_date_obj
             while current_date <= end_date_obj:
                 date_str = current_date.isoformat()
-                next_date_str = (current_date + timedelta(days=1)).isoformat()
+                day_records: list[object] = []
+                # failed_hours: list[int] = []
 
+                # /spend/logs only accepts YYYY-MM-DD (no time component).
+                # summarize=false returns individual records instead of daily aggregates.
+                next_date_str = (current_date + timedelta(days=1)).isoformat()
                 params = {
                     "start_date": date_str,
-                    "end_date": next_date_str,  # exclusive upper bound
+                    "end_date": next_date_str,
                     "summarize": "false",
                 }
 
                 try:
-                    resp = http_client.get(endpoint, params=params, headers=headers)
-                    resp.raise_for_status()
-                except httpx.HTTPError as exc:
+                    resp = _http_get_with_retry(
+                        http_client,
+                        url=endpoint,
+                        params=params,
+                        headers=headers,
+                    )
+                except (_TransientHTTPError, httpx.HTTPError) as exc:
+                    # Retries are exhausted or the error is not transient; fail
+                    # rather than fall through to a stale or unbound `resp`.
                     _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
 
                 try:
-                    data = resp.json()
-                except json.JSONDecodeError as exc:
-                    _fail_extract(f"Invalid JSON response for {date_str}: {exc}")
-
-                if not isinstance(data, list):
-                    _fail_extract(
-                        f"Invalid JSON response for {date_str}: expected list"
+                    body = resp.json()
+                    if not isinstance(body, list):
+                        raise ValueError(f"expected list, got {type(body).__name__}")
+                    day_records.extend(body)
+                except Exception as exc:
+                    console_err.print(
+                        f"[yellow]![/yellow] {date_str}: skipping ({exc})"
                     )
 
-                total_records += len(data)
+                total_records += len(day_records)
 
                 try:
-                    jsonl_payload = _serialize_to_jsonl(data)
+                    jsonl_payload = _serialize_to_jsonl(day_records)
                 except Exception as exc:
                     _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
 
-                zipf.writestr(
-                    f"litellm_spend_logs_{date_str}.jsonl",
-                    jsonl_payload,
-                )
+                if day_records:
+                    zipf.writestr(
+                        f"litellm_spend_logs_{date_str}.jsonl",
+                        jsonl_payload,
+                    )
 
-                console.print(f"[green]✓[/green] {date_str}: {len(data)} records")
+                console.print(
+                    f"[green]✓[/green] {date_str}: {len(day_records)} records"
+                )
                 current_date += timedelta(days=1)
 
     console.print(
@@ -882,8 +777,8 @@ def _extract_mlflow_logs(
     end_date_obj: "date",
     output_file: Path,
     env_file: Optional[Path],
+    use_zip: bool = True,
 ) -> None:
-    import zipfile
     from collections import defaultdict
 
     import mlflow
@@ -917,8 +812,8 @@ def _extract_mlflow_logs(
     total_records = 0
     total_files_written = 0
 
-    with zipfile.ZipFile(
-        output_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    with _ExtractWriter(
+        output_file, use_zip=use_zip, file_prefix="mlflow_traces_"
     ) as zipf:
         current_date = start_date_obj
 
@@ -1011,12 +906,21 @@ def extract(
     output_file: Optional[Path] = typer.Option(
         None,
         "--out",
-        help="Output zip file path",
-        dir_okay=False,
+        help="Output path (zip file, or directory when --no-zip is used)",
+        dir_okay=True,
         file_okay=True,
         writable=True,
         resolve_path=True,
         path_type=Path,
+    ),
+    no_zip: bool = typer.Option(
+        False,
+        "--no-zip",
+        help=(
+            "Write raw JSONL files into a directory instead of bundling them "
+            "into a zip archive. Useful for small date ranges where unzipping "
+            "is just an extra step."
+        ),
     ),
     env_file: Optional[Path] = ENV_FILE_OPTION,
 ) -> None:
@@ -1047,12 +951,15 @@ def extract(
     if start_date_obj > end_date_obj:
         _fail_extract("--from must be <= --to")
 
+    use_zip = not no_zip
+
     # Validate output file
     output_file = _prepare_extract_output_file(
         output_file,
         source,
         from_date,
         to_date,
+        use_zip=use_zip,
     )
 
     if source == ExtractSource.litellm:
@@ -1061,6 +968,7 @@ def extract(
             end_date_obj,
             output_file,
             env_file,
+            use_zip=use_zip,
         )
     elif source == ExtractSource.mlflow:
         _extract_mlflow_logs(
@@ -1068,6 +976,7 @@ def extract(
             end_date_obj,
             output_file,
             env_file,
+            use_zip=use_zip,
         )
     # else: source is validated in the initial check.
 
@@ -1103,11 +1012,11 @@ def cancel(
     try:
         cancel_stack_operation(config_path=config_path)
     except DeploymentError as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Cancel failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Cancel failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="deploy")
@@ -1162,11 +1071,11 @@ def backup_infra_deploy(
             auto_approve=auto_approve,
         )
     except DeploymentError as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"✗ Backup deployment failed: {e}", err=True)
-        sys.exit(1)
+        console_err.print(f"[red]✗[/red] Backup deployment failed: {e}")
+        raise typer.Exit(code=1)
 
 
 @backup_infra_app.command(name="output")
@@ -1215,13 +1124,13 @@ def backup_infra_output(
     )
 
     if secret is None and name is None:
-        typer.echo(
-            "✗ Provide --secret <output-name> or --name <output-name>.", err=True
+        console_err.print(
+            "[red]✗[/red] Provide --secret <output-name> or --name <output-name>."
         )
-        sys.exit(1)
+        raise typer.Exit(code=1)
     if secret is not None and name is not None:
-        typer.echo("✗ --secret and --name are mutually exclusive.", err=True)
-        sys.exit(1)
+        console_err.print("[red]✗[/red] --secret and --name are mutually exclusive.")
+        raise typer.Exit(code=1)
 
     config_path = Path(config)
     output_name = secret if secret is not None else name
@@ -1233,364 +1142,13 @@ def backup_infra_output(
             output_name=output_name,
             reveal_secret=reveal,
         )
+        # Shell-captured values must bypass Rich's wrapping and tab expansion.
         typer.echo(value)
     except DeploymentError as e:
-        typer.echo(f"✗ {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        typer.echo(f"✗ Failed to retrieve output: {e}", err=True)
-        sys.exit(1)
-
-
-@agentic_app.command()
-def ingest(
-    directories: list[str] = typer.Argument(
-        ...,
-        help="One or more directories containing documents to ingest",
-    ),
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name (defaults to config)",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        is_flag=True,
-        help="Overwrite existing collection without confirmation",
-    ),
-    batch_size: int = typer.Option(
-        100,
-        "--batch-size",
-        "-b",
-        help="Number of documents to process per batch",
-    ),
-) -> None:
-    """Ingest documents into Qdrant collection.
-
-    Ingests documents from one or more directories into a Qdrant collection
-    with multi-vector embeddings (Dense, Sparse, ColBERT).
-
-    Examples:
-        Ingest documents from docs directory:
-            llmaven agentic ingest ./docs
-
-        Ingest from multiple directories:
-            llmaven agentic ingest ./docs ./papers
-
-        Force overwrite existing collection:
-            llmaven agentic ingest ./docs --force
-
-        Use custom collection name:
-            llmaven agentic ingest ./docs --collection my-collection
-    """
-    from pathlib import Path
-    from llmaven.agentic.ingestion import IngestionPipeline
-    from llmaven.agentic.exceptions import AgenticRAGError
-
-    try:
-        # Validate directories exist
-        dir_paths_str = []
-        for directory in directories:
-            path = Path(directory)
-            if not path.exists():
-                console_err.print(f"[red]✗[/red] Directory not found: {directory}")
-                raise typer.Exit(code=1)
-            if not path.is_dir():
-                console_err.print(f"[red]✗[/red] Not a directory: {directory}")
-                raise typer.Exit(code=1)
-            dir_paths_str.append(str(path))
-
-        console.print("[blue]→[/blue] Initializing ingestion pipeline...")
-
-        # Create ingestion pipeline
-        pipeline = IngestionPipeline(
-            collection_name=collection,
-            batch_size=batch_size,
-        )
-
-        # Ingest documents
-        console.print(
-            f"[blue]→[/blue] Ingesting documents from {len(dir_paths_str)} director{'y' if len(dir_paths_str) == 1 else 'ies'}..."
-        )
-
-        # Ingest all directories at once (ingest() accepts list of directory strings)
-        pipeline.ingest(directories=dir_paths_str, force=force)
-
-        console.print("\n[green]✓[/green] Ingestion complete!")
-
-    except AgenticRAGError as e:
-        console_err.print(f"[red]✗[/red] Ingestion failed: {e}")
+        console_err.print(f"[red]✗[/red] {e}")
         raise typer.Exit(code=1)
     except Exception as e:
-        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
-        raise typer.Exit(code=1)
-
-
-@agentic_app.command()
-def search(
-    query: str = typer.Argument(
-        ...,
-        help="Search query",
-    ),
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name (defaults to config)",
-    ),
-    top_k: Optional[int] = typer.Option(
-        None,
-        "--top-k",
-        "-k",
-        help="Number of results to return (defaults to config)",
-    ),
-    prefetch_k: Optional[int] = typer.Option(
-        None,
-        "--prefetch-k",
-        "-p",
-        help="Number of prefetch candidates per method (defaults to config)",
-    ),
-    rerank: bool = typer.Option(
-        True,
-        "--rerank/--no-rerank",
-        help="Enable/disable ColBERT reranking",
-    ),
-) -> None:
-    """Search the knowledge base.
-
-    Executes a hybrid search query with Dense, Sparse, and optional
-    ColBERT reranking.
-
-    Examples:
-        Basic search:
-            llmaven agentic search "What is machine learning?"
-
-        Search with custom top-k:
-            llmaven agentic search "architecture patterns" --top-k 10
-
-        Search without reranking:
-            llmaven agentic search "deployment" --no-rerank
-
-        Search specific collection:
-            llmaven agentic search "query" --collection my-collection
-    """
-    from llmaven.agentic.search import HybridSearcher
-    from llmaven.agentic.exceptions import AgenticRAGError
-
-    try:
-        console.print(f"[blue]→[/blue] Searching for: [bold]{query}[/bold]")
-
-        # Create searcher
-        searcher = HybridSearcher(
-            collection_name=collection,
-            enable_rerank=rerank,
-            prefetch_top_k=prefetch_k,
-            final_top_k=top_k,
-        )
-
-        # Execute search
-        results = searcher.search(query=query, limit=top_k)
-
-        if not results:
-            console.print("[yellow]![/yellow] No results found")
-            return
-
-        # Display results
-        console.print(
-            f"\n[green]✓[/green] Found {len(results)} result{'s' if len(results) != 1 else ''}:\n"
-        )
-
-        for i, result in enumerate(results, 1):
-            console.print(
-                f"[bold cyan]Result {i}[/bold cyan] (score: {result.score:.4f})"
-            )
-            console.print(f"[dim]Source:[/dim] {result.file_path}")
-            if result.heading_hierarchy:
-                console.print(f"[dim]Section:[/dim] {result.heading_hierarchy}")
-            console.print(
-                f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}\n"
-            )
-
-    except AgenticRAGError as e:
-        console_err.print(f"[red]✗[/red] Search failed: {e}")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
-        raise typer.Exit(code=1)
-
-
-@agentic_app.command()
-def chat(
-    collection: Optional[str] = typer.Option(
-        None,
-        "--collection",
-        "-c",
-        help="Collection name (defaults to config)",
-    ),
-    provider: Optional[str] = typer.Option(
-        None,
-        "--provider",
-        help="LLM provider override (openai, ollama, litellm, azure, huggingface)",
-    ),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        "-m",
-        help="LLM model override",
-    ),
-    litellm_base: Optional[str] = typer.Option(
-        None,
-        "--litellm-base",
-        help="LiteLLM proxy base URL (e.g., http://localhost:4000)",
-    ),
-    litellm_api_key: Optional[str] = typer.Option(
-        None,
-        "--litellm-api-key",
-        help="LiteLLM API key",
-    ),
-    litellm_model_prefix: Optional[str] = typer.Option(
-        None,
-        "--litellm-prefix",
-        help="LiteLLM model prefix (e.g., openai/, anthropic/)",
-    ),
-    azure_endpoint: Optional[str] = typer.Option(
-        None,
-        "--azure-endpoint",
-        help="Azure OpenAI endpoint URL (e.g., https://myresource.openai.azure.com)",
-    ),
-    azure_api_key: Optional[str] = typer.Option(
-        None,
-        "--azure-api-key",
-        help="Azure API key",
-    ),
-    azure_deployment: Optional[str] = typer.Option(
-        None,
-        "--azure-deployment",
-        help="Azure deployment name",
-    ),
-) -> None:
-    """Launch interactive RAG chat.
-
-    Starts an interactive REPL for conversing with the RAG agent.
-    The agent has access to the knowledge base and can provide
-    answers with citations.
-
-    Examples:
-        Start chat:
-            llmaven agentic chat
-
-        Chat with specific collection:
-            llmaven agentic chat --collection my-docs
-
-        Use different LLM:
-            llmaven agentic chat --provider ollama --model llama2
-
-        Use LiteLLM proxy:
-            llmaven agentic chat --provider litellm --litellm-base http://localhost:4000 --model gpt-4o-mini
-
-        Use Azure OpenAI:
-            llmaven agentic chat --provider azure --azure-endpoint https://myresource.openai.azure.com --azure-deployment gpt-4o
-    """
-    from rich.markdown import Markdown
-    from rich.panel import Panel
-
-    from llmaven.agentic.agent import RAGAgent
-    from llmaven.agentic.exceptions import AgenticRAGError
-    from llmaven.agentic.settings import config
-
-    try:
-        console.print("[blue]→[/blue] Initializing RAG agent...")
-
-        # Override config with CLI options
-        if litellm_base:
-            config.litellm_api_base = litellm_base
-        if litellm_api_key:
-            config.litellm_api_key = litellm_api_key
-        if litellm_model_prefix:
-            config.litellm_model_prefix = litellm_model_prefix
-        if azure_endpoint:
-            config.azure_endpoint = azure_endpoint
-        if azure_api_key:
-            config.azure_api_key = azure_api_key
-        if azure_deployment:
-            config.azure_deployment_name = azure_deployment
-
-        # Create agent
-        agent = RAGAgent(
-            collection_name=collection,
-            llm_provider=provider,
-            llm_model=model,
-        )
-
-        console.print(
-            Panel(
-                "[bold green]RAG Chat Session[/bold green]\n\n"
-                "Ask questions about your knowledge base.\n"
-                "Type 'exit' or 'quit' to end the session.",
-                border_style="green",
-            )
-        )
-
-        message_history = []
-
-        while True:
-            # Get user input
-            try:
-                query = console.input("\n[bold cyan]You:[/bold cyan] ")
-            except (KeyboardInterrupt, EOFError):
-                console.print("\n[yellow]![/yellow] Session ended")
-                break
-
-            if query.strip().lower() in ["exit", "quit"]:
-                console.print("[yellow]![/yellow] Session ended")
-                break
-
-            if not query.strip():
-                continue
-
-            # Get agent response
-            console.print("[blue]→[/blue] Thinking...")
-
-            try:
-                response = agent.run_sync(query=query, message_history=message_history)
-
-                # Display answer
-                console.print("\n[bold green]Assistant:[/bold green]")
-                console.print(Markdown(response.answer))
-
-                # Display citations
-                if response.citations:
-                    console.print(
-                        f"\n[dim]Citations ({len(response.citations)}):[/dim]"
-                    )
-                    for i, citation in enumerate(response.citations, 1):
-                        console.print(
-                            f"  [{i}] {citation.source_file} "
-                            f"(score: {citation.relevance_score:.2f})"
-                        )
-                        console.print(f"      {citation.quote[:100]}...")
-
-                console.print(
-                    f"\n[dim]Confidence: {response.confidence:.2f} | Sources: {response.sources_used}[/dim]"
-                )
-
-                # Update message history
-                message_history.append({"role": "user", "content": query})
-                message_history.append(
-                    {"role": "assistant", "content": response.answer}
-                )
-
-            except Exception as e:
-                console_err.print(f"[red]✗[/red] Error: {e}")
-
-    except AgenticRAGError as e:
-        console_err.print(f"[red]✗[/red] Failed to start chat: {e}")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        console_err.print(f"[red]✗[/red] Unexpected error: {e}")
+        console_err.print(f"[red]✗[/red] Failed to retrieve output: {e}")
         raise typer.Exit(code=1)
 
 
@@ -1599,7 +1157,7 @@ def version() -> None:
     """Display the LLMaven version."""
     from llmaven import __version__
 
-    typer.echo(f"LLMaven version {__version__}")
+    console.print(f"LLMaven version {__version__}")
 
 
 def main() -> None:

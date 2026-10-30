@@ -6,47 +6,11 @@ version = "0.1.0"
 description = "An AI Powered Tool library for Scientific Discovery"
 authors = ["UW SSEC Team"]
 requires-pixi = ">=0.63.2"
-channels = ["conda-forge", "pytorch"]
+channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64"]
 
-[tasks]
-start-jlab = { cmd = "jupyter lab", description = "Start Jupyter Lab" }
-serve-panel = { cmd = "python archive/legacy/rubin-panel-app.py", description = "Serve the panel app" }
-
 [dependencies]
-python = "3.11.*"
-pixi-kernel = ">=0.4.0,<0.5"
-jupyterlab = ">=4.2.5,<4.3"
-jupyter_bokeh = ">=4.0.5,<4.1"
-libopenblas = ">=0.3.27,<0.4"
-tqdm = ">=4.66.5,<4.67"
-numpy = "<2"
-pandas = ">=2.2.2,<2.3"
-panel = ">=1.5.0,<1.6"
-ipykernel = ">=6.29.5,<6.30"
-docker-py = ">=7.1.0,<7.2"
-testcontainers = ">=4.8.0,<4.9"
-tenacity = "==8.5.0"
-pytest = ">=9.0.3,<10"
-
-[pypi-dependencies]
-langchain = "~=0.3.26"
-langchain-community = "~=0.3.26"
-langchain-qdrant = ">=0.1.0"
-langchain-huggingface = ">=0.0.3"
-jupyter-panel-proxy = "==0.2.0a2"
-qdrant-client = ">=1.11.2, <1.12"
-sentence-transformers = ">=3.1.0, <3.2"
-nltk = ">=3.9.1, <3.10"
-arxiv = ">=2.1.3, <2.2"
-pymupdf = ">=1.24.10, <1.25"
-ssec-tutorials = { git = "https://github.com/uw-ssec/ssec_tutorials.git", rev = "98ca4cf84c06be6a4de99d3a4a1dff5a442c95c7" }
-transformers = "~=4.53.0"
-accelerate = ">=0.26.0"
-bitsandbytes = ">=0.42.0, <0.46"
-llama_cpp_python = "~=0.3.9"
-openai = ">=2.3"
-
+python = "3.12.*"
 
 [feature.infra.dependencies]
 python = "3.11.*"
@@ -59,40 +23,18 @@ rich = ">=14.2.0,<15"
 pulumi = ">=3.203.0, <4"
 pulumi-azure-native = ">=3.8.0, <4"
 
-[feature.proxy.dependencies]
-python = "3.11.*"
-pytest = ">=9.0.3,<10"
-aiohttp = ">=3.13.0,<4"
-propcache = ">=0.2.0"
-fastapi = ">=0.119.1,<0.120"
-uvicorn = ">=0.38.0,<0.39"
-httpx = ">=0.28.1,<0.29"
-python-dotenv = ">=1.1.1,<2"
-azure-data-tables = ">=12.7.0,<13"
-azure-storage-blob = ">=12.0.0,<13"
-azure-identity = ">=1.0.0,<2"
-
-[target.linux-64.pypi-dependencies]
-llama-cpp-python = { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp311-cp311-linux_x86_64.whl" }
-
-[feature.frontend.dependencies]
-streamlit = "*"
-tenacity = "==8.5.0"
-
 [environments]
 llmaven = { features = [
     "docker",
     "llmaven",
     "pulumi",
     "pre-commit",
+    "gh-cli",
+    "okf",
 ], no-default-feature = true }
-frontend = { features = ["frontend"], no-default-feature = true }
 infra = { features = [
     "infra",
 ], solve-group = "infra", no-default-feature = true }
-proxy = { features = [
-    "proxy",
-], solve-group = "proxy", no-default-feature = true }
 backup = { features = [
     "backup",
 ], solve-group = "backup", no-default-feature = true }
@@ -103,19 +45,29 @@ backup = { features = [
 llmaven = { path = ".", editable = true, extras = [
     "test",
     "deploy",
-    "production",
 ] }
 mlflow = "==3.10.0"
 jsonlines = ">=3.1.0,<4.0.0"
+# typer 0.25+ drops CliRunner.isolated_filesystem, which tests/infrastructure uses.
+typer = ">=0.21.0,<0.25"
 
 [feature.llmaven.dependencies]
 python = "3.12.*"
 azure-core = ">=1.36.0,<2"
 python-dotenv = ">=1.1.1,<2"
+pyarrow = ">=19.0.0,<20"
+pandas = ">=2.2.2,<3"
+tqdm = ">=4.66.5,<5"
+# mlflow-skinny 3.10.0 requires importlib-metadata <9 (conda-forge now ships 10.x).
+importlib-metadata = "<9"
 
 [feature.llmaven.tasks]
-api-server = { cmd = "llmaven serve" }
-ui = { cmd = "llmaven ui" }
+test = { cmd = "pytest tests/", description = "Run the full test suite" }
+verify = { description = "Run every check that gates a commit or PR", depends-on = [
+    "pre-commit-all",
+    "okf-validate",
+    "test",
+] }
 
 [feature.pulumi.tasks.install-pulumi]
 cmd = "curl -fsSL https://get.pulumi.com | bash -s -- --install-root $CONDA_PREFIX"
@@ -156,6 +108,24 @@ clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 [feature.pre-commit.dependencies]
 pre-commit = ">=3.4.0,<4"
+
+[feature.pre-commit.tasks]
+pre-commit-install = { cmd = "pre-commit install", description = "Install pre-commit hooks in the git repository" }
+pre-commit-all = { cmd = "pre-commit run --all-files", description = "Run pre-commit checks on all files" }
+pre-commit = { cmd = "pre-commit run", description = "Run pre-commit checks on staged files" }
+
+# === Agent tooling: GitHub CLI and OKF agent memory ===
+
+[feature.gh-cli.dependencies]
+gh = ">=2.0.0"
+
+[feature.okf.dependencies]
+okf-agent-memory = ">=0.7.1,<0.8"
+
+[feature.okf.tasks]
+okf-validate = { cmd = "okf validate --strict --drift", description = "Validate the OKF knowledge bundle in knowledge/" }
+
+# === End agent tooling ===
 
 # === Backup dependencies and tasks ===
 

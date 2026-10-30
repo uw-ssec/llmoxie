@@ -1,7 +1,4 @@
-"""LLMaven API Package.
-
-This package contains the FastAPI application for the LLMaven project.
-"""
+"""CLI for the LLMaven AI platform (LiteLLM gateway + MLflow observability)."""
 
 from __future__ import annotations
 

@@ -18,28 +18,15 @@ request.
 
 **Jobs**:
 
-#### 1. `test-linux` - Linux Tests with Testcontainers
+#### 1. `test-linux` - Linux Tests
 
 - **Platform**: Ubuntu Latest
-- **Testing Strategy**: Uses testcontainers-python for Qdrant integration tests
-- **Tests**:
-  - Core tests (legacy RAG system)
-  - Agentic tests (new Agentic RAG system, excluding CLI integration tests)
-  - API endpoint tests
+- **Tests**: The full suite in a single step:
+  `pixi run -e llmaven pytest tests/ --verbose --tb=short --color=yes`. Any test
+  failure fails the job.
 - **Environment**: pixi-managed Python 3.12 with llmaven environment
-- **Docker**: Required for testcontainers (automatically available on GitHub
-  Actions)
 
-#### 2. `test-macos` - macOS Tests (Currently Disabled)
-
-- **Platform**: macOS Latest (arm64)
-- **Status**: Temporarily disabled (commented out in workflow)
-- **Reason**: Docker support on macOS arm64 GitHub runners is not yet stable
-- **Workaround**: Tests use testcontainers-python which works on both platforms
-  when Docker is available
-- **Reference**: https://github.com/docker/actions-toolkit/issues/317
-
-#### 3. `pre-commit` - Code Quality Checks
+#### 2. `pre-commit` - Code Quality Checks
 
 - **Platform**: Ubuntu Latest
 - **Checks**:
@@ -50,7 +37,7 @@ request.
   - Prettier formatting
 - **Configuration**: `.pre-commit-config.yaml`
 
-#### 4. `summary` - CI Summary
+#### 3. `summary` - CI Summary
 
 - **Platform**: Ubuntu Latest
 - **Purpose**: Aggregates results from all jobs and generates a summary
@@ -58,7 +45,7 @@ request.
 
 **Environment Variables**:
 
-- `PIXI_VERSION`: v0.40.0 (pixi package manager version)
+- `PIXI_VERSION`: v0.63.2 (pixi package manager version)
 
 **Caching**:
 
@@ -67,7 +54,7 @@ request.
 
 **Timeouts**:
 
-- Test jobs: 30 minutes
+- Test job: 30 minutes
 - Pre-commit: 10 minutes
 
 ---
@@ -113,49 +100,11 @@ services.
 # Install dependencies
 pixi install -e llmaven
 
-# Run all tests (testcontainers will start Qdrant automatically)
+# Run the full test suite (the same command CI runs)
 pixi run -e llmaven pytest tests/ -v
-
-# Run only agentic tests
-pixi run -e llmaven pytest tests/agentic/ -v
 
 # Run pre-commit hooks
 pixi run -e llmaven pre-commit run --all-files
-```
-
-### Testcontainers Setup
-
-Tests use testcontainers-python to automatically start Qdrant containers:
-
-```python
-# tests/agentic/conftest.py provides fixtures
-def test_with_qdrant(qdrant_url):
-    from qdrant_client import QdrantClient
-
-    # qdrant_url is automatically provided by testcontainer
-    client = QdrantClient(url=qdrant_url)
-    # ... test code
-```
-
-**Requirements**:
-
-- Docker must be installed and running
-- Docker daemon must be accessible (default: `/var/run/docker.sock`)
-- No manual container management needed - testcontainers handles it
-
-### Manual Qdrant Setup (Alternative)
-
-If you prefer to manage Qdrant manually:
-
-```bash
-# Start Qdrant
-docker run -d -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest
-
-# Set environment variable to use local Qdrant
-export AGENTIC_QDRANT_URL=http://localhost:6333
-
-# Run tests (will use your local Qdrant instead of testcontainers)
-pixi run -e llmaven pytest tests/agentic/ -v
 ```
 
 ---
@@ -169,28 +118,13 @@ pixi run -e llmaven pytest tests/agentic/ -v
 - Ensure pixi version matches `PIXI_VERSION` in workflow
 - Check that `pixi.toml` and `pixi.lock` are up to date
 
-**2. Testcontainers fails to start**
-
-- Ensure Docker is installed and running: `docker info`
-- Check Docker socket permissions: `ls -la /var/run/docker.sock`
-- On macOS: Ensure Docker Desktop is running
-- On Linux: Ensure your user is in the `docker` group:
-  `sudo usermod -aG docker $USER`
-- Set `DOCKER_HOST` environment variable if using remote Docker daemon
-
-**3. Tests fail on macOS but pass on Linux**
-
-- macOS tests are currently disabled in CI due to Docker arm64 runner issues
-- Run tests locally with Docker Desktop installed
-- Testcontainers should work on macOS when Docker is properly configured
-
-**3. Pre-commit hooks fail**
+**2. Pre-commit hooks fail**
 
 - Run `pixi run -e llmaven pre-commit run --all-files` locally
 - Check `.pre-commit-config.yaml` for hook configuration
 - Update hooks: `pixi run -e llmaven pre-commit autoupdate`
 
-**4. Cache issues**
+**3. Cache issues**
 
 - GitHub Actions cache is immutable once written
 - Clear cache via GitHub UI: Settings > Actions > Caches
@@ -209,8 +143,8 @@ pixi run -e llmaven pytest tests/agentic/ -v
 ### Adding New Tests
 
 1. Add test files to `tests/` directory
-2. Update workflow if new test categories needed
-3. Consider platform-specific requirements (Qdrant, etc.)
+2. CI picks them up automatically; the single `pytest tests/` step runs the
+   whole directory
 
 ### Modifying Pre-commit Hooks
 
@@ -236,4 +170,3 @@ pixi run -e llmaven pytest tests/agentic/ -v
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Pixi Documentation](https://pixi.sh)
 - [Pre-commit Documentation](https://pre-commit.com)
-- [Qdrant Docker Image](https://hub.docker.com/r/qdrant/qdrant)

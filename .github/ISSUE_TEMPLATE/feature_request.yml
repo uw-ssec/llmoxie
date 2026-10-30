@@ -45,9 +45,6 @@ body:
       options:
         - CLI
         - Infrastructure / Pulumi
-        - Agentic RAG
-        - API (FastAPI)
-        - Frontend (Streamlit)
         - Docker / local stack
         - Documentation
         - CI / testing

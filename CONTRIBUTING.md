@@ -60,20 +60,7 @@ LLMaven uses [pixi](https://pixi.sh) to manage dependencies and environments.
 ## Running Tests
 
 ```bash
-# All tests
 pixi run -e llmaven pytest tests/
-
-# Core tests only (fast)
-pixi run -e llmaven pytest tests/ --ignore=tests/agentic/ --ignore=tests/v1/
-
-# Agentic tests
-pixi run -e llmaven pytest tests/agentic/
-
-# API endpoint tests
-pixi run -e llmaven pytest tests/v1/
-
-# With coverage
-pixi run -e llmaven pytest tests/ --cov=llmaven
 ```
 
 ## Submitting a Pull Request
