@@ -81,10 +81,8 @@ def create_container_apps_environment(
         # Consumption is the default workload profile type (serverless, pay-per-use)
         # No need to explicitly specify it
         opts=pulumi.ResourceOptions(
+            # Preserve imported fields that this program does not configure.
             ignore_changes=[
-                "appLogsConfiguration",
-                "vnetConfiguration",
-                "zoneRedundant",
                 "workloadProfiles",
                 "infrastructureResourceGroup",
                 "peerAuthentication",
@@ -436,12 +434,9 @@ def create_backup_job(
         opts=pulumi.ResourceOptions.merge(
             opts,
             pulumi.ResourceOptions(
-                ignore_changes=[
-                    "configuration",
-                    "identity",
-                    "template",
-                    "workloadProfileName",
-                ]
+                # The job uses Azure's default workload profile; other settings
+                # remain managed so image, schedule, secrets and identity update.
+                ignore_changes=["workloadProfileName"]
             ),
         ),
         resource_group_name=resource_group_name,

@@ -74,35 +74,38 @@ Stack name: `{project.name}-{project.environment}` (e.g. `llmaven-iss-prod`)
 | `azure-native:app:ContainerApp`                     | `container-app-{app}-{env}`              | `{app}-{env}`                                  |
 | `azure-native:app:Job`                              | `backup-job-{env}`                       | `{project}-backup-{env}`                       |
 
-### Known ignore_changes requirements
+### Import tolerances
 
-Some resources have properties that Azure populates automatically and that
-Pulumi will incorrectly try to replace or update on import. These
-`ignore_changes` entries are already in the code:
+The code ignores these imported properties because the program does not
+currently configure them:
 
-- **PostgreSQL Server** (`database.py`): `administratorLoginPassword`,
-  `authConfig`, `availabilityZone`, `dataEncryption`, `highAvailability`,
-  `maintenanceWindow`, `network`, `replica`, `replicationRole`, `storage`
-- **ManagedEnvironment** (`container_apps.py`): `appLogsConfiguration`,
-  `vnetConfiguration`, `zoneRedundant`, `workloadProfiles`,
-  `infrastructureResourceGroup`, `peerAuthentication`, `availabilityZones`,
-  `peerTrafficConfiguration`, `publicNetworkAccess`
-- **Backup Job** (`container_apps.py`): `configuration`, `identity`, `template`,
-  `workloadProfileName`
+- **PostgreSQL Server** (`database.py`): `authConfig`, `availabilityZone`,
+  `dataEncryption`, `maintenanceWindow`, `replica`, `replicationRole`
+- **ManagedEnvironment** (`container_apps.py`): `workloadProfiles`,
+  `infrastructureResourceGroup`, `peerAuthentication`,
+  `openTelemetryConfiguration`, `daprAIConnectionString`,
+  `daprAIInstrumentationKey`, `availabilityZones`, `peerTrafficConfiguration`,
+  `publicNetworkAccess`
+- **Backup Job** (`container_apps.py`): `workloadProfileName`
 
-### Post-import: password sync
+If the program starts configuring any of these fields, remove its ignore at the
+same time. Do not ignore declared settings to silence a recovery preview:
+PostgreSQL password/storage/HA/network, environment logging/network/zone
+redundancy, and backup configuration/identity/template remain managed. Their
+intentional changes must continue to appear in previews and updates.
 
-After a fresh deploy following state recovery, Pulumi generates a **new** admin
-password and stores it in Key Vault, but the existing PostgreSQL server still
-has the old password. Sync them:
+### Preserve database credentials before deploying
 
-```bash
-NEW_PASS=$(az keyvault secret show \
-  --vault-name <key-vault-name> \
-  --name postgresql-admin-password \
-  --query "value" -o tsv)
-az postgres flexible-server update \
-  --name <server-name> \
-  --resource-group <resource-group> \
-  --admin-password "$NEW_PASS"
-```
+Recover the existing `random.RandomPassword` state where available, or provide
+the existing PostgreSQL admin credential through
+`LLMAVEN_SECRETS_POSTGRESQL_ADMIN_PASSWORD` before the first deployment. The
+SecretsManager supports this override and uses it for both the server and
+database connection strings. Obtain it through an approved secret source; do not
+print it or commit it to a config file.
+
+If neither the original random-resource state nor an override exists, Pulumi
+will generate a new password and may rotate the server credential during the
+next deployment. Inspect the preview and explicitly plan that rotation,
+connection-string updates and service reconnection before approving it. Do not
+rely on deploying mismatched credentials and manually fixing PostgreSQL
+afterward.
