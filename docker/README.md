@@ -208,8 +208,8 @@ Once all services are healthy:
 
 **Image**: Custom build from `dockerfiles/litellm.dockerfile`
 
-- Base image: `ghcr.io/berriai/litellm:v1.79.1-stable`
-- Pre-installed packages: `mlflow==3.6.0`
+- Base image: `ghcr.io/berriai/litellm:v1.106.6` (pinned by digest)
+- Pre-installed packages: `mlflow-skinny==3.6.0`
 
 **Ports**:
 
@@ -481,11 +481,42 @@ LITELLM_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGR
 DATABASE_URL=${LITELLM_DATABASE_URL}                                  # Required by LiteLLM
 MLFLOW_TRACKING_URI=http://${MLFLOW_HOST}:${MLFLOW_PORT}             # Uses MLflow variables
 MLFLOW_EXPERIMENT_NAME="Default"
-LITELLM_MASTER_KEY=sk-1234                                            # Change in production!
+LITELLM_MASTER_KEY=                                                   # Required, see below
 ```
 
-**Note**: The LiteLLM Docker image is built with `mlflow` pre-installed (see
-`dockerfiles/litellm.dockerfile`).
+**Master key**: LiteLLM 1.106+ refuses to start when `LITELLM_MASTER_KEY` is
+unset, empty, or one of the publicly known defaults (including `sk-1234`).
+Generate a key before the first start, only if `.env` doesn't already have one
+(a new key on an existing database needs the migration below):
+
+```bash
+echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 32)" >> .env
+```
+
+Docker Compose reads `.env` for the containers, but it doesn't set anything in
+your host shell. The client examples under [Usage](#usage) read
+`LITELLM_MASTER_KEY` from your shell, so export the configured key there first:
+
+```bash
+export LITELLM_MASTER_KEY="$(sed -n 's/^LITELLM_MASTER_KEY=\([^[:space:]#]*\).*/\1/p' .env | tail -n 1)"
+```
+
+When `LITELLM_SALT_KEY` is unset, the master key also encrypts the provider
+credentials stored in the database. Changing it on an existing database is a
+migration, not a config edit:
+
+1. Set `LITELLM_MIGRATE_FROM_MASTER_KEY=<old key>` next to the new
+   `LITELLM_MASTER_KEY`.
+2. Start the proxy once. It re-encrypts the stored values and logs that the old
+   key can be removed.
+3. Remove `LITELLM_MIGRATE_FROM_MASTER_KEY`.
+
+A local database created with `sk-1234` needs these steps, or can be recreated
+by stopping the stack and removing the `llmaven_postgres_data` volume (this
+deletes all local Postgres data).
+
+**Note**: The LiteLLM Docker image is built with `mlflow-skinny` pre-installed
+(see `dockerfiles/litellm.dockerfile`).
 
 #### LLM Provider API Keys
 
@@ -592,14 +623,18 @@ file overrides it to run `ensure_blob_container.py` first.
 Located at `dockerfiles/litellm.dockerfile`:
 
 ```dockerfile
-FROM ghcr.io/berriai/litellm:v1.79.1-stable
+FROM ghcr.io/berriai/litellm:v1.106.6@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
 
-RUN pip install --no-cache-dir "mlflow==3.6.0"
-
-RUN mkdir -p /app
-
-COPY config.yaml /app/config.yaml
+RUN python -m ensurepip \
+ && python -m pip install --no-cache-dir \
+      "litellm==1.106.6" "mlflow-skinny==3.6.0" "azure-storage-blob>=12.0.0,<13" "azure-identity>=1.0.0,<2"
 ```
+
+The base image has no `pip` executable, so the build bootstraps it with the
+bundled `ensurepip`. Pinning `litellm==1.106.6` again makes the build fail if
+the add-on packages would replace it. The image uses `mlflow-skinny` because the
+full `mlflow==3.6.0` package caps `cryptography<47`, which would downgrade the
+base image's patched `cryptography`.
 
 Pre-installs MLflow for logging integration and copies the LiteLLM configuration
 file into the image.
@@ -633,12 +668,16 @@ first startup:
 
 ### Making LLM Requests
 
+These examples read `LITELLM_MASTER_KEY` from your shell. In a new shell, run
+the `export` from [LiteLLM Configuration](#litellm-configuration) in the
+`docker/` directory first.
+
 #### Using cURL
 
 ```bash
 curl http://localhost:4000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-1234" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -d '{
     "model": "gpt-5-mini",
     "messages": [
@@ -650,12 +689,14 @@ curl http://localhost:4000/v1/chat/completions \
 #### Using OpenAI Python SDK
 
 ```python
+import os
+
 from openai import OpenAI
 
 # Configure client to use LiteLLM proxy
 client = OpenAI(
     base_url="http://localhost:4000",
-    api_key="sk-1234"  # Your LITELLM_MASTER_KEY
+    api_key=os.environ["LITELLM_MASTER_KEY"],
 )
 
 # Make a chat completion request
@@ -673,12 +714,14 @@ print(response.choices[0].message.content)
 #### Using LangChain
 
 ```python
+import os
+
 from langchain_openai import ChatOpenAI
 
 # Configure LangChain to use LiteLLM proxy
 llm = ChatOpenAI(
     model="gpt-5-mini",
-    openai_api_key="sk-1234",
+    openai_api_key=os.environ["LITELLM_MASTER_KEY"],
     openai_api_base="http://localhost:4000"
 )
 
@@ -1395,12 +1438,14 @@ redis:
 
 #### Environment Variables for Applications
 
-When running LLMaven applications that need to connect to these services:
+When running LLMaven applications that need to connect to these services (with
+`LITELLM_MASTER_KEY` exported as in
+[LiteLLM Configuration](#litellm-configuration)):
 
 ```bash
 # LiteLLM Proxy
 export LITELLM_API_BASE=http://localhost:4000
-export LITELLM_API_KEY=sk-1234
+export LITELLM_API_KEY="$LITELLM_MASTER_KEY"
 
 # MLflow Tracking
 export MLFLOW_TRACKING_URI=http://localhost:8080
@@ -1416,7 +1461,7 @@ import os
 
 # Configure environment
 os.environ['LITELLM_API_BASE'] = 'http://localhost:4000'
-os.environ['LITELLM_API_KEY'] = 'sk-1234'
+os.environ['LITELLM_API_KEY'] = os.environ['LITELLM_MASTER_KEY']
 os.environ['MLFLOW_TRACKING_URI'] = 'http://localhost:8080'
 
 from openai import OpenAI

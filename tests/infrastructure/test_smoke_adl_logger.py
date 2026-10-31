@@ -8,7 +8,7 @@ Prerequisites:
   Valid Azure OpenAI credentials in docker/.env
 
 Run:
-  RUN_ADL_LOGGER_SMOKE_TEST=1 pytest tests/infrastructure/test_smoke_adl_logger.py -v
+  RUN_ADL_LOGGER_SMOKE_TEST=1 LITELLM_KEY="$LITELLM_MASTER_KEY" pytest tests/infrastructure/test_smoke_adl_logger.py -v
 """
 
 import json
@@ -21,7 +21,7 @@ import pytest
 
 # Environment configuration
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://localhost:4000")
-LITELLM_KEY = os.environ.get("LITELLM_KEY", "sk-1234")
+LITELLM_KEY = os.environ.get("LITELLM_KEY", "")
 MODEL = os.environ.get("MODEL", "azure/gpt-5-mini")
 ADLS_CONTAINER = os.environ.get("ADLS_CONTAINER", "litellm-logs")
 AZURITE_CONN_STR = os.environ.get(
@@ -70,6 +70,8 @@ def test_adl_logger_smoke_test():
             "Set RUN_ADL_LOGGER_SMOKE_TEST=1 to run this smoke test with Docker "
             "services and Azure credentials."
         )
+    if not LITELLM_KEY:
+        pytest.skip("Set LITELLM_KEY to the proxy's LITELLM_MASTER_KEY.")
     blob_module = pytest.importorskip(
         "azure.storage.blob",
         reason="azure-storage-blob is required for the AdlLogger smoke test",
