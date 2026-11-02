@@ -20,7 +20,12 @@ class ValidationError(Exception):
 
 
 def check_azure_cli() -> Tuple[bool, str]:
-    """Check if Azure CLI is installed and authenticated.
+    """Check if Azure CLI is installed and logged in.
+
+    `az account show` reads only the local account cache, so it passes even
+    when the login has expired. check_subscription_access tests the token for
+    the configured subscription; an expired session in the CLI default
+    subscription must not fail a deploy to another one.
 
     Returns:
         Tuple of (success, message)
@@ -58,11 +63,14 @@ def check_azure_cli() -> Tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, "Azure login check timed out"
 
-    return True, "Azure CLI is installed and authenticated"
+    return True, "Azure CLI is installed and logged in"
 
 
 def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
-    """Check if subscription is accessible.
+    """Check that the Azure CLI can get an access token for the subscription.
+
+    `az account get-access-token` refreshes the token, so unlike
+    `az account show` it fails when the login has expired.
 
     Args:
         subscription_id: Azure subscription ID
@@ -75,15 +83,27 @@ def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
 
     try:
         result = subprocess.run(
-            ["az", "account", "show", "--subscription", subscription_id],
+            [
+                "az",
+                "account",
+                "get-access-token",
+                "--subscription",
+                subscription_id,
+                "--query",
+                "expiresOn",
+                "-o",
+                "tsv",
+            ],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
         if result.returncode != 0:
             return (
                 False,
-                f"Subscription {subscription_id} is not accessible or does not exist",
+                f"Subscription {subscription_id} is not accessible: "
+                f"{result.stderr.strip()}\n"
+                "     If your Azure login has expired, run: az login",
             )
         return True, f"Subscription {subscription_id} is accessible"
     except subprocess.TimeoutExpired:

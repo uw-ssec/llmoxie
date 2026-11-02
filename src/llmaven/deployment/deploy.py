@@ -17,6 +17,8 @@ from ..infrastructure.main import create_pulumi_program
 
 CONTAINER_NAME = "pulumi-state"
 PULUMI_BACKEND_URL = f"azblob://{CONTAINER_NAME}?storage_account={{storage_account}}"
+# az error codes meaning the storage account (or its resource group) doesn't exist
+AZ_NOT_FOUND_CODES = ("ResourceNotFound", "ResourceGroupNotFound")
 
 
 class DeploymentError(Exception):
@@ -60,48 +62,59 @@ def _get_storage_key(
         subscription_id: Azure subscription that holds the storage account,
             or None for the Azure CLI default
     Returns:
-        Storage account key if it exists, None otherwise
+        Storage account key if it exists, None if the storage account or its
+        resource group doesn't exist
+    Raises:
+        DeploymentError: If the lookup fails for any other reason, such as an
+            expired Azure CLI login. The message includes the az error.
     """
+    result = _run_az_command(
+        [
+            "storage",
+            "account",
+            "show",
+            "--name",
+            storage_account,
+            "--resource-group",
+            rg_name,
+            "--output",
+            "json",
+        ],
+        check=False,
+        subscription_id=subscription_id,
+    )
+
+    if result.returncode != 0:
+        if any(code in result.stderr for code in AZ_NOT_FOUND_CODES):
+            return None
+        raise DeploymentError(
+            f"Could not look up storage account '{storage_account}' in resource "
+            f"group '{rg_name}': {result.stderr.strip()}"
+        )
+
     try:
-        result = _run_az_command(
+        keys_result = _run_az_command(
             [
                 "storage",
                 "account",
-                "show",
-                "--name",
+                "keys",
+                "list",
+                "--account-name",
                 storage_account,
                 "--resource-group",
                 rg_name,
                 "--output",
                 "json",
             ],
-            check=False,
             subscription_id=subscription_id,
         )
-
-        if result.returncode == 0:
-            # Get storage key
-            keys_result = _run_az_command(
-                [
-                    "storage",
-                    "account",
-                    "keys",
-                    "list",
-                    "--account-name",
-                    storage_account,
-                    "--resource-group",
-                    rg_name,
-                    "--output",
-                    "json",
-                ],
-                subscription_id=subscription_id,
-            )
-            keys = json.loads(keys_result.stdout)
-            return keys[0]["value"]
-
-        return None
-    except Exception:
-        return None
+        keys = json.loads(keys_result.stdout)
+        return keys[0]["value"]
+    except (DeploymentError, ValueError, KeyError, IndexError) as e:
+        raise DeploymentError(
+            f"Could not read the key for storage account '{storage_account}' in "
+            f"resource group '{rg_name}': {e}"
+        ) from e
 
 
 def _get_unique_name(base_name: str, max_len: int = 24) -> str:
