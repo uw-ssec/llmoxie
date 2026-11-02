@@ -7,8 +7,6 @@ This module orchestrates the complete secrets management workflow:
 4. Provide secret references for Container Apps
 """
 
-from typing import Dict, List, Optional
-
 import pulumi
 import pulumi_azure_native as azure_native
 import pulumi_random as random
@@ -55,11 +53,11 @@ class SecretsManager:
         self.environment = environment
 
         # Storage for created secrets
-        self.user_secrets: Dict[str, azure_native.keyvault.Secret] = {}
-        self.auto_secrets: Dict[str, azure_native.keyvault.Secret] = {}
-        self.all_secrets: Dict[str, azure_native.keyvault.Secret] = {}
+        self.user_secrets: dict[str, azure_native.keyvault.Secret] = {}
+        self.auto_secrets: dict[str, azure_native.keyvault.Secret] = {}
+        self.all_secrets: dict[str, azure_native.keyvault.Secret] = {}
 
-    def create_user_provided_secrets(self) -> Dict[str, azure_native.keyvault.Secret]:
+    def create_user_provided_secrets(self) -> dict[str, azure_native.keyvault.Secret]:
         """
         Create Key Vault secrets from LLMAVEN_SECRETS_* environment variables.
 
@@ -156,8 +154,8 @@ class SecretsManager:
         postgres_server_fqdn: Output[str],
         admin_login: str,
         admin_password: Output[str],
-        database_names: Optional[List[str]] = None,
-    ) -> Dict[str, azure_native.keyvault.Secret]:
+        database_names: list[str] | None = None,
+    ) -> dict[str, azure_native.keyvault.Secret]:
         """
         Create database connection strings for all databases.
 
@@ -396,7 +394,7 @@ class SecretsManager:
 
         return secret_resource
 
-    def get_secret(self, secret_name: str) -> Optional[azure_native.keyvault.Secret]:
+    def get_secret(self, secret_name: str) -> azure_native.keyvault.Secret | None:
         """
         Get a secret by name.
 
@@ -408,7 +406,7 @@ class SecretsManager:
         """
         return self.all_secrets.get(secret_name)
 
-    def get_secret_value(self, secret_name: str) -> Optional[Output[str]]:
+    def get_secret_value(self, secret_name: str) -> Output[str] | None:
         """
         Get a secret value by name.
 
@@ -423,7 +421,7 @@ class SecretsManager:
             return secret.properties.value
         return None
 
-    def get_secret_names(self) -> List[str]:
+    def get_secret_names(self) -> list[str]:
         """
         Get list of all secret names.
 
@@ -432,7 +430,7 @@ class SecretsManager:
         """
         return list(self.all_secrets.keys())
 
-    def get_user_secret_names(self) -> List[str]:
+    def get_user_secret_names(self) -> list[str]:
         """
         Get list of user-provided secret names.
 
@@ -441,7 +439,7 @@ class SecretsManager:
         """
         return list(self.user_secrets.keys())
 
-    def get_auto_secret_names(self) -> List[str]:
+    def get_auto_secret_names(self) -> list[str]:
         """
         Get list of auto-generated secret names.
 

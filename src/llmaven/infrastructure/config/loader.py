@@ -4,7 +4,7 @@ This module handles loading and parsing llmaven-config.yaml files.
 """
 
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -16,10 +16,8 @@ from .schema import LLMavenConfig
 class ConfigLoadError(Exception):
     """Exception raised when configuration loading fails."""
 
-    pass
 
-
-def load_config(config_path: Union[str, Path]) -> LLMavenConfig:
+def load_config(config_path: str | Path) -> LLMavenConfig:
     """Load and validate configuration from YAML file.
 
     Args:
@@ -66,7 +64,7 @@ def load_config(config_path: Union[str, Path]) -> LLMavenConfig:
     return config
 
 
-def load_config_dict(config_path: Union[str, Path]) -> dict:
+def load_config_dict(config_path: str | Path) -> dict:
     """Load configuration as dictionary without validation.
 
     Args:
@@ -92,7 +90,7 @@ def load_config_dict(config_path: Union[str, Path]) -> dict:
         raise ConfigLoadError(f"Failed to read configuration file {config_path}: {e}")
 
 
-def save_config(config: LLMavenConfig, output_path: Union[str, Path]) -> None:
+def save_config(config: LLMavenConfig, output_path: str | Path) -> None:
     """Save configuration to YAML file.
 
     Args:
@@ -134,9 +132,7 @@ def _coerce_yaml_value(value: Any) -> Any:
     return value
 
 
-def update_config_fields(
-    config_path: Union[str, Path], updates: dict[str, str]
-) -> None:
+def update_config_fields(config_path: str | Path, updates: dict[str, str]) -> None:
     """Update specific fields in YAML config while preserving formatting.
 
     Uses a ruamel.yaml round-trip (load-modify-dump) so all comments, blank

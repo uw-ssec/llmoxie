@@ -1,7 +1,6 @@
 """Helper functions for creating Azure resources with LLMaven configuration."""
 
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import pulumi
 import pulumi_azure_native as azure_native
@@ -15,7 +14,7 @@ def create_user_assigned_managed_identity(
     name: str,
     resource_group_name: Output[str],
     location: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.managedidentity.UserAssignedIdentity:
     """Create a user-assigned managed identity.
 
@@ -42,7 +41,7 @@ def create_user_assigned_managed_identity(
 def create_resource_group(
     name: str,
     location: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.resources.ResourceGroup:
     """Create an Azure Resource Group.
 
@@ -67,7 +66,7 @@ def create_virtual_network(
     resource_group_name: Output[str],
     location: str,
     address_space: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.network.VirtualNetwork:
     """Create an Azure Virtual Network.
 
@@ -98,7 +97,7 @@ def create_log_analytics_workspace(
     resource_group_name: Output[str],
     location: str,
     retention_days: int = 90,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.operationalinsights.Workspace:
     """Create a Log Analytics Workspace for monitoring.
 
@@ -135,9 +134,9 @@ def create_postgres_flexible_server(
     high_availability: bool,
     backup_retention_days: int,
     geo_redundant_backup: bool,
-    databases: List[str],
+    databases: list[str],
     key_vault: azure_native.keyvault.Vault,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.dbforpostgresql.Server:
     """Create a PostgreSQL Flexible Server with databases.
 
@@ -189,13 +188,13 @@ def create_mlflow_app(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: Dict[str, str],
+    env_vars: dict[str, str],
     key_vault: azure_native.keyvault.Vault,
-    key_vault_secret_refs: Dict[str, str],
-    managed_identity_id: Optional[Output[str]] = None,
-    tags: Optional[Dict[str, str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
-    custom_domains: Optional[List[CustomDomainConfig]] = None,
+    key_vault_secret_refs: dict[str, str],
+    managed_identity_id: Output[str] | None = None,
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+    custom_domains: list[CustomDomainConfig] | None = None,
 ) -> azure_native.app.ContainerApp:
     """Create MLflow Container App.
 
@@ -280,17 +279,17 @@ def create_litellm_app(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: Dict[str, str],
+    env_vars: dict[str, str],
     key_vault: azure_native.keyvault.Vault,
-    key_vault_secret_refs: Dict[str, str],
-    config_file: Optional[str] = None,
-    managed_identity_id: Optional[Output[str]] = None,
-    tags: Optional[Dict[str, str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
-    extra_modules: Optional[List[Path]] = None,
-    revision_suffix: Optional[str] = None,
-    refresh_trigger: Optional[str] = None,
-    custom_domains: Optional[List[CustomDomainConfig]] = None,
+    key_vault_secret_refs: dict[str, str],
+    config_file: str | None = None,
+    managed_identity_id: Output[str] | None = None,
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+    extra_modules: list[Path] | None = None,
+    revision_suffix: str | None = None,
+    refresh_trigger: str | None = None,
+    custom_domains: list[CustomDomainConfig] | None = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
