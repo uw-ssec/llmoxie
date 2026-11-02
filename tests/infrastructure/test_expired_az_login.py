@@ -76,7 +76,11 @@ class TestGetStorageKey:
 
 class TestGetStackExpiredLogin:
     def test_reports_az_error_instead_of_nonetype(self, monkeypatch):
-        for name in ("PULUMI_BACKEND_URL", "AZURE_STORAGE_ACCOUNT", "AZURE_STORAGE_KEY"):
+        for name in (
+            "PULUMI_BACKEND_URL",
+            "AZURE_STORAGE_ACCOUNT",
+            "AZURE_STORAGE_KEY",
+        ):
             monkeypatch.delenv(name, raising=False)
         config = MagicMock()
         config.azure.subscription_id = SUB
