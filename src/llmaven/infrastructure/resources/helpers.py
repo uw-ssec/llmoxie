@@ -7,6 +7,7 @@ import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
+from ..config.schema import CustomDomainConfig
 from .container_apps import create_container_app_with_key_vault_secrets
 
 
@@ -194,6 +195,7 @@ def create_mlflow_app(
     managed_identity_id: Optional[Output[str]] = None,
     tags: Optional[Dict[str, str]] = None,
     opts: Optional[pulumi.ResourceOptions] = None,
+    custom_domains: Optional[List[CustomDomainConfig]] = None,
 ) -> azure_native.app.ContainerApp:
     """Create MLflow Container App.
 
@@ -212,6 +214,7 @@ def create_mlflow_app(
         key_vault: Key Vault for secrets
         managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access
         tags: Resource tags
+        custom_domains: Hostnames to bind to existing managed certificates
 
     Returns:
         ContainerApp resource
@@ -260,6 +263,7 @@ def create_mlflow_app(
         tags=tags,
         enable_ingress=True,
         ingress_external=True,
+        custom_domains=custom_domains,
         opts=opts,
     )
 
@@ -286,6 +290,7 @@ def create_litellm_app(
     extra_modules: Optional[List[Path]] = None,
     revision_suffix: Optional[str] = None,
     refresh_trigger: Optional[str] = None,
+    custom_domains: Optional[List[CustomDomainConfig]] = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -310,6 +315,7 @@ def create_litellm_app(
         extra_modules: List of additional local Python modules to read and mount as secrets (for custom callbacks, etc.)
         revision_suffix: Revision name suffix (optional)
         refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
+        custom_domains: Hostnames to bind to existing managed certificates
 
     Returns:
         ContainerApp resource
@@ -422,5 +428,6 @@ def create_litellm_app(
         ingress_external=True,
         revision_suffix=revision_suffix,
         refresh_trigger=refresh_trigger,
+        custom_domains=custom_domains,
         opts=opts,
     )

@@ -4,14 +4,14 @@ This module creates and configures Azure Container Apps Environment with
 VNet integration, monitoring, and workload profiles.
 """
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 import datetime
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import LLMavenConfig, BackupJobConfig
+from ..config.schema import LLMavenConfig, BackupJobConfig, CustomDomainConfig
 
 
 def create_container_apps_environment(
@@ -137,6 +137,7 @@ def create_container_app_with_key_vault_secrets(
     ingress_external: bool = True,
     revision_suffix: Optional[str] = None,
     refresh_trigger: Optional[str] = None,
+    custom_domains: Optional[List[CustomDomainConfig]] = None,
     opts: Optional[pulumi.ResourceOptions] = None,
 ) -> azure_native.app.ContainerApp:
     """
@@ -170,6 +171,8 @@ def create_container_app_with_key_vault_secrets(
         ingress_external: Make ingress externally accessible
         revision_suffix: Revision name suffix (optional)
         refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
+        custom_domains: Hostnames to bind to existing managed certificates in the
+            environment. Hostnames not listed are removed from the ingress on deploy.
 
     Returns:
         ContainerApp resource
@@ -254,6 +257,20 @@ def create_container_app_with_key_vault_secrets(
                     weight=100,
                 )
             ],
+            custom_domains=[
+                azure_native.app.CustomDomainArgs(
+                    name=domain.name,
+                    binding_type="SniEnabled",
+                    certificate_id=pulumi.Output.concat(
+                        managed_environment_id,
+                        "/managedCertificates/",
+                        domain.certificate_name,
+                    ),
+                )
+                for domain in custom_domains
+            ]
+            if custom_domains
+            else None,
         )
 
     # Create Container App
