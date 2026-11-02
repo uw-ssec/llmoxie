@@ -338,6 +338,125 @@ class BackupJobConfig(BaseModel):
     )
 
 
+FOUNDRY_DEPLOYMENT_SKUS = [
+    "Standard",
+    "GlobalStandard",
+    "DataZoneStandard",
+    "ProvisionedManaged",
+    "GlobalProvisionedManaged",
+    "DataZoneProvisionedManaged",
+    "GlobalBatch",
+    "DataZoneBatch",
+    "DeveloperTier",
+]
+
+FOUNDRY_VERSION_UPGRADE_OPTIONS = [
+    "NoAutoUpgrade",
+    "OnceNewDefaultVersionAvailable",
+    "OnceCurrentVersionExpired",
+]
+
+# Key Vault secrets the stack writes itself when it manages the Foundry account.
+FOUNDRY_MANAGED_SECRETS = ["azure-api-base", "azure-api-key", "azure-api-version"]
+
+
+def foundry_secret_collisions(
+    foundry_enabled: bool, user_secret_names: List[str]
+) -> List[str]:
+    """Return user-provided Key Vault secret names the Foundry stack would overwrite.
+
+    Args:
+        foundry_enabled: Whether the stack manages the Foundry account
+        user_secret_names: Final Key Vault names of LLMAVEN_SECRETS_* values
+
+    Returns:
+        Sorted colliding secret names (empty when Foundry is disabled)
+    """
+    if not foundry_enabled:
+        return []
+    return sorted(set(user_secret_names) & set(FOUNDRY_MANAGED_SECRETS))
+
+
+class FoundryDeploymentConfig(BaseModel):
+    """One model deployment in the Foundry account."""
+
+    name: str = Field(
+        description="Deployment name; LiteLLM model_list refers to it as azure/<name>",
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
+    )
+    model_name: str = Field(description="Model name, e.g. gpt-5-mini")
+    model_format: str = Field(default="OpenAI", description="Model format/publisher")
+    model_version: str = Field(description="Model version, e.g. 2025-08-07")
+    sku: str = Field(default="GlobalStandard", description="Deployment SKU")
+    capacity: int = Field(
+        default=10,
+        ge=1,
+        description="Capacity units (thousands of tokens per minute for Standard SKUs)",
+    )
+    version_upgrade_option: str = Field(
+        default="NoAutoUpgrade",
+        description="What happens when Azure publishes or retires a model version",
+    )
+
+    @field_validator("sku")
+    @classmethod
+    def validate_sku(cls, v: str) -> str:
+        """Validate deployment SKU."""
+        if v not in FOUNDRY_DEPLOYMENT_SKUS:
+            raise ValueError(f"Deployment sku must be one of {FOUNDRY_DEPLOYMENT_SKUS}")
+        return v
+
+    @field_validator("version_upgrade_option")
+    @classmethod
+    def validate_version_upgrade_option(cls, v: str) -> str:
+        """Validate version upgrade option."""
+        if v not in FOUNDRY_VERSION_UPGRADE_OPTIONS:
+            raise ValueError(
+                f"version_upgrade_option must be one of {FOUNDRY_VERSION_UPGRADE_OPTIONS}"
+            )
+        return v
+
+
+class FoundryConfig(BaseModel):
+    """Azure AI Foundry (AIServices) account and model deployments."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Provision the Foundry account and deployments in this stack; "
+        "when false, bring your own endpoint through azure-api-* secrets",
+    )
+    account_name: Optional[str] = Field(
+        default=None,
+        description="Account name and custom subdomain (globally unique); "
+        "defaults to <project>-foundry-<environment>",
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9-]{1,62}[a-zA-Z0-9]$",
+    )
+    location: Optional[str] = Field(
+        default=None,
+        description="Azure region for the account; defaults to project.location",
+    )
+    sku: str = Field(default="S0", description="Account SKU")
+    api_version: str = Field(
+        default="2025-04-01-preview",
+        description="Azure OpenAI API version written to the azure-api-version secret",
+    )
+    deployments: List[FoundryDeploymentConfig] = Field(
+        default_factory=list, description="Model deployments"
+    )
+
+    @field_validator("deployments")
+    @classmethod
+    def validate_unique_deployment_names(
+        cls, v: List[FoundryDeploymentConfig]
+    ) -> List[FoundryDeploymentConfig]:
+        """Reject duplicate deployment names."""
+        names = [d.name for d in v]
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        if duplicates:
+            raise ValueError(f"Duplicate foundry deployment names: {duplicates}")
+        return v
+
+
 class LLMavenConfig(BaseModel):
     """Root configuration model for LLMaven deployment."""
 
@@ -378,6 +497,10 @@ class LLMavenConfig(BaseModel):
     backup_job: BackupJobConfig = Field(
         default_factory=BackupJobConfig,
         description="Scheduled backup job configuration",
+    )
+    foundry: FoundryConfig = Field(
+        default_factory=FoundryConfig,
+        description="Azure AI Foundry account and model deployments",
     )
     tags: Dict[str, str] = Field(
         default_factory=lambda: {

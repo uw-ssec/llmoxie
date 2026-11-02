@@ -59,6 +59,10 @@ and `llmaven backup-infra output`.
 - Storage account and blob containers, with lifecycle management
 - Key Vault for secrets, plus a user-assigned managed identity
 - Log Analytics workspace
+- Optional (`foundry.enabled`): Azure AI Foundry `AIServices` account and its
+  model deployments (`resources/foundry.py`). Its network ACL allows only the
+  Container Apps subnet through a `Microsoft.CognitiveServices` service
+  endpoint, and the stack writes the `azure-api-*` Key Vault secrets.
 
 The container images come from GHCR. See
 [repository-map.md](repository-map.md#deployment) for how they're built.

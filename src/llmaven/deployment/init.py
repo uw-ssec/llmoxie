@@ -193,6 +193,10 @@ def initialize_config(
     print("     LLMAVEN_SECRETS_AZURE_OPENAI_API_KEY=your-azure-openai-key")
     print("     LLMAVEN_SECRETS_ANTHROPIC_API_KEY=your-anthropic-key")
     print()
+    print("   To have the stack create the Azure AI Foundry model deployments,")
+    print("   set foundry.enabled: true and list foundry.deployments; then skip the")
+    print("   LLMAVEN_SECRETS_AZURE_API_* secrets, which the stack writes itself.")
+    print()
     print("3. Validate the configuration:")
     print(f"   llmaven infra validate --config {output_path}")
     print(

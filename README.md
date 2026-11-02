@@ -256,10 +256,29 @@ Resource Group
 ├── PostgreSQL Flexible Server (llmaven, mlflow_db, litellm_db)
 ├── Storage Account (ADLS Gen2: mlflow, llmaven containers)
 ├── Log Analytics Workspace
+├── Azure AI Foundry account + model deployments (only with foundry.enabled)
 └── Container Apps Environment
     ├── MLflow Container App (managed identity → Key Vault)
     └── LiteLLM Container App (managed identity → Key Vault)
 ```
+
+#### Azure AI Foundry models (optional)
+
+With `foundry.enabled: true` the stack creates an `AIServices` account and one
+deployment per `foundry.deployments` entry, then writes `azure-api-base`,
+`azure-api-key` and `azure-api-version` to Key Vault. Don't set the matching
+`LLMAVEN_SECRETS_AZURE_API_*` variables; validate and deploy fail if you do.
+Every `azure/<name>` model in the LiteLLM config must name a deployment.
+
+The account's network ACL denies everything except the Container Apps
+environment subnet (service endpoint plus one virtual network rule, no IP rules,
+no trusted-service bypass). Every workload in that environment (LiteLLM, MLflow,
+the backup job) can reach it; nothing outside the subnet can, including your
+laptop. Quota and regional model availability are checked by Azure at deploy
+time, not by `infra validate`.
+
+With `foundry.enabled: false` (the default) nothing changes: bring your own
+endpoint through the `azure-api-*` secrets.
 
 ## Development
 
