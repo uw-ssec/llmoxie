@@ -25,8 +25,15 @@ class DeploymentError(Exception):
     pass
 
 
-def _run_az_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    """Run an Azure CLI command."""
+def _run_az_command(
+    args: list[str], check: bool = True, subscription_id: str | None = None
+) -> subprocess.CompletedProcess:
+    """Run an Azure CLI command, in subscription_id if given.
+
+    Passing --subscription per call keeps the user's CLI default untouched.
+    """
+    if subscription_id:
+        args = args + ["--subscription", subscription_id]
     try:
         return subprocess.run(
             ["az"] + args,
@@ -42,12 +49,16 @@ def _run_az_command(args: list[str], check: bool = True) -> subprocess.Completed
         )
 
 
-def _get_storage_key(rg_name: str, storage_account: str) -> str | None:
+def _get_storage_key(
+    rg_name: str, storage_account: str, subscription_id: str | None
+) -> str | None:
     """Get storage account key if storage exists.
 
     Args:
         rg_name: Resource group name
         storage_account: Storage account name
+        subscription_id: Azure subscription that holds the storage account,
+            or None for the Azure CLI default
     Returns:
         Storage account key if it exists, None otherwise
     """
@@ -65,6 +76,7 @@ def _get_storage_key(rg_name: str, storage_account: str) -> str | None:
                 "json",
             ],
             check=False,
+            subscription_id=subscription_id,
         )
 
         if result.returncode == 0:
@@ -81,7 +93,8 @@ def _get_storage_key(rg_name: str, storage_account: str) -> str | None:
                     rg_name,
                     "--output",
                     "json",
-                ]
+                ],
+                subscription_id=subscription_id,
             )
             keys = json.loads(keys_result.stdout)
             return keys[0]["value"]
@@ -155,11 +168,8 @@ def initialize_azure_infra(config_path: Path) -> None:
         )
 
     try:
-        # Set subscription
-        _run_az_command(["account", "set", "--subscription", subscription_id])
-
         # Check if storage already exists
-        storage_key = _get_storage_key(rg_name, storage_account)
+        storage_key = _get_storage_key(rg_name, storage_account, subscription_id)
 
         if storage_key is not None:
             print(f"   ✓ Storage account already exists: {storage_account}")
@@ -176,7 +186,8 @@ def initialize_azure_infra(config_path: Path) -> None:
                     "--tags",
                     "purpose=pulumi-state",
                     f"project={project_name}",
-                ]
+                ],
+                subscription_id=subscription_id,
             )
             print(f"   ✓ Resource group created: {rg_name}")
 
@@ -199,7 +210,8 @@ def initialize_azure_infra(config_path: Path) -> None:
                     "--tags",
                     "purpose=pulumi-state-store",
                     f"project={project_name}",
-                ]
+                ],
+                subscription_id=subscription_id,
             )
             print(f"   ✓ Storage account created: {storage_account}")
 
@@ -216,7 +228,8 @@ def initialize_azure_infra(config_path: Path) -> None:
                     rg_name,
                     "--output",
                     "json",
-                ]
+                ],
+                subscription_id=subscription_id,
             )
             keys = json.loads(result.stdout)
             storage_key = keys[0]["value"]
@@ -233,7 +246,8 @@ def initialize_azure_infra(config_path: Path) -> None:
                     storage_account,
                     "--account-key",
                     storage_key,
-                ]
+                ],
+                subscription_id=subscription_id,
             )
             print(f"   ✓ Blob container created: {CONTAINER_NAME}")
 
@@ -269,7 +283,10 @@ def delete_resource_group(config_path: str) -> None:
 
     print(f"   Deleting resource group: {rg_name}")
     try:
-        _run_az_command(["group", "delete", "--name", rg_name, "--yes"])
+        _run_az_command(
+            ["group", "delete", "--name", rg_name, "--yes"],
+            subscription_id=config.azure.subscription_id,
+        )
         print(f"   ✓ Resource group deleted: {rg_name}")
     except DeploymentError as e:
         print(f"   ⚠️ Failed to delete resource group ({rg_name}): {e.stderr}")
@@ -302,6 +319,7 @@ def get_stack(
         config = load_config(config_path)
         rg_name = config.azure.resource_group
         storage_account = config.project.pulumi_state_store
+        subscription_id = config.azure.subscription_id
         if not rg_name or not storage_account:
             raise DeploymentError("Pulumi backend is not configured properly.")
 
@@ -310,9 +328,16 @@ def get_stack(
             PULUMI_BACKEND_URL.format(storage_account=storage_account),
         )
         os.environ.setdefault("AZURE_STORAGE_ACCOUNT", storage_account)
-        os.environ.setdefault(
-            "AZURE_STORAGE_KEY", _get_storage_key(rg_name, storage_account)
-        )
+        if "AZURE_STORAGE_KEY" not in os.environ:
+            storage_key = _get_storage_key(rg_name, storage_account, subscription_id)
+            if storage_key is None:
+                raise DeploymentError(
+                    f"Could not read the key for Pulumi state storage account "
+                    f"'{storage_account}' in resource group '{rg_name}', "
+                    f"subscription '{subscription_id}'. Check that it exists "
+                    "and that your Azure CLI login can access it."
+                )
+            os.environ["AZURE_STORAGE_KEY"] = storage_key
 
         # Create or select stack with inline program
         try:
@@ -321,6 +346,14 @@ def get_stack(
                 project_name=project_name,
                 program=program,
             )
+            # Pin the azure-native provider to the configured subscription
+            # instead of the Azure CLI default. Stack config takes precedence
+            # over ARM_SUBSCRIPTION_ID and any earlier stack setting.
+            if subscription_id:
+                stack.set_config(
+                    "azure-native:subscriptionId",
+                    auto.ConfigValue(value=subscription_id),
+                )
         except Exception as e:
             raise DeploymentError(f"Failed to create or select stack: {e}")
 
