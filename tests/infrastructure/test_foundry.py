@@ -208,6 +208,13 @@ def test_missing_litellm_config_is_reported(tmp_path):
     "content,expected",
     [
         ("- azure/fast\n", "top level must be a mapping, got list"),
+        ("[]\n", "top level must be a mapping, got list"),
+        ("false\n", "top level must be a mapping, got bool"),
+        ("0\n", "top level must be a mapping, got int"),
+        ("model_list: {}\n", "model_list must be a list, got dict"),
+        ("model_list: false\n", "model_list must be a list, got bool"),
+        ("model_list: 0\n", "model_list must be a list, got int"),
+        ('model_list: ""\n', "model_list must be a list, got str"),
         ("model_list: azure/fast\n", "model_list must be a list, got str"),
         ("model_list:\n  - azure/fast\n", "model_list[0] must be a mapping, got str"),
         (

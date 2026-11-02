@@ -35,17 +35,21 @@ def missing_foundry_deployments(config: LLMavenConfig, config_path: Path) -> Lis
 
     litellm_path = resolve_litellm_config_file(config, config_path)
     try:
-        litellm_config = yaml.safe_load(litellm_path.read_text()) or {}
+        litellm_config = yaml.safe_load(litellm_path.read_text())
     except (OSError, yaml.YAMLError) as e:
         return [f"Cannot read LiteLLM config {litellm_path}: {e}"]
 
+    if litellm_config is None:  # Empty file
+        litellm_config = {}
     if not isinstance(litellm_config, dict):
         return [
             f"{litellm_path}: top level must be a mapping, "
             f"got {type(litellm_config).__name__}"
         ]
     # A missing or null model_list is valid: models can live in LiteLLM's database.
-    model_list = litellm_config.get("model_list") or []
+    model_list = litellm_config.get("model_list")
+    if model_list is None:
+        model_list = []
     if not isinstance(model_list, list):
         return [
             f"{litellm_path}: model_list must be a list, "
