@@ -160,6 +160,16 @@ class MonitoringConfig(BaseModel):
     )
 
 
+class CustomDomainConfig(BaseModel):
+    """Custom hostname bound to a container app's ingress."""
+
+    name: str = Field(description="Hostname, e.g. ai-gateway.example.org")
+    certificate_name: str = Field(
+        description="Name of an existing managed certificate in the Container Apps "
+        "environment for this hostname"
+    )
+
+
 class ContainerAppConfig(BaseModel):
     """Container App configuration."""
 
@@ -184,6 +194,11 @@ class ContainerAppConfig(BaseModel):
         default=None,
         description="Fixed REFRESH_TRIGGER value; defaults to the deploy timestamp, "
         "which forces a new revision on every deploy",
+    )
+    custom_domains: List[CustomDomainConfig] = Field(
+        default_factory=list,
+        description="Custom hostnames to keep bound to the ingress; a deploy removes "
+        "any hostname that isn't listed here",
     )
 
 

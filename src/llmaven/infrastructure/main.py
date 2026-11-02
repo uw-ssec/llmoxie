@@ -314,6 +314,7 @@ def create_pulumi_program(config_path: Path):
                 opts=pulumi.ResourceOptions(
                     depends_on=[shared_kv_access_policy, storage_conn_str_secret]
                 ),
+                custom_domains=config.mlflow.custom_domains,
             )
 
             mlflow_fqdn = mlflow_app.configuration.apply(
@@ -370,6 +371,7 @@ def create_pulumi_program(config_path: Path):
                 extra_modules=[adl_logger_path],
                 revision_suffix=config.litellm.revision_suffix,
                 refresh_trigger=config.litellm.refresh_trigger,
+                custom_domains=config.litellm.custom_domains,
             )
 
             # Export LiteLLM URL
