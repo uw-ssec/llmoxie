@@ -59,6 +59,40 @@ and `llmaven backup-infra output`.
 - Storage account and blob containers, with lifecycle management
 - Key Vault for secrets, plus a user-assigned managed identity
 - Log Analytics workspace
+- Azure Managed Redis for LiteLLM (when `redis.enabled`), behind a private
+  endpoint in `private-endpoints-subnet` with a `privatelink.redis.azure.net`
+  private DNS zone; public access is disabled
 
 The container images come from GHCR. See
 [repository-map.md](repository-map.md#deployment) for how they're built.
+
+## Redis for LiteLLM
+
+LiteLLM keeps rate limits, budgets and router state per replica unless the
+replicas share a Redis. The program therefore requires Redis whenever
+`litellm.max_replicas > 1`: `redis.enabled` defaults to true then, and setting
+it to false is a config error. With one replica Redis is off by default.
+
+- The resource is Azure Managed Redis (`azure_native.redisenterprise`), not
+  Azure Cache for Redis, which Microsoft is retiring.
+- `redis.clustering_policy` defaults to `EnterpriseCluster`, so LiteLLM sees one
+  endpoint on port 10000 (TLS). It can't be changed without recreating the
+  database, which drops its data. `OSSCluster` is rejected because it needs a
+  cluster-aware client.
+- `docker/config.yaml` stays Redis-free. At deploy time, when Redis is enabled,
+  the program adds `router_settings.redis_*` and
+  `litellm_settings.force_redis_hash_tag_grouping: true` to the mounted copy.
+  The flag keeps LiteLLM's rate-limit Lua scripts within one hash slot; without
+  it they fail with CROSSSLOT and LiteLLM falls back to per-replica counters.
+- `redis-host`, `redis-port` and `redis-password` live in Key Vault and reach
+  LiteLLM as secret refs; `REDIS_SSL=true` is a plain env var.
+- Turning on Redis for an existing stack is additive, but it changes the LiteLLM
+  revision, so `deploy --expect-no-changes` will report changes once.
+
+**Rotating the Redis key:** regenerate the primary key
+(`az redisenterprise database regenerate-key --cluster-name <cluster> --resource-group <rg> --key-type Primary`),
+then run `llmaven infra deploy`. The deploy reads the new key and updates the
+`redis-password` secret. LiteLLM picks it up in its next revision: deploys
+create one by default, but if `litellm.refresh_trigger` is pinned, restart the
+active revision (`az containerapp revision restart`). Until then LiteLLM can't
+reach Redis, so rotate in a quiet window.

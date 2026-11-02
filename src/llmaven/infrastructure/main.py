@@ -7,6 +7,7 @@ orchestrates the creation of Azure resources including:
 - Key Vault for secrets management
 - PostgreSQL Flexible Server and databases
 - Storage accounts and blob containers
+- Azure Managed Redis for LiteLLM (when enabled)
 - Container Apps for MLflow and LiteLLM
 - Log Analytics for monitoring
 """
@@ -41,6 +42,7 @@ def create_pulumi_program(config_path: Path):
         6. Log Analytics Workspace (if enabled)
         7. Container Apps Environment
         8. Managed Identities for services
+        8.5. Azure Managed Redis (when enabled)
         9. Container Apps (MLflow and LiteLLM)
         """
 
@@ -51,6 +53,9 @@ def create_pulumi_program(config_path: Path):
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
         from llmaven.infrastructure.resources import (
+            REDIS_ENV_VARS,
+            REDIS_KEY_VAULT_SECRET_REFS,
+            REDIS_PORT,
             SecretsManager,
             create_backup_job,
             create_container_apps_environment,
@@ -60,6 +65,7 @@ def create_pulumi_program(config_path: Path):
             create_log_analytics_workspace,
             create_mlflow_app,
             create_postgres_server,
+            create_redis,
             create_storage_account,
             create_virtual_network,
         )
@@ -123,6 +129,23 @@ def create_pulumi_program(config_path: Path):
                 )
             ],
         )
+
+        # Private endpoints need their own undelegated subnet; only Redis uses it,
+        # so it is created only when Redis is enabled.
+        private_endpoints_subnet = None
+        if config.redis.enabled:
+            pulumi.log.info("Setting up for private endpoints subnet...")
+            private_endpoints_subnet = azure_native.network.Subnet(
+                "private-endpoints-subnet",
+                resource_group_name=resource_group,
+                virtual_network_name=vnet.name,
+                subnet_name="private-endpoints-subnet",
+                address_prefix=config.networking.private_endpoints_subnet,
+                opts=pulumi.ResourceOptions(
+                    # Azure rejects concurrent subnet writes on the same VNet.
+                    depends_on=[container_apps_subnet, postgres_subnet]
+                ),
+            )
 
         # 2. Create Key Vault
         pulumi.log.info("Creating Key Vault...")
@@ -289,6 +312,24 @@ def create_pulumi_program(config_path: Path):
             principal_name="apps-identity",
         )
 
+        # 7.2. Azure Managed Redis shared by LiteLLM replicas
+        redis_secrets = {}
+        if config.redis.enabled:
+            pulumi.log.info("Creating Azure Managed Redis...")
+            redis = create_redis(
+                resource_group_name=resource_group,
+                location=location,
+                vnet_id=vnet.id,
+                private_endpoints_subnet_id=private_endpoints_subnet.id,
+                config=config,
+                tags=config.tags,
+            )
+            redis_secrets = secrets_manager.create_redis_secrets(
+                host_name=redis.host_name,
+                port=REDIS_PORT,
+                access_key=redis.primary_key,
+            )
+
         # 8. Deploy Container Apps
 
         # 8.1. MLflow Container App
@@ -347,6 +388,12 @@ def create_pulumi_program(config_path: Path):
             # Add the adl_logger.py as an extra module
             adl_logger_path = Path(__file__).parent / Path("resources/adl_logger.py")
 
+            litellm_env_vars = dict(config.litellm.env_vars)
+            litellm_secret_refs = dict(config.litellm.key_vault_secret_refs)
+            if config.redis.enabled:
+                litellm_env_vars.update(REDIS_ENV_VARS)
+                litellm_secret_refs.update(REDIS_KEY_VAULT_SECRET_REFS)
+
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
                 resource_group_name=resource_group,
@@ -359,19 +406,25 @@ def create_pulumi_program(config_path: Path):
                 memory=config.litellm.memory,
                 min_replicas=config.litellm.min_replicas,
                 max_replicas=config.litellm.max_replicas,
-                env_vars=config.litellm.env_vars,
+                env_vars=litellm_env_vars,
                 key_vault=key_vault,
-                key_vault_secret_refs=config.litellm.key_vault_secret_refs,
+                key_vault_secret_refs=litellm_secret_refs,
                 config_file=config_file_path,
                 managed_identity_id=shared_managed_identity.id,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=[shared_kv_access_policy, storage_conn_str_secret]
+                    depends_on=[
+                        shared_kv_access_policy,
+                        storage_conn_str_secret,
+                        *redis_secrets.values(),
+                    ]
                 ),
                 extra_modules=[adl_logger_path],
                 revision_suffix=config.litellm.revision_suffix,
                 refresh_trigger=config.litellm.refresh_trigger,
                 custom_domains=config.litellm.custom_domains,
+                redis_enabled=bool(config.redis.enabled),
+                redis_clustering_policy=config.redis.clustering_policy,
             )
 
             # Export LiteLLM URL

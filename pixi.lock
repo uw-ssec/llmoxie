@@ -375,8 +375,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b2/37/cc6a55e448deaa9b27377d087da8615a3416d8ad523d5960b78dbeadd02a/opentelemetry_semantic_conventions-0.61b0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0f/4c/f98024021bef4d44dce3613feebd702c7ad8883f777ff8488384c59e9774/parver-0.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9b/53/a9443aa3ca9ba8724fdfa02dd1887c1bcd8e89556b715cfbacca6b63dbec/protobuf-6.33.5-cp39-abi3-manylinux2014_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/48/ae/6c93c0b47ae998a1ca2e6c8ae5aec5c6b5068d8005a68aa76a4d795bdf6a/pulumi-3.226.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/d9/1a/cbf13abcac129d057fa432652067abe53d80d781e9d7fc9ceff88f969ad3/pulumi_azure_native-3.15.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/87/82/9c905fe6ee2d946f1323c3de829462947da4a9dd946d686d5e47a994d940/pulumi-3.273.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/4e/76/2fca7f09b8b5ba4d6313ec52d8836b04088c47c968e052f7f0b0ce902edc/pulumi_azure_native-3.29.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/71/60/917329f640924b18ff085ab889a11c763e0b573da888e8404ff486657602/pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a6/24/4d91e05817e92e3a61c8a21e08fd0f390f5301f1c448b137c57c4bc6e543/semver-3.0.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5d/8f/a32a99fc03e4b37e31b57cb9cefc65050ea08147a8ce12f288616b05ef54/wrapt-1.17.3-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
@@ -469,8 +469,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b2/37/cc6a55e448deaa9b27377d087da8615a3416d8ad523d5960b78dbeadd02a/opentelemetry_semantic_conventions-0.61b0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0f/4c/f98024021bef4d44dce3613feebd702c7ad8883f777ff8488384c59e9774/parver-0.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a2/6b/e48dfc1191bc5b52950246275bf4089773e91cb5ba3592621723cdddca62/protobuf-6.33.5-cp39-abi3-macosx_10_9_universal2.whl
-      - pypi: https://files.pythonhosted.org/packages/48/ae/6c93c0b47ae998a1ca2e6c8ae5aec5c6b5068d8005a68aa76a4d795bdf6a/pulumi-3.226.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/d9/1a/cbf13abcac129d057fa432652067abe53d80d781e9d7fc9ceff88f969ad3/pulumi_azure_native-3.15.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/87/82/9c905fe6ee2d946f1323c3de829462947da4a9dd946d686d5e47a994d940/pulumi-3.273.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/4e/76/2fca7f09b8b5ba4d6313ec52d8836b04088c47c968e052f7f0b0ce902edc/pulumi_azure_native-3.29.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/16/19/13de8e4377ed53079ee996e1ab0a9c33ec2faf808a4647b7b4c0d46dd239/pyyaml-6.0.3-cp311-cp311-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a6/24/4d91e05817e92e3a61c8a21e08fd0f390f5301f1c448b137c57c4bc6e543/semver-3.0.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/31/25/3e8cc2c46b5329c5957cec959cb76a10718e1a513309c31399a4dad07eb3/wrapt-1.17.3-cp311-cp311-macosx_11_0_arm64.whl
@@ -5774,7 +5774,7 @@ packages:
 - pypi: ./
   name: llmaven
   version: 0.1.0
-  sha256: de50c7ff8e6423dc8157513de236743271bff2037c70fb50c8eec6b56e007f79
+  sha256: 5215d002f4042e36c60cd5d0a327a3f55d86555c31ebb3ebf54261db6d271820
   requires_dist:
   - httpx>=0.27.0
   - pydantic>=2.12.4
@@ -5783,7 +5783,7 @@ packages:
   - typer>=0.21.0
   - grpcio-status==1.60.1 ; extra == 'deploy'
   - grpcio>=1.66.2 ; extra == 'deploy'
-  - pulumi-azure-native>=3.0.0 ; extra == 'deploy'
+  - pulumi-azure-native>=3.29.0,<4 ; extra == 'deploy'
   - pulumi-azuread>=5.0.0 ; extra == 'deploy'
   - pulumi-random>=4.0.0 ; extra == 'deploy'
   - pulumi>=3.100.0 ; extra == 'deploy'
@@ -7332,24 +7332,6 @@ packages:
   purls: []
   size: 8252
   timestamp: 1726802366959
-- pypi: https://files.pythonhosted.org/packages/48/ae/6c93c0b47ae998a1ca2e6c8ae5aec5c6b5068d8005a68aa76a4d795bdf6a/pulumi-3.226.0-py3-none-any.whl
-  name: pulumi
-  version: 3.226.0
-  sha256: ad35faa3c67d8cc53908b9442fe32bdb7aa98dedfca4ae1b4791c0a44e32adb6
-  requires_dist:
-  - debugpy~=1.8.7
-  - dill~=0.4
-  - grpcio>=1.68.1,<2 ; python_full_version < '3.14'
-  - grpcio>=1.75.1,<2 ; python_full_version >= '3.14'
-  - opentelemetry-api>=1.20.0
-  - opentelemetry-exporter-otlp-proto-grpc>=1.20.0
-  - opentelemetry-instrumentation-grpc>=0.41b0
-  - opentelemetry-sdk>=1.20.0
-  - packaging>=26.0
-  - protobuf>=3.20.3,<7
-  - pyyaml~=6.0
-  - semver~=3.0
-  requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/87/82/9c905fe6ee2d946f1323c3de829462947da4a9dd946d686d5e47a994d940/pulumi-3.273.0-py3-none-any.whl
   name: pulumi
   version: 3.273.0
@@ -7369,16 +7351,6 @@ packages:
   - semver~=3.0
   - typing-extensions>=4.11,<5
   requires_python: '>=3.10'
-- pypi: https://files.pythonhosted.org/packages/d9/1a/cbf13abcac129d057fa432652067abe53d80d781e9d7fc9ceff88f969ad3/pulumi_azure_native-3.15.0-py3-none-any.whl
-  name: pulumi-azure-native
-  version: 3.15.0
-  sha256: 1e751a5c2df94b6a7cc0cc38b3c10a6e769c78f841cc8c54a65f87f3c5665d1f
-  requires_dist:
-  - parver>=0.2.1
-  - pulumi>=3.165.0,<4.0.0
-  - semver>=2.8.1
-  - typing-extensions>=4.11,<5 ; python_full_version < '3.11'
-  requires_python: '>=3.9'
 - pypi: https://files.pythonhosted.org/packages/4e/76/2fca7f09b8b5ba4d6313ec52d8836b04088c47c968e052f7f0b0ce902edc/pulumi_azure_native-3.29.0-py3-none-any.whl
   name: pulumi-azure-native
   version: 3.29.0
