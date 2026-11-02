@@ -39,13 +39,32 @@ def missing_foundry_deployments(config: LLMavenConfig, config_path: Path) -> Lis
     except (OSError, yaml.YAMLError) as e:
         return [f"Cannot read LiteLLM config {litellm_path}: {e}"]
 
-    model_list = (
-        litellm_config.get("model_list") if isinstance(litellm_config, dict) else None
-    ) or []
+    if not isinstance(litellm_config, dict):
+        return [
+            f"{litellm_path}: top level must be a mapping, "
+            f"got {type(litellm_config).__name__}"
+        ]
+    # A missing or null model_list is valid: models can live in LiteLLM's database.
+    model_list = litellm_config.get("model_list") or []
+    if not isinstance(model_list, list):
+        return [
+            f"{litellm_path}: model_list must be a list, "
+            f"got {type(model_list).__name__}"
+        ]
+
     deployed = {d.name for d in config.foundry.deployments}
     errors = []
-    for entry in model_list:
-        params = (entry or {}).get("litellm_params") or {}
+    for index, entry in enumerate(model_list):
+        where = f"{litellm_path}: model_list[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{where} must be a mapping, got {type(entry).__name__}")
+            continue
+        params = entry.get("litellm_params")
+        if not isinstance(params, dict):
+            errors.append(
+                f"{where}.litellm_params must be a mapping, got {type(params).__name__}"
+            )
+            continue
         model = params.get("model")
         if not isinstance(model, str) or not model.startswith("azure/"):
             continue

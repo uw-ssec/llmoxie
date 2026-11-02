@@ -90,6 +90,12 @@ def test_deployment_defaults_pin_versions():
         ("version_upgrade_option", "Whenever"),
         ("capacity", 0),
         ("name", "bad name"),
+        ("model_name", ""),
+        ("model_name", "   "),
+        ("model_format", ""),
+        ("model_format", " \t"),
+        ("model_version", ""),
+        ("model_version", "  "),
     ],
 )
 def test_deployment_rejects_bad_fields(field, value):
@@ -196,6 +202,40 @@ def test_missing_litellm_config_is_reported(tmp_path):
     (tmp_path / "litellm" / "config.yaml").unlink()
     errors = missing_foundry_deployments(load_config(path), path)
     assert len(errors) == 1 and "Cannot read LiteLLM config" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        ("- azure/fast\n", "top level must be a mapping, got list"),
+        ("model_list: azure/fast\n", "model_list must be a list, got str"),
+        ("model_list:\n  - azure/fast\n", "model_list[0] must be a mapping, got str"),
+        (
+            "model_list:\n  - model_name: fast\n    litellm_params:\n"
+            "      - azure/fast\n",
+            "model_list[0].litellm_params must be a mapping, got list",
+        ),
+        (
+            "model_list:\n  - model_name: fast\n",
+            "model_list[0].litellm_params must be a mapping, got NoneType",
+        ),
+    ],
+)
+def test_malformed_litellm_config_is_reported(tmp_path, content, expected):
+    path = _write_configs(tmp_path, foundry_enabled=True)
+    litellm_config = tmp_path / "litellm" / "config.yaml"
+    litellm_config.write_text(content)
+    errors = missing_foundry_deployments(load_config(path), path)
+    assert len(errors) == 1
+    assert expected in errors[0]
+    assert str(litellm_config) in errors[0]
+
+
+@pytest.mark.parametrize("content", ["", "general_settings: {}\n", "model_list:\n"])
+def test_litellm_config_without_model_list_is_consistent(tmp_path, content):
+    path = _write_configs(tmp_path, foundry_enabled=True)
+    (tmp_path / "litellm" / "config.yaml").write_text(content)
+    assert missing_foundry_deployments(load_config(path), path) == []
 
 
 def test_model_list_not_checked_when_disabled(tmp_path):

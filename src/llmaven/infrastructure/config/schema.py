@@ -398,6 +398,14 @@ class FoundryDeploymentConfig(BaseModel):
         description="What happens when Azure publishes or retires a model version",
     )
 
+    @field_validator("model_name", "model_format", "model_version")
+    @classmethod
+    def validate_not_blank(cls, v: str) -> str:
+        """Reject empty or whitespace-only model fields before they reach Azure."""
+        if not v.strip():
+            raise ValueError("must not be blank")
+        return v
+
     @field_validator("sku")
     @classmethod
     def validate_sku(cls, v: str) -> str:
