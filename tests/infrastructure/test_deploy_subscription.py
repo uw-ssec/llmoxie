@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from llmaven.deployment import deploy
+from llmaven.deployment import deploy, deploy_backup
 from llmaven.deployment.deploy import DeploymentError
 
 SUB = "11111111-1111-1111-1111-111111111111"
@@ -159,3 +159,43 @@ class TestGetStack:
 
         get_key.assert_not_called()
         assert deploy.os.environ["AZURE_STORAGE_KEY"] == "from-env"
+
+
+class TestGetBackupStack:
+    """get_backup_stack calls the real _get_storage_key, only az is faked."""
+
+    def _backup_config(self, subscription_id):
+        azure = {"resource_group": "rg-backup"}
+        if subscription_id is not None:
+            azure["subscription_id"] = subscription_id
+        return {
+            "azure": azure,
+            "project": {
+                "name": "llmaven-backup",
+                "environment": "test",
+                "pulumi_state_store": "pulumistatebackup",
+            },
+        }
+
+    @pytest.mark.parametrize("subscription_id", [SUB, None])
+    def test_reads_key_with_backup_config_subscription(
+        self, clean_env, subscription_id
+    ):
+        with (
+            patch.object(
+                deploy_backup,
+                "_load_backup_config",
+                return_value=self._backup_config(subscription_id),
+            ),
+            patch.object(deploy_backup, "create_backup_storage_program"),
+            patch.object(deploy_backup.auto, "create_or_select_stack"),
+            patch.object(
+                deploy, "_run_az_command", side_effect=_keys_aware_az
+            ) as run_az,
+        ):
+            deploy_backup.get_backup_stack("llmaven-backup-config.yaml")
+
+        assert run_az.call_count == 2
+        for call in run_az.call_args_list:
+            assert call.kwargs["subscription_id"] == subscription_id
+        assert deploy.os.environ["AZURE_STORAGE_KEY"] == "secret-key"

@@ -50,14 +50,15 @@ def _run_az_command(
 
 
 def _get_storage_key(
-    rg_name: str, storage_account: str, subscription_id: str
+    rg_name: str, storage_account: str, subscription_id: str | None
 ) -> str | None:
     """Get storage account key if storage exists.
 
     Args:
         rg_name: Resource group name
         storage_account: Storage account name
-        subscription_id: Azure subscription that holds the storage account
+        subscription_id: Azure subscription that holds the storage account,
+            or None for the Azure CLI default
     Returns:
         Storage account key if it exists, None otherwise
     """

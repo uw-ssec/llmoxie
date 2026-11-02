@@ -62,7 +62,9 @@ def get_backup_stack(config_path: Path) -> auto.Stack:
         ),
     )
     os.environ.setdefault("AZURE_STORAGE_ACCOUNT", state_store)
-    storage_key = _get_storage_key(rg_name, state_store)
+    storage_key = _get_storage_key(
+        rg_name, state_store, cfg["azure"].get("subscription_id")
+    )
     if storage_key:
         os.environ.setdefault("AZURE_STORAGE_KEY", storage_key)
 
