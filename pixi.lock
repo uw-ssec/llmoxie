@@ -5774,7 +5774,7 @@ packages:
 - pypi: ./
   name: llmaven
   version: 0.1.0
-  sha256: 5215d002f4042e36c60cd5d0a327a3f55d86555c31ebb3ebf54261db6d271820
+  sha256: d107915bb95ab214db33f7b09d6da46485676270c93a861e7d3cc916ab40763f
   requires_dist:
   - httpx>=0.27.0
   - pydantic>=2.12.4
