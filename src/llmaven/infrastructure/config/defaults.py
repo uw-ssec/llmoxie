@@ -17,6 +17,7 @@ from .schema import (
     NetworkingConfig,
     NetworkSecurityConfig,
     ProjectConfig,
+    RedisConfig,
     SecurityConfig,
     StorageConfig,
 )
@@ -52,6 +53,7 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             vnet_address_space="10.0.0.0/16",
             container_apps_subnet="10.0.1.0/24",
             postgres_subnet="10.0.2.0/24",
+            private_endpoints_subnet="10.0.3.0/24",
         ),
         "container_registry": ContainerRegistryConfig(
             type="ghcr",
@@ -212,6 +214,8 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
         config["litellm"].cpu = 1.0
         config["litellm"].memory = "2Gi"
         config["storage"].account_replication = "GZRS"  # Zone-redundant for production
+        # Two-node Redis so rate limits and budgets survive a node failure
+        config["redis"] = RedisConfig(high_availability=True)
 
     return LLMavenConfig(**config)
 
@@ -252,6 +256,7 @@ networking:
   vnet_address_space: {config.networking.vnet_address_space}
   container_apps_subnet: {config.networking.container_apps_subnet}
   postgres_subnet: {config.networking.postgres_subnet}
+  private_endpoints_subnet: {config.networking.private_endpoints_subnet}  # Used by Redis
 
 # Database Configuration
 database:
@@ -274,6 +279,14 @@ storage:
   containers:
     - mlflow
     - llmaven
+
+# Azure Managed Redis, shared by LiteLLM replicas for rate limits, budgets and
+# router state. Required when litellm.max_replicas > 1; defaults to on then.
+redis:
+  enabled: {str(config.redis.enabled).lower()}
+  sku_name: {config.redis.sku_name}  # Balanced_B0, Balanced_B1, Balanced_B3, ...
+  high_availability: {str(config.redis.high_availability).lower()}  # Two nodes; recommended for prod
+  clustering_policy: {config.redis.clustering_policy}  # Can't be changed after creation
 
 # Container Registry Configuration
 # Images are hosted on GitHub Container Registry (GHCR)
