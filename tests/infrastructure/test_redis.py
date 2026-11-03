@@ -91,6 +91,69 @@ def test_generated_template_round_trips_redis(environment):
     assert config.networking.private_endpoints_subnet == "10.0.3.0/24"
 
 
+# Deployed stacks (llmaven-deploy dev/prod/iss-workshop) use this layout and
+# predate private_endpoints_subnet.
+EXISTING_STACK_NETWORKING = {
+    "vnet_address_space": "172.16.0.0/16",
+    "container_apps_subnet": "172.16.0.0/23",
+    "postgres_subnet": "172.16.2.0/24",
+}
+
+
+def test_omitted_private_endpoints_subnet_follows_existing_vnet():
+    config = LLMavenConfig.model_validate({"networking": EXISTING_STACK_NETWORKING})
+    assert config.redis.enabled is True
+    assert config.networking.private_endpoints_subnet == "172.16.3.0/24"
+
+
+def test_omitted_private_endpoints_subnet_skips_partial_block():
+    config = LLMavenConfig.model_validate(
+        {
+            "networking": {
+                "vnet_address_space": "10.1.0.0/16",
+                "container_apps_subnet": "10.1.0.0/23",
+                "postgres_subnet": "10.1.2.0/25",
+            }
+        }
+    )
+    assert config.networking.private_endpoints_subnet == "10.1.3.0/24"
+
+
+def test_explicit_private_endpoints_subnet_is_kept():
+    networking = {
+        **EXISTING_STACK_NETWORKING,
+        "private_endpoints_subnet": "172.16.9.0/24",
+    }
+    config = LLMavenConfig.model_validate({"networking": networking})
+    assert config.networking.private_endpoints_subnet == "172.16.9.0/24"
+
+
+@pytest.mark.parametrize(
+    ("subnet", "message"),
+    [("10.0.3.0/24", "outside"), ("172.16.1.0/24", "overlaps")],
+)
+def test_invalid_private_endpoints_subnet_is_rejected(subnet, message):
+    networking = {**EXISTING_STACK_NETWORKING, "private_endpoints_subnet": subnet}
+    with pytest.raises(ValidationError, match=message):
+        LLMavenConfig.model_validate({"networking": networking})
+
+
+def test_full_vnet_only_fails_when_redis_needs_the_subnet():
+    networking = {
+        "vnet_address_space": "10.2.0.0/22",
+        "container_apps_subnet": "10.2.0.0/23",
+        "postgres_subnet": "10.2.2.0/23",
+    }
+    single = LLMavenConfig.model_validate(
+        {"networking": networking, "litellm": {"max_replicas": 1}}
+    )
+    assert single.redis.enabled is False
+    assert single.networking.private_endpoints_subnet is None
+
+    with pytest.raises(ValidationError, match="private endpoints subnet"):
+        LLMavenConfig.model_validate({"networking": networking})
+
+
 def test_only_prod_defaults_to_high_availability():
     assert generate_default_config("dev").redis.high_availability is False
     assert generate_default_config("staging").redis.high_availability is False

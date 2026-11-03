@@ -3,9 +3,10 @@
 This module defines the Pydantic models for validating llmaven-config.yaml.
 """
 
+import ipaddress
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProjectConfig(BaseModel):
@@ -59,10 +60,52 @@ class NetworkingConfig(BaseModel):
         default="10.0.1.0/24", description="Container Apps subnet"
     )
     postgres_subnet: str = Field(default="10.0.2.0/24", description="PostgreSQL subnet")
-    private_endpoints_subnet: str = Field(
-        default="10.0.3.0/24",
-        description="Subnet for private endpoints (Azure Managed Redis)",
+    private_endpoints_subnet: Optional[str] = Field(
+        default=None,
+        description=(
+            "Subnet for private endpoints (Azure Managed Redis). Defaults to the "
+            "first /24 above the Container Apps and PostgreSQL subnets."
+        ),
     )
+
+    @model_validator(mode="after")
+    def resolve_private_endpoints_subnet(self) -> "NetworkingConfig":
+        """Derive the private endpoints subnet from the VNet when omitted.
+
+        Existing configs predate this field and use their own VNet ranges
+        (e.g. 172.16.0.0/16), so a fixed default would fall outside the VNet.
+        """
+        vnet = ipaddress.ip_network(self.vnet_address_space)
+        taken = [
+            ipaddress.ip_network(self.container_apps_subnet),
+            ipaddress.ip_network(self.postgres_subnet),
+        ]
+
+        if self.private_endpoints_subnet is None:
+            start = max(int(net.broadcast_address) for net in taken) + 1
+            candidate = ipaddress.ip_network((start, 24), strict=False)
+            if int(candidate.network_address) < start:
+                candidate = ipaddress.ip_network(
+                    (int(candidate.broadcast_address) + 1, 24)
+                )
+            # Left unset when the VNet has no room; LLMavenConfig only rejects
+            # that when Redis actually needs the subnet.
+            if candidate.subnet_of(vnet):
+                self.private_endpoints_subnet = str(candidate)
+            return self
+
+        subnet = ipaddress.ip_network(self.private_endpoints_subnet)
+        if not subnet.subnet_of(vnet):
+            raise ValueError(
+                f"networking.private_endpoints_subnet {subnet} is outside "
+                f"vnet_address_space {vnet}"
+            )
+        for net in taken:
+            if subnet.overlaps(net):
+                raise ValueError(
+                    f"networking.private_endpoints_subnet {subnet} overlaps {net}"
+                )
+        return self
 
 
 class DatabaseConfig(BaseModel):
@@ -470,3 +513,9 @@ class LLMavenConfig(BaseModel):
         # automatically, so an omitted HA setting follows the environment.
         if self.redis.high_availability is None:
             self.redis.high_availability = self.project.environment == "prod"
+        if self.redis.enabled and self.networking.private_endpoints_subnet is None:
+            raise ValueError(
+                "Redis needs a private endpoints subnet, but there is no free /24 in "
+                f"{self.networking.vnet_address_space} after the Container Apps and "
+                "PostgreSQL subnets. Set networking.private_endpoints_subnet."
+            )
