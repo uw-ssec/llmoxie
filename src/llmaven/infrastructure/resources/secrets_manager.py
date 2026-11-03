@@ -394,6 +394,50 @@ class SecretsManager:
 
         return secret_resource
 
+    def create_redis_secrets(
+        self,
+        host_name: Output[str],
+        port: int,
+        access_key: Output[str],
+    ) -> dict[str, azure_native.keyvault.Secret]:
+        """
+        Store Azure Managed Redis connection details in Key Vault.
+
+        Args:
+            host_name: Redis host name
+            port: Redis TLS port
+            access_key: Redis database access key
+
+        Returns:
+            Dictionary mapping secret names to Secret resources
+        """
+        values = {
+            "redis-host": host_name,
+            "redis-port": Output.from_input(str(port)),
+            "redis-password": Output.secret(access_key),
+        }
+        redis_secrets = {}
+        for secret_name, secret_value in values.items():
+            secret_resource = create_secret(
+                resource_group_name=self.resource_group_name,
+                vault_name=self.vault_name,
+                secret_name=secret_name,
+                secret_value=secret_value,
+                environment=self.environment,
+                tags={
+                    "ManagedBy": "Pulumi",
+                    "Source": "AzureResource",
+                    "Environment": self.environment,
+                },
+            )
+            redis_secrets[secret_name] = secret_resource
+            self.auto_secrets[secret_name] = secret_resource
+            self.all_secrets[secret_name] = secret_resource
+
+        pulumi.log.info("✓ Stored Redis connection secrets in Key Vault")
+
+        return redis_secrets
+
     def get_secret(self, secret_name: str) -> azure_native.keyvault.Secret | None:
         """
         Get a secret by name.

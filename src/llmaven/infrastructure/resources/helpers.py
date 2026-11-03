@@ -8,6 +8,7 @@ from pulumi import Output
 
 from ..config.schema import CustomDomainConfig
 from .container_apps import create_container_app_with_key_vault_secrets
+from .redis import apply_redis_router_settings
 
 
 def create_user_assigned_managed_identity(
@@ -290,6 +291,8 @@ def create_litellm_app(
     revision_suffix: str | None = None,
     refresh_trigger: str | None = None,
     custom_domains: list[CustomDomainConfig] | None = None,
+    redis_enabled: bool = False,
+    redis_clustering_policy: str = "EnterpriseCluster",
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -315,6 +318,9 @@ def create_litellm_app(
         revision_suffix: Revision name suffix (optional)
         refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
         custom_domains: Hostnames to bind to existing managed certificates
+        redis_enabled: Add router_settings.redis_* to the mounted LiteLLM config
+        redis_clustering_policy: Redis clustering policy, which decides whether
+            LiteLLM must group rate-limit keys by hash slot
 
     Returns:
         ContainerApp resource
@@ -374,7 +380,15 @@ def create_litellm_app(
             secret_name = (
                 file_path.name.replace(".", "-").replace(" ", "-").replace("_", "-")
             )
-            inline_secrets[secret_name] = read_file_content(file_path)
+            content = read_file_content(file_path)
+            # The config file is shared across environments, so the Redis block
+            # is added only where Redis is deployed. Without Redis the file is
+            # mounted unchanged.
+            if redis_enabled and file_path == Path(config_file):
+                content = apply_redis_router_settings(
+                    content, clustering_policy=redis_clustering_policy
+                )
+            inline_secrets[secret_name] = content
             secret_volume_items.append(
                 azure_native.app.SecretVolumeItemArgs(
                     secret_ref=secret_name,

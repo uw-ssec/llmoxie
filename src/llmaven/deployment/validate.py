@@ -109,11 +109,14 @@ def check_subscription_access(subscription_id: str) -> tuple[bool, str]:
         return False, f"Failed to check subscription: {e}"
 
 
-def check_required_providers(subscription_id: str) -> tuple[bool, str]:
+def check_required_providers(
+    subscription_id: str, redis_enabled: bool = False
+) -> tuple[bool, str]:
     """Check if required Azure resource providers are registered.
 
     Args:
         subscription_id: Azure subscription ID
+        redis_enabled: Also require Microsoft.Cache for Azure Managed Redis
 
     Returns:
         Tuple of (success, message)
@@ -126,6 +129,8 @@ def check_required_providers(subscription_id: str) -> tuple[bool, str]:
         "Microsoft.OperationalInsights",  # Log Analytics
         "Microsoft.Insights",  # Application Insights
     ]
+    if redis_enabled:
+        required_providers.append("Microsoft.Cache")  # Azure Managed Redis
 
     try:
         for provider in required_providers:
@@ -326,6 +331,28 @@ def check_config_for_hardcoded_secrets(config_path: Path) -> tuple[bool, list[st
 STATE_STORE_MIN_COST = 1.0
 STATE_STORE_MAX_COST = 3.0
 
+# Azure Managed Redis, $/hour per node (Azure Retail Prices API, eastus,
+# 2026-11-02). High availability runs two nodes, so it doubles the price.
+REDIS_HOURLY_PRICE_PER_NODE = {
+    "Balanced_B0": 0.016,
+    "Balanced_B1": 0.032,
+    "Balanced_B3": 0.065,
+    "Balanced_B5": 0.156,
+}
+HOURS_PER_MONTH = 730
+# A private endpoint is about $0.01/hour plus data processing.
+PRIVATE_ENDPOINT_MIN_COST = 7.3
+PRIVATE_ENDPOINT_MAX_COST = 10.0
+
+
+def estimate_redis_monthly_cost(config: LLMavenConfig) -> float | None:
+    """Return the monthly Azure Managed Redis node cost, or None if the SKU is unpriced."""
+    hourly = REDIS_HOURLY_PRICE_PER_NODE.get(config.redis.sku_name)
+    if hourly is None:
+        return None
+    nodes = 2 if config.redis.high_availability else 1
+    return hourly * nodes * HOURS_PER_MONTH
+
 
 def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
     """Estimate monthly Azure cost based on configuration.
@@ -381,6 +408,15 @@ def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
         cpu = float(config.llmaven_api.cpu)
         min_cost += cpu * 15.0
         max_cost += cpu * 30.0
+
+    # Azure Managed Redis and its private endpoint
+    if config.redis.enabled:
+        min_cost += PRIVATE_ENDPOINT_MIN_COST
+        max_cost += PRIVATE_ENDPOINT_MAX_COST
+        redis_cost = estimate_redis_monthly_cost(config)
+        if redis_cost is not None:
+            min_cost += redis_cost
+            max_cost += redis_cost
 
     # Monitoring costs
     if config.monitoring.enable_application_insights:
@@ -462,7 +498,9 @@ def validate_config(
 
     # Check required providers
     if not errors:
-        success, message = check_required_providers(config.azure.subscription_id)
+        success, message = check_required_providers(
+            config.azure.subscription_id, redis_enabled=bool(config.redis.enabled)
+        )
         if success:
             print(f"   ✓ {message}")
         else:
@@ -486,6 +524,11 @@ def validate_config(
     print("5. Cost Estimation")
     min_cost, max_cost = estimate_monthly_cost(config)
     print(f"   Estimated monthly cost: ${min_cost:.2f} - ${max_cost:.2f}")
+    if config.redis.enabled and estimate_redis_monthly_cost(config) is None:
+        print(
+            f"   ℹ️  Redis SKU {config.redis.sku_name} has no price in the estimate; "
+            "check the Azure pricing calculator"
+        )
 
     if config.project.environment == "dev" and max_cost > 100:
         warnings.append(f"Development environment cost (${max_cost:.2f}) seems high")
