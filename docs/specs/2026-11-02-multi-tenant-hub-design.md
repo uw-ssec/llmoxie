@@ -4,6 +4,18 @@ Owner: Don. Status: draft for review. Drafted by Monica (AI research agent) from
 the Buzz #llmoxie brainstorming thread (2026-11-02/03). Background research
 notes (Addenda 1-7) live outside this repo, in the drafting agent's workspace.
 
+Related: [#193](https://github.com/uw-ssec/llmoxie/issues/193) (production
+readiness gaps). This spec is the platform direction several of its items point
+toward; it doesn't close them on the current Container Apps deployment.
+
+| #193 item                           | Where this spec addresses it                                              |
+| ----------------------------------- | ------------------------------------------------------------------------- |
+| 1. Access control on public surface | §3, §4: Keycloak OIDC on console routes; only `/v1/*` routed to LiteLLM   |
+| 2. `LITELLM_SALT_KEY` (#200)        | §7, §8: tier-0 secret, set before first model, written by Pulumi stage B  |
+| 3. Shared state (Redis)             | §3: Valkey in the chart                                                   |
+| 7. Data governance                  | §5, §6: consent, pseudonymous IDs, retention and consent-filtered exports |
+| 8. MLflow                           | §3: MLflow off the write path, optional analysis view                     |
+
 ## 1. Problem and goal
 
 LLMoxie today is a single-tenant Azure deployment (Container Apps, Flexible
