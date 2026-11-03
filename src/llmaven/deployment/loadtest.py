@@ -484,7 +484,7 @@ def run_load_test(
 
                     _error_acc["n"] += 1
                     entry = {
-                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "ts": datetime.datetime.now(datetime.UTC).isoformat(),
                         "status_code": resp.status_code,
                         "model": req.get("model"),
                         "request_preview": str(

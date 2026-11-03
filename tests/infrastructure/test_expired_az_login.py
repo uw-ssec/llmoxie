@@ -63,11 +63,13 @@ class TestGetStorageKey:
             assert deploy._get_storage_key("rg-test", "pulumistatetest", SUB) is None
 
     def test_failed_key_list_raises_with_account_name(self):
-        with patch.object(
-            deploy, "_run_az_command", side_effect=_fake_az(keys_error=EXPIRED)
+        with (
+            patch.object(
+                deploy, "_run_az_command", side_effect=_fake_az(keys_error=EXPIRED)
+            ),
+            pytest.raises(DeploymentError) as excinfo,
         ):
-            with pytest.raises(DeploymentError) as excinfo:
-                deploy._get_storage_key("rg-test", "pulumistatetest", SUB)
+            deploy._get_storage_key("rg-test", "pulumistatetest", SUB)
 
         message = str(excinfo.value)
         assert "pulumistatetest" in message
@@ -154,9 +156,9 @@ class TestInitializeAzureInfraExpiredLogin:
             patch.object(
                 deploy, "_run_az_command", side_effect=_fake_az(EXPIRED)
             ) as run_az,
+            pytest.raises(DeploymentError) as excinfo,
         ):
-            with pytest.raises(DeploymentError) as excinfo:
-                deploy.initialize_azure_infra("llmaven-config.yaml")
+            deploy.initialize_azure_infra("llmaven-config.yaml")
 
         assert "AADSTS700082" in str(excinfo.value)
         commands = [call.args[0][:3] for call in run_az.call_args_list]

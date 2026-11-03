@@ -6,7 +6,6 @@ This module provides the implementation for the 'llmaven validate' command.
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
 from ..infrastructure.config.schema import LLMavenConfig
@@ -16,10 +15,8 @@ from ..infrastructure.utils.secrets import get_llmaven_secrets
 class ValidationError(Exception):
     """Exception raised when validation fails."""
 
-    pass
 
-
-def check_azure_cli() -> Tuple[bool, str]:
+def check_azure_cli() -> tuple[bool, str]:
     """Check if Azure CLI is installed and logged in.
 
     `az account show` reads only the local account cache, so it passes even
@@ -66,7 +63,7 @@ def check_azure_cli() -> Tuple[bool, str]:
     return True, "Azure CLI is installed and logged in"
 
 
-def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
+def check_subscription_access(subscription_id: str) -> tuple[bool, str]:
     """Check that the Azure CLI can get an access token for the subscription.
 
     `az account get-access-token` refreshes the token, so unlike
@@ -114,7 +111,7 @@ def check_subscription_access(subscription_id: str) -> Tuple[bool, str]:
 
 def check_required_providers(
     subscription_id: str, redis_enabled: bool = False
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Check if required Azure resource providers are registered.
 
     Args:
@@ -176,8 +173,8 @@ def check_required_providers(
 def check_secrets(
     config: LLMavenConfig,
     skip_secrets: bool = False,
-    env_file_path: Optional[Path] = None,
-) -> Tuple[bool, List[str]]:
+    env_file_path: Path | None = None,
+) -> tuple[bool, list[str]]:
     """Check if required secrets are available as environment variables.
 
     Args:
@@ -286,7 +283,7 @@ def check_secrets(
     return all_secrets_found, messages
 
 
-def check_config_for_hardcoded_secrets(config_path: Path) -> Tuple[bool, List[str]]:
+def check_config_for_hardcoded_secrets(config_path: Path) -> tuple[bool, list[str]]:
     """Check if configuration file contains hardcoded secrets.
 
     Args:
@@ -348,7 +345,7 @@ PRIVATE_ENDPOINT_MIN_COST = 7.3
 PRIVATE_ENDPOINT_MAX_COST = 10.0
 
 
-def estimate_redis_monthly_cost(config: LLMavenConfig) -> Optional[float]:
+def estimate_redis_monthly_cost(config: LLMavenConfig) -> float | None:
     """Return the monthly Azure Managed Redis node cost, or None if the SKU is unpriced."""
     hourly = REDIS_HOURLY_PRICE_PER_NODE.get(config.redis.sku_name)
     if hourly is None:
@@ -357,7 +354,7 @@ def estimate_redis_monthly_cost(config: LLMavenConfig) -> Optional[float]:
     return hourly * nodes * HOURS_PER_MONTH
 
 
-def estimate_monthly_cost(config: LLMavenConfig) -> Tuple[float, float]:
+def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
     """Estimate monthly Azure cost based on configuration.
 
     Args:
@@ -433,7 +430,7 @@ def validate_config(
     config_path: Path,
     strict: bool = False,
     skip_secrets: bool = False,
-    env_file_path: Optional[Path] = None,
+    env_file_path: Path | None = None,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
