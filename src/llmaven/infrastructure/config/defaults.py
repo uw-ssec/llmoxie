@@ -5,7 +5,10 @@ for dev, staging, and production environments.
 """
 
 from .schema import (
+    ALL_ALERTS,
+    AlertsConfig,
     AzureConfig,
+    CloudBudgetAlert,
     ContainerRegistryConfig,
     DatabaseConfig,
     KeyVaultConfig,
@@ -21,6 +24,9 @@ from .schema import (
     SecurityConfig,
     StorageConfig,
 )
+
+# Placeholder so staging/prod defaults validate; operators must replace it.
+_PLACEHOLDER_ALERT_RECEIVER = "ops@example.org"
 
 
 def generate_default_config(environment: str = "dev") -> LLMavenConfig:
@@ -120,9 +126,12 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             ),
             "monitoring": MonitoringConfig(
                 retention_days=90,
-                enable_application_insights=True,
+                enable_application_insights=False,
                 enable_log_analytics=True,
                 daily_data_cap_gb=1.0,  # 1GB cap for dev
+                alerts=AlertsConfig(
+                    cloud_budget=CloudBudgetAlert(monthly_usd=200),
+                ),
             ),
             "security": SecurityConfig(
                 enable_private_endpoints=False,
@@ -151,9 +160,14 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             ),
             "monitoring": MonitoringConfig(
                 retention_days=90,
-                enable_application_insights=True,
+                enable_application_insights=False,
                 enable_log_analytics=True,
                 daily_data_cap_gb=5.0,  # 5GB cap for staging
+                alerts=AlertsConfig(
+                    email_receivers=[_PLACEHOLDER_ALERT_RECEIVER],
+                    enabled_alerts=list(ALL_ALERTS),
+                    cloud_budget=CloudBudgetAlert(monthly_usd=300),
+                ),
             ),
             "security": SecurityConfig(
                 enable_private_endpoints=False,
@@ -188,9 +202,14 @@ def generate_default_config(environment: str = "dev") -> LLMavenConfig:
             ),
             "monitoring": MonitoringConfig(
                 retention_days=365,  # 1 year retention for production
-                enable_application_insights=True,
+                enable_application_insights=False,
                 enable_log_analytics=True,
                 daily_data_cap_gb=None,  # No cap for production
+                alerts=AlertsConfig(
+                    email_receivers=[_PLACEHOLDER_ALERT_RECEIVER],
+                    enabled_alerts=list(ALL_ALERTS),
+                    cloud_budget=CloudBudgetAlert(monthly_usd=500),
+                ),
             ),
             "security": SecurityConfig(
                 enable_private_endpoints=True,  # Required for production
@@ -231,6 +250,12 @@ def get_config_template_yaml(environment: str = "dev") -> str:
     """
     # Generate base config
     config = generate_default_config(environment)
+
+    alerts = config.monitoring.alerts
+    receivers_yaml = "\n".join(f"      - {r}" for r in alerts.email_receivers)
+    enabled_alerts_yaml = "\n".join(f"      - {a}" for a in alerts.enabled_alerts)
+    receivers_block = f"\n{receivers_yaml}" if receivers_yaml else " []"
+    enabled_block = f"\n{enabled_alerts_yaml}" if enabled_alerts_yaml else " []"
 
     # Create YAML with comments
     yaml_template = f"""# llmaven-config.yaml
@@ -298,9 +323,18 @@ container_registry:
 # Monitoring Configuration
 monitoring:
   retention_days: {config.monitoring.retention_days}
-  enable_application_insights: {str(config.monitoring.enable_application_insights).lower()}
   enable_log_analytics: {str(config.monitoring.enable_log_analytics).lower()}
   daily_data_cap_gb: {config.monitoring.daily_data_cap_gb if config.monitoring.daily_data_cap_gb else "null"}  # null for unlimited
+  # Alerts are off unless enabled_alerts is non-empty. Thresholds not listed here
+  # use the schema defaults (see docs/superpowers/specs/2026-11-05-monitoring-alerting-design.md).
+  alerts:
+    # Replace the placeholder address with a real one before deploying.
+    email_receivers:{receivers_block}
+    # gateway_errors, gateway_latency, replica_restarts, db_storage, db_cpu,
+    # backup_job_failures, cloud_budget
+    enabled_alerts:{enabled_block}
+    cloud_budget:
+      monthly_usd: {alerts.cloud_budget.monthly_usd:g}
 
 # MLflow Container App
 mlflow:
