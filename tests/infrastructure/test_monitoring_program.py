@@ -201,6 +201,37 @@ def test_metric_alerts_target_metric_and_threshold(tmp_path, monkeypatch):
         assert a["actions"][0]["actionGroupId"] == "alerts-action-group-id"
 
 
+def test_default_evaluation_frequency_is_five_minutes(tmp_path, monkeypatch):
+    resources, _, _ = _run(tmp_path, monkeypatch, ALL_ON)
+    alerts = {
+        r.name: r.inputs
+        for r in _by_type(resources, "azure-native:monitor:MetricAlert")
+    }
+    assert alerts["alert-gateway-errors"]["evaluationFrequency"] == "PT5M"
+
+
+def test_one_minute_window_gets_one_minute_evaluation_frequency(tmp_path, monkeypatch):
+    # Azure rejects a window shorter than the evaluation frequency.
+    overrides = {
+        "monitoring": {
+            "enable_log_analytics": True,
+            "alerts": {
+                "email_receivers": ["ops@example.org"],
+                "enabled_alerts": ["gateway_errors"],
+                "gateway_errors": {"max_5xx_count": 10, "window_minutes": 1},
+            },
+        }
+    }
+    resources, _, _ = _run(tmp_path, monkeypatch, overrides)
+    [alert] = [
+        r
+        for r in _by_type(resources, "azure-native:monitor:MetricAlert")
+        if r.name == "alert-gateway-errors"
+    ]
+    assert alert.inputs["windowSize"] == "PT1M"
+    assert alert.inputs["evaluationFrequency"] == "PT1M"
+
+
 def test_mlflow_disabled_skips_only_mlflow_restart_alert(tmp_path, monkeypatch):
     resources, _, warnings = _run(
         tmp_path, monkeypatch, {**ALL_ON, "mlflow": {"enabled": False}}

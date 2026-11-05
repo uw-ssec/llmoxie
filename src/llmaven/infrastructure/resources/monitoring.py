@@ -25,6 +25,8 @@ POSTGRES_CPU_METRIC = "cpu_percent"
 
 ACTION_GROUP_SHORT_NAME = "llmoxie"  # Azure allows at most 12 characters.
 EVALUATION_FREQUENCY = "PT5M"
+# Azure rejects a window shorter than the evaluation frequency.
+ONE_MINUTE = "PT1M"
 DB_STORAGE_WINDOW = "PT15M"
 
 # Window sizes of 60 minutes and above use hour notation in ISO 8601.
@@ -78,7 +80,9 @@ def _metric_alert(
         scopes=[target_id],
         severity=severity,
         enabled=True,
-        evaluation_frequency=EVALUATION_FREQUENCY,
+        evaluation_frequency=(
+            ONE_MINUTE if window_size == ONE_MINUTE else EVALUATION_FREQUENCY
+        ),
         window_size=window_size,
         auto_mitigate=True,
         criteria=azure_native.monitor.MetricAlertSingleResourceMultipleMetricCriteriaArgs(
