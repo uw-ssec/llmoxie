@@ -570,15 +570,16 @@ Log alert settings:
 Budget settings:
 
 - `scope=f"/subscriptions/{config.azure.subscription_id}/resourceGroups/{resource_group_name}"`.
-- `budget_name=f"{project}-{environment}-monthlf"{today.year:04d}-{today.month:02d}-01T00:00:00Z")`,
-  where
-  `today = datetime.now(timezone.utc `time_grain="Monthly"`, `amount=monthly_usd`.
-- `time_period=BudgetTimePeriodArgs(start_date=<first day of current UTC month, ISO 8601>)`.
+- `budget_name=f"{project}-{environment}-monthly"`, `category="Cost"`,
+  `time_grain="Monthly"`, `amount=monthly_usd`.
+- `time_period=BudgetTimePeriodArgs(start_date=f"{today.year:04d}-{today.month:02d}-01T00:00:00Z")`,
+  where `today = datetime.now(timezone.utc)`.
 - `opts=ResourceOptions(ignore_changes=["timePeriod"])`.
 - One notification per percent, keyed `f"actual_{p}"`:
-  `NotificationArgs(enabled=True, operato (import `ALL_ALERTS`from    `llmaven.infrastructure.config.schema`)r="GreaterThan", threshold=p, threshold_type="Actual", contact_emails=email_receivers, contact_groups=[action_group.id])`.
+  `NotificationArgs(enabled=True, operator="GreaterThan", threshold=p, threshold_type="Actual", contact_emails=email_receivers, contact_groups=[action_group.id])`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests** (import `ALL_ALERTS` from
+      `llmaven.infrastructure.config.schema`)
 
 ```python
 FULL = {
