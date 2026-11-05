@@ -6,9 +6,19 @@ import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import CustomDomainConfig
+from ..config.schema import (
+    CustomDomainConfig,
+    IPSecurityRestrictionConfig,
+    LiteLLMProxyConfig,
+)
 from .container_apps import create_container_app_with_key_vault_secrets
 from .redis import apply_redis_router_settings
+from .traefik import (
+    TRAEFIK_DYNAMIC_SECRET,
+    build_traefik_container,
+    build_traefik_volume,
+    render_dynamic_config,
+)
 
 
 def create_user_assigned_managed_identity(
@@ -293,6 +303,8 @@ def create_litellm_app(
     custom_domains: list[CustomDomainConfig] | None = None,
     redis_enabled: bool = False,
     redis_clustering_policy: str = "EnterpriseCluster",
+    proxy: LiteLLMProxyConfig | None = None,
+    ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -321,6 +333,10 @@ def create_litellm_app(
         redis_enabled: Add router_settings.redis_* to the mounted LiteLLM config
         redis_clustering_policy: Redis clustering policy, which decides whether
             LiteLLM must group rate-limit keys by hash slot
+        proxy: Traefik sidecar settings. When enabled, ingress targets Traefik,
+            LiteLLM listens on 127.0.0.1 only, and LiteLLM's probes go through
+            Traefik's health route.
+        ip_security_restrictions: Ingress IP rules for the whole app
 
     Returns:
         ContainerApp resource
@@ -415,6 +431,19 @@ def create_litellm_app(
         # LiteLLM expects: --config /app/config/<actual-config-filename>
         command_args = ["--config", f"/app/config/{config_filename}"]
 
+    proxy_enabled = bool(proxy and proxy.enabled)
+    sidecars = None
+    if proxy_enabled:
+        # Only the sidecar can reach LiteLLM. LiteLLM reads its bind address
+        # from --host (env HOST); LITELLM_HOST is not used by LiteLLM.
+        command_args = [*(command_args or []), "--host", "127.0.0.1"]
+        inline_secrets = {
+            **(inline_secrets or {}),
+            TRAEFIK_DYNAMIC_SECRET: render_dynamic_config(proxy, port),
+        }
+        volumes = [*(volumes or []), build_traefik_volume()]
+        sidecars = [build_traefik_container(proxy)]
+
     # Create container app
     return create_container_app_with_key_vault_secrets(
         app_name=name,
@@ -442,5 +471,12 @@ def create_litellm_app(
         revision_suffix=revision_suffix,
         refresh_trigger=refresh_trigger,
         custom_domains=custom_domains,
+        sidecars=sidecars,
+        ingress_target_port=proxy.port if proxy_enabled else None,
+        health_probe_port=proxy.port if proxy_enabled else None,
+        health_probe_path=proxy.health_paths[0]
+        if proxy_enabled
+        else "/health/liveliness",
+        ip_security_restrictions=ip_security_restrictions,
         opts=opts,
     )

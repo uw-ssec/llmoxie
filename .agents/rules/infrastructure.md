@@ -100,3 +100,24 @@ then run `llmaven infra deploy`. The deploy reads the new key and updates the
 create one by default, but if `litellm.refresh_trigger` is pinned, restart the
 active revision (`az containerapp revision restart`). Until then LiteLLM can't
 reach Redis, so rotate in a quiet window.
+
+## Traefik proxy for LiteLLM
+
+`litellm.proxy.enabled` (off by default) adds a Traefik sidecar, built in
+`resources/traefik.py`. Ingress `targetPort` moves to the proxy port, and
+LiteLLM is started with `--host 127.0.0.1`. LiteLLM reads `--host` or `HOST`;
+the `LITELLM_HOST` env var has no effect.
+
+- Routing is an allowlist of exact paths. Never add `PathPrefix` routes for
+  `/v1/` or `/health/`: LiteLLM 1.106.6 serves management routes under both.
+- The client IP comes from `ipStrategy.depth: 1`, the rightmost
+  `X-Forwarded-For` entry, which Envoy appends. Both the allowlist and the rate
+  limiter use it. Traefik deletes X-Forwarded-* from peers outside
+  `forwardedHeaders.trustedIPs` (default: the Container Apps subnet).
+- Platform probes can't reach a localhost-only LiteLLM, so with the proxy on,
+  LiteLLM's probes are HTTP GETs of the first `health_paths` entry on the proxy
+  port. With the proxy off the probes are unchanged.
+- The sidecar mounts only the Traefik config secret. The template's total CPU
+  and memory must be a valid Consumption pair, and the schema checks this.
+- With the proxy disabled the template is unchanged, so
+  `deploy --expect-no-changes` still passes.
