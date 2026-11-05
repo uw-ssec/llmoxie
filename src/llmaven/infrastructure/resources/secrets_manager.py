@@ -20,6 +20,9 @@ from .key_vault import (
 )
 
 
+BACKUP_STORAGE_SECRET_NAME = "backup-storage-connection-string"
+
+
 class SecretsManager:
     """
     Manages the complete lifecycle of secrets for LLMaven deployment.
@@ -315,6 +318,55 @@ class SecretsManager:
         self.all_secrets["storage-connection-string"] = secret_resource
 
         pulumi.log.info("✓ Created storage connection string secret in Key Vault")
+
+        return secret_resource
+
+    def ensure_backup_storage_connection_string_secret(
+        self,
+        connection_string: str,
+        source_env_var: str,
+    ) -> azure_native.keyvault.Secret:
+        """
+        Get the Key Vault secret holding the backup storage connection string.
+
+        LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING, the default source,
+        already created this secret in create_user_provided_secrets, so reuse it
+        rather than registering a second owner of the same secret. If that
+        variable is set alongside a different source, refuse to guess which
+        credential the job should use.
+
+        Args:
+            connection_string: Backup storage account connection string
+            source_env_var: Environment variable the value was read from
+
+        Returns:
+            Secret resource
+        """
+        existing = self.user_secrets.get(BACKUP_STORAGE_SECRET_NAME)
+        if existing is not None:
+            if (
+                get_llmaven_secrets_from_env()[BACKUP_STORAGE_SECRET_NAME]
+                != connection_string
+            ):
+                raise ValueError(
+                    "LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING and "
+                    f"{source_env_var} hold different values. Unset one of them."
+                )
+            return existing
+
+        secret_resource = create_secret(
+            resource_group_name=self.resource_group_name,
+            vault_name=self.vault_name,
+            secret_name=BACKUP_STORAGE_SECRET_NAME,
+            secret_value=Output.secret(connection_string),
+            environment=self.environment,
+            tags={
+                "ManagedBy": "Pulumi",
+                "Source": "EnvironmentVariable",
+                "Environment": self.environment,
+            },
+        )
+        self.all_secrets[BACKUP_STORAGE_SECRET_NAME] = secret_resource
 
         return secret_resource
 

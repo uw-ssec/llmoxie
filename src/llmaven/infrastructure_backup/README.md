@@ -46,9 +46,10 @@ touch the backup data.
 ### Authentication
 
 Storage access uses the storage account key embedded in a connection string. No
-role assignments are required anywhere. The connection string is stored as an
-inline Container Apps Job secret — it never appears in config files or Pulumi
-state in plain text.
+role assignments are required anywhere. The main stack stores the connection
+string in its Key Vault as `backup-storage-connection-string`, and the job reads
+it through its managed identity. It never appears in config files, and Pulumi
+masks it in diffs and encrypts it in state.
 
 ---
 
@@ -211,16 +212,29 @@ pg_restore \
 
 ### Rotate the storage account key
 
-When rotating the storage account key:
+The account has two keys, so hand over to the one the job isn't using. This
+keeps backups running if the deploy fails, because the current key stays valid
+until the last step:
 
-1. Generate a new key in the Azure Portal or via the CLI.
-2. Re-export `BACKUP_STORAGE_CONNECTION_STRING` with the new key.
-3. Re-deploy the main stack — this updates the inline Container Apps Job secret:
+1. Build a connection string from the other key, regenerating that key first if
+   it may also be exposed.
+2. Export it in the variable named by `backup_job.connection_string_env`.
+3. Re-deploy the main stack, which updates the Key Vault secret:
 
-```bash
-export BACKUP_STORAGE_CONNECTION_STRING="...new connection string..."
-llmaven deploy --config llmaven-config.yaml
-```
+   ```bash
+   llmaven infra deploy --config llmaven-config.yaml
+   ```
+
+4. Start the job and confirm a new dump appears. Container Apps can take up to
+   30 minutes to pick up a new Key Vault secret version, so wait for that first.
+5. Regenerate the old key.
+
+**Upgrading from an inline secret:** earlier versions stored the connection
+string in the job's configuration without marking it secret, so it sits in plain
+text in the Pulumi state. The first deploy after upgrading can still show that
+old value in its diff, and fixing the code does not remove it from older state
+checkpoints or saved logs. Use the handover above for that deploy, keep its
+output private, and treat the old key as exposed until step 5 is done.
 
 ---
 

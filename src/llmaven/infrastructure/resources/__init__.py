@@ -37,7 +37,7 @@ from .redis import (
     apply_redis_router_settings,
     create_redis,
 )
-from .secrets_manager import SecretsManager
+from .secrets_manager import BACKUP_STORAGE_SECRET_NAME, SecretsManager
 from .storage import (
     create_blob_containers,
     create_lifecycle_management_policy,
@@ -80,6 +80,7 @@ __all__ = [
     "REDIS_ENV_VARS",
     "REDIS_KEY_VAULT_SECRET_REFS",
     # Secrets Manager
+    "BACKUP_STORAGE_SECRET_NAME",
     "SecretsManager",
     # Helper functions for high-level resource creation
     "create_resource_group",

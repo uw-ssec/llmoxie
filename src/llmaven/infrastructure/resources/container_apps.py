@@ -467,7 +467,6 @@ def create_backup_job(
     managed_environment_id: Output[str],
     key_vault_uri: Output[str],
     key_vault_secret_refs: dict[str, str],
-    storage_conn_str: str,
     config: LLMavenConfig,
     tags: dict[str, str],
     managed_identity_id: Output[str] | None = None,
@@ -476,9 +475,8 @@ def create_backup_job(
     """Create a scheduled Container Apps Job that streams pg_dump to blob storage.
 
     The job runs inside the existing VNet, giving it private access to PostgreSQL.
-    The database connection string is sourced from Key Vault via a managed identity.
-    The backup storage connection string is stored inline (separate storage stack,
-    not accessible via the main Key Vault).
+    The database and backup storage connection strings are sourced from Key Vault
+    via a managed identity.
 
     Args:
         resource_group_name: Resource group for the job
@@ -486,8 +484,6 @@ def create_backup_job(
         managed_environment_id: Existing Container Apps Environment ID
         key_vault_uri: Key Vault URI for secret references
         key_vault_secret_refs: Map of env var name to Key Vault secret name
-        storage_conn_str: Backup storage account connection string (plain string,
-                          read from env at deploy time)
         config: LLMaven configuration
         tags: Resource tags
         managed_identity_id: Resource ID of user-assigned managed identity with Key Vault access
@@ -546,13 +542,7 @@ def create_backup_job(
                 parallelism=1,
                 replica_completion_count=1,
             ),
-            secrets=[
-                *kv_secrets,
-                azure_native.app.SecretArgs(
-                    name="backup-storage-conn-str",
-                    value=storage_conn_str,
-                ),
-            ],
+            secrets=kv_secrets,
         ),
         template=azure_native.app.JobTemplateArgs(
             containers=[
@@ -571,10 +561,6 @@ def create_backup_job(
                             )
                             for env_var_name, secret_name in key_vault_secret_refs.items()
                         ],
-                        azure_native.app.EnvironmentVarArgs(
-                            name="AZURE_STORAGE_CONNECTION_STRING",
-                            secret_ref="backup-storage-conn-str",
-                        ),
                         azure_native.app.EnvironmentVarArgs(
                             name="BACKUP_DESTINATION",
                             value=job_cfg.destination,

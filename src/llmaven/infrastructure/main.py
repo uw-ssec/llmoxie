@@ -53,6 +53,7 @@ def create_pulumi_program(config_path: Path):
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
         from llmaven.infrastructure.resources import (
+            BACKUP_STORAGE_SECRET_NAME,
             REDIS_ENV_VARS,
             REDIS_KEY_VAULT_SECRET_REFS,
             REDIS_PORT,
@@ -527,19 +528,32 @@ def create_pulumi_program(config_path: Path):
                     f"Database connection string secret '{db_secret_name}' not found. Check backup_job.database and database.databases in configuration."
                 )
 
+            backup_storage_secret = (
+                secrets_manager.ensure_backup_storage_connection_string_secret(
+                    connection_string=storage_conn_str,
+                    source_env_var=config.backup_job.connection_string_env,
+                )
+            )
+
             pulumi.log.info(f"Backup target database: {config.backup_job.database!r}")
             create_backup_job(
                 resource_group_name=resource_group,
                 location=location,
                 managed_environment_id=container_env.id,
                 key_vault_uri=key_vault.properties.vault_uri,
-                key_vault_secret_refs={"DATABASE_URL": db_secret_name},
-                storage_conn_str=storage_conn_str,
+                key_vault_secret_refs={
+                    "DATABASE_URL": db_secret_name,
+                    "AZURE_STORAGE_CONNECTION_STRING": BACKUP_STORAGE_SECRET_NAME,
+                },
                 managed_identity_id=shared_managed_identity.id,
                 config=config,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=[shared_kv_access_policy, db_conn_str_secret]
+                    depends_on=[
+                        shared_kv_access_policy,
+                        db_conn_str_secret,
+                        backup_storage_secret,
+                    ]
                 ),
             )
 

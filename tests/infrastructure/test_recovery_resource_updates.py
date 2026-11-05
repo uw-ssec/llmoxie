@@ -104,7 +104,6 @@ def test_backup_updates_remain_managed_and_preserve_caller_options():
                 "env-id",
                 None,
                 {},
-                f"synthetic-credential-{suffix}",
                 config,
                 {},
                 managed_identity_id=f"identity-{suffix}",
@@ -117,7 +116,6 @@ def test_backup_updates_remain_managed_and_preserve_caller_options():
         second["configuration"].schedule_trigger_config.cron_expression == "0 3 * * *"
     )
     assert second["template"].containers[0].image == "example.test/backup:fixed"
-    assert second["configuration"].secrets[-1].value == "synthetic-credential-fixed"
     assert second["identity"].user_assigned_identities == ["identity-fixed"]
     managed = {"configuration", "template", "identity"}
     assert managed.isdisjoint(second["opts"].ignore_changes or [])
