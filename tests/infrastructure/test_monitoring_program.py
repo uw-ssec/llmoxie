@@ -144,6 +144,90 @@ def test_no_alerts_block_creates_no_monitoring_resources(tmp_path, monkeypatch):
     ]
 
 
+ALL_ON = {
+    "monitoring": {
+        "enable_log_analytics": True,
+        "alerts": {
+            "email_receivers": ["ops@example.org", "dev@example.org"],
+            "enabled_alerts": [
+                "gateway_errors",
+                "gateway_latency",
+                "replica_restarts",
+                "db_storage",
+                "db_cpu",
+            ],
+        },
+    }
+}
+
+
+def test_action_group_emails_everyone_with_common_schema(tmp_path, monkeypatch):
+    resources, _, _ = _run(tmp_path, monkeypatch, ALL_ON)
+    [ag] = _by_type(resources, "azure-native:monitor:ActionGroup")
+    assert ag.name == "alerts-action-group"
+    assert [r["emailAddress"] for r in ag.inputs["emailReceivers"]] == [
+        "ops@example.org",
+        "dev@example.org",
+    ]
+    assert all(r["useCommonAlertSchema"] for r in ag.inputs["emailReceivers"])
+
+
+def test_metric_alerts_target_metric_and_threshold(tmp_path, monkeypatch):
+    resources, _, _ = _run(tmp_path, monkeypatch, ALL_ON)
+    alerts = {
+        r.name: r.inputs
+        for r in _by_type(resources, "azure-native:monitor:MetricAlert")
+    }
+    assert set(alerts) == {
+        "alert-gateway-errors",
+        "alert-gateway-latency",
+        "alert-replica-restarts-litellm",
+        "alert-replica-restarts-mlflow",
+        "alert-db-storage",
+        "alert-db-cpu",
+    }
+    crit = alerts["alert-gateway-errors"]["criteria"]["allOf"][0]
+    assert (crit["metricName"], crit["threshold"], crit["timeAggregation"]) == (
+        "Requests",
+        10,
+        "Total",
+    )
+    assert crit["dimensions"][0]["values"] == ["5xx"]
+    assert alerts["alert-gateway-errors"]["windowSize"] == "PT15M"
+    assert alerts["alert-gateway-errors"]["scopes"] == ["llmaven-dev-litellm-id"]
+    assert alerts["alert-db-cpu"]["criteria"]["allOf"][0]["threshold"] == 85
+    assert alerts["alert-db-storage"]["scopes"] == ["postgres-server-dev-id"]
+    for a in alerts.values():
+        assert a["actions"][0]["actionGroupId"] == "alerts-action-group-id"
+
+
+def test_mlflow_disabled_skips_only_mlflow_restart_alert(tmp_path, monkeypatch):
+    resources, _, warnings = _run(
+        tmp_path, monkeypatch, {**ALL_ON, "mlflow": {"enabled": False}}
+    )
+    names = {r.name for r in _by_type(resources, "azure-native:monitor:MetricAlert")}
+    assert "alert-replica-restarts-litellm" in names
+    assert "alert-replica-restarts-mlflow" not in names
+    assert any("mlflow" in w.lower() for w in warnings)
+
+
+def test_litellm_disabled_skips_gateway_alerts_without_crashing(tmp_path, monkeypatch):
+    resources, _, warnings = _run(
+        tmp_path, monkeypatch, {**ALL_ON, "litellm": {"enabled": False}}
+    )
+    names = {r.name for r in _by_type(resources, "azure-native:monitor:MetricAlert")}
+    assert (
+        not {
+            "alert-gateway-errors",
+            "alert-gateway-latency",
+            "alert-replica-restarts-litellm",
+        }
+        & names
+    )
+    assert {"alert-db-storage", "alert-db-cpu"} <= names
+    assert any("litellm" in w.lower() for w in warnings)
+
+
 @pytest.fixture(autouse=True)
 def _reset_pulumi_mocks():
     yield
