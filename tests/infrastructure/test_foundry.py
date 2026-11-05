@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pulumi
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from llmaven.deployment import validate as validate_mod
@@ -299,6 +300,8 @@ class _Mocks(pulumi.runtime.Mocks):
             outputs["fullyQualifiedDomainName"] = "pg.postgres.database.azure.com"
         if args.typ.endswith("managedidentity:UserAssignedIdentity"):
             outputs["principalId"] = "principal"
+        if args.typ.endswith("redisenterprise:RedisEnterprise"):
+            outputs["hostName"] = "redis.eastus.redis.azure.net"
         identity = outputs.get("identity")
         if isinstance(identity, dict) and isinstance(
             identity.get("userAssignedIdentities"), list
@@ -316,6 +319,8 @@ class _Mocks(pulumi.runtime.Mocks):
             return {"objectId": "obj", "tenantId": "tenant", "clientId": "client"}
         if args.token.endswith("listAccountKeys"):
             return {"key1": "foundry-key-1", "key2": "foundry-key-2"}
+        if args.token.endswith("listDatabaseKeys"):
+            return {"primaryKey": "redis-key", "secondaryKey": "redis-key-2"}
         if args.token.endswith("listStorageAccountKeys"):
             return {"keys": [{"value": "storage-key"}]}
         if args.token.endswith("getSharedKeys"):
@@ -440,6 +445,63 @@ def test_program_chains_deployments_and_litellm_waits_for_them(tmp_path, monkeyp
     [first, second] = deployment_opts
     assert first is None or not first.depends_on
     assert [r._name for r in second.depends_on] == ["foundry-deployment-a-dev"]
+
+
+def test_program_with_foundry_redis_and_proxy_keeps_all_three(tmp_path, monkeypatch):
+    path = _write_configs(tmp_path, True)
+    config = yaml.safe_load(path.read_text())
+    config["redis"] = {"enabled": True}
+    config["litellm"]["proxy"] = {
+        "enabled": True,
+        "admin_allowed_ips": ["203.0.113.0/24"],
+    }
+    path.write_text(yaml.safe_dump(config))
+
+    import llmaven.infrastructure.resources as resources_mod
+
+    captured = []
+    real_create_litellm_app = resources_mod.create_litellm_app
+
+    def spy_litellm(*args, **kwargs):
+        captured.append(kwargs)
+        return real_create_litellm_app(*args, **kwargs)
+
+    monkeypatch.setattr(resources_mod, "create_litellm_app", spy_litellm)
+
+    resources = _run_program(path, monkeypatch)
+
+    # Foundry's network boundary is unchanged: one rule, for the apps subnet.
+    [account] = _by_type(resources, "cognitiveservices:Account")
+    acls = account.inputs["properties"]["networkAcls"]
+    assert acls["defaultAction"] == "Deny"
+    assert acls["bypass"] == "None"
+    assert len(acls["virtualNetworkRules"]) == 1
+    assert "container-apps-subnet" in acls["virtualNetworkRules"][0]["id"]
+    assert not acls.get("ipRules")
+
+    subnets = {s.inputs["subnetName"]: s.inputs for s in _by_type(resources, "Subnet")}
+    assert [
+        endpoint["service"]
+        for endpoint in subnets["container-apps-subnet"]["serviceEndpoints"]
+    ] == ["Microsoft.CognitiveServices"]
+    assert "private-endpoints-subnet" in subnets
+
+    # LiteLLM gets all three features and waits for Foundry and Redis.
+    [litellm] = captured
+    assert litellm["proxy"].enabled is True
+    assert litellm["proxy"].admin_allowed_ips == ["203.0.113.0/24"]
+    assert litellm["redis_enabled"] is True
+    assert "REDIS_HOST" in litellm["key_vault_secret_refs"]
+    deps = {r._name for r in litellm["opts"].depends_on}
+    assert {
+        "foundry-deployment-gpt-5-mini-dev",
+        "kv-secret-azure-api-base-dev",
+        "kv-secret-azure-api-key-dev",
+        "kv-secret-azure-api-version-dev",
+        "kv-secret-redis-host-dev",
+        "kv-secret-redis-port-dev",
+        "kv-secret-redis-password-dev",
+    } <= deps
 
 
 def test_program_without_foundry_adds_nothing(tmp_path, monkeypatch):
