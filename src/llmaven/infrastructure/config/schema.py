@@ -963,6 +963,16 @@ class LLMavenConfig(BaseModel):
                 "PostgreSQL subnets. Set networking.private_endpoints_subnet."
             )
 
+        log_alerts = LOG_BASED_ALERTS.intersection(
+            self.monitoring.alerts.enabled_alerts
+        )
+        if log_alerts and not self.monitoring.enable_log_analytics:
+            raise ValueError(
+                f"monitoring.alerts.enabled_alerts includes {sorted(log_alerts)}, "
+                "which query Log Analytics, but monitoring.enable_log_analytics is "
+                "false. Enable it or remove those alerts."
+            )
+
         proxy = self.litellm.proxy
         if self.litellm.enabled and proxy.enabled:
             if proxy.port == self.litellm.port:
@@ -1014,13 +1024,3 @@ def _check_consumption_total(cpu: float, memory_gi: float) -> None:
             "0.25 vCPU step up to 4 vCPU with memory twice the vCPU (e.g. 2.25 / "
             "4.5Gi). Adjust litellm.cpu/memory or litellm.proxy.cpu/memory."
         )
-
-        log_alerts = LOG_BASED_ALERTS.intersection(
-            self.monitoring.alerts.enabled_alerts
-        )
-        if log_alerts and not self.monitoring.enable_log_analytics:
-            raise ValueError(
-                f"monitoring.alerts.enabled_alerts includes {sorted(log_alerts)}, "
-                "which query Log Analytics, but monitoring.enable_log_analytics is "
-                "false. Enable it or remove those alerts."
-            )
