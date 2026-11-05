@@ -12,7 +12,6 @@ import re
 import secrets
 import string
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 import pulumi
 from pulumi import Output
@@ -152,9 +151,9 @@ def validate_secret_name(secret_name: str) -> bool:
 
 
 def validate_environment_secrets(
-    required_secrets: List[str],
-    environment: Optional[str] = None,
-) -> tuple[bool, List[str], List[str]]:
+    required_secrets: list[str],
+    environment: str | None = None,
+) -> tuple[bool, list[str], list[str]]:
     """
     Validate that required secrets are present in environment variables.
 
@@ -178,7 +177,7 @@ def validate_environment_secrets(
         env_var_name = transform_secret_name_to_env_var(secret_name)
 
         # Check if environment variable exists
-        if env_var_name in os.environ and os.environ[env_var_name]:
+        if os.environ.get(env_var_name):
             found.append(secret_name)
         else:
             missing.append(secret_name)
@@ -187,7 +186,7 @@ def validate_environment_secrets(
     return all_present, found, missing
 
 
-def load_env_file(env_file_path: Optional[Path] = None) -> None:
+def load_env_file(env_file_path: Path | None = None) -> None:
     """
     Load environment variables from a .env file.
 
@@ -239,7 +238,7 @@ def load_env_file(env_file_path: Optional[Path] = None) -> None:
     pulumi.log.info(f"✓ Loaded {loaded_count} secrets from {env_file_path}")
 
 
-def get_llmaven_secrets(env_file_path: Optional[Path] = None) -> Dict[str, str]:
+def get_llmaven_secrets(env_file_path: Path | None = None) -> dict[str, str]:
     """
     Get all LLMAVEN_SECRETS_* environment variables.
 
@@ -303,7 +302,7 @@ def transform_secret_name_to_env_var(secret_name: str) -> str:
     return f"LLMAVEN_SECRETS_{secret_name.upper().replace('-', '_')}"
 
 
-def check_for_placeholder_secrets() -> List[tuple[str, str]]:
+def check_for_placeholder_secrets() -> list[tuple[str, str]]:
     """
     Check environment variables for common placeholder values.
 
@@ -349,7 +348,7 @@ def check_for_placeholder_secrets() -> List[tuple[str, str]]:
     return placeholders_found
 
 
-def get_required_secrets_for_config(config_dict: Dict) -> Set[str]:
+def get_required_secrets_for_config(config_dict: dict) -> set[str]:
     """
     Extract required secrets from configuration.
 
@@ -436,9 +435,9 @@ def create_auto_generated_secrets(
     postgres_admin_login: str,
     postgres_admin_password: Output[str],
     storage_account_key: Output[str],
-    mlflow_fqdn: Optional[Output[str]] = None,
-    database_names: Optional[List[str]] = None,
-) -> Dict[str, Output[str]]:
+    mlflow_fqdn: Output[str] | None = None,
+    database_names: list[str] | None = None,
+) -> dict[str, Output[str]]:
     """
     Create auto-generated secrets for the deployment.
 

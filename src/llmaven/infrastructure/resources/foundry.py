@@ -8,8 +8,6 @@ subnet. The subnet needs the ``Microsoft.CognitiveServices`` service endpoint
 uses, are not affected by these rules.
 """
 
-from typing import Dict, List, Optional, Tuple
-
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
@@ -32,11 +30,11 @@ def create_foundry(
     location: str,
     allowed_subnet_id: Output[str],
     config: LLMavenConfig,
-    tags: Optional[Dict[str, str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
-) -> Tuple[
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+) -> tuple[
     azure_native.cognitiveservices.Account,
-    List[azure_native.cognitiveservices.Deployment],
+    list[azure_native.cognitiveservices.Deployment],
 ]:
     """Create the Foundry account and one deployment per configured model.
 
@@ -85,8 +83,8 @@ def create_foundry(
     )
 
     # Azure rejects concurrent deployment operations on one account, so chain them.
-    deployments: List[azure_native.cognitiveservices.Deployment] = []
-    previous: Optional[pulumi.Resource] = None
+    deployments: list[azure_native.cognitiveservices.Deployment] = []
+    previous: pulumi.Resource | None = None
     for spec in config.foundry.deployments:
         deployment = azure_native.cognitiveservices.Deployment(
             f"foundry-deployment-{spec.name}-{environment}",

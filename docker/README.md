@@ -704,8 +704,8 @@ response = client.chat.completions.create(
     model="gpt-5-mini",
     messages=[
         {"role": "system", "content": "You are a helpful scientific assistant."},
-        {"role": "user", "content": "What is the significance of the Higgs boson?"}
-    ]
+        {"role": "user", "content": "What is the significance of the Higgs boson?"},
+    ],
 )
 
 print(response.choices[0].message.content)
@@ -722,7 +722,7 @@ from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     model="gpt-5-mini",
     openai_api_key=os.environ["LITELLM_MASTER_KEY"],
-    openai_api_base="http://localhost:4000"
+    openai_api_base="http://localhost:4000",
 )
 
 # Make a request
@@ -756,7 +756,7 @@ experiment = mlflow.get_experiment_by_name("Default")
 
 # Search runs
 runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
-print(runs[['run_id', 'metrics.total_cost', 'params.model']])
+print(runs[["run_id", "metrics.total_cost", "params.model"]])
 ```
 
 ### Managing Storage with Azurite
@@ -1460,25 +1460,23 @@ export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountNam
 import os
 
 # Configure environment
-os.environ['LITELLM_API_BASE'] = 'http://localhost:4000'
-os.environ['LITELLM_API_KEY'] = os.environ['LITELLM_MASTER_KEY']
-os.environ['MLFLOW_TRACKING_URI'] = 'http://localhost:8080'
+os.environ["LITELLM_API_BASE"] = "http://localhost:4000"
+os.environ["LITELLM_API_KEY"] = os.environ["LITELLM_MASTER_KEY"]
+os.environ["MLFLOW_TRACKING_URI"] = "http://localhost:8080"
 
 from openai import OpenAI
 import mlflow
 
 # Use LiteLLM
 client = OpenAI(
-    base_url=os.environ['LITELLM_API_BASE'],
-    api_key=os.environ['LITELLM_API_KEY']
+    base_url=os.environ["LITELLM_API_BASE"], api_key=os.environ["LITELLM_API_KEY"]
 )
 
 # Track with MLflow
-mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI'])
+mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
 with mlflow.start_run():
     response = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=[{"role": "user", "content": "Hello!"}]
+        model="gpt-5-mini", messages=[{"role": "user", "content": "Hello!"}]
     )
     mlflow.log_param("model", "gpt-5-mini")
     mlflow.log_metric("response_length", len(response.choices[0].message.content))

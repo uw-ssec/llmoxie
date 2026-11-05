@@ -4,14 +4,18 @@ This module creates and configures Azure Container Apps Environment with
 VNet integration, monitoring, and workload profiles.
 """
 
-from typing import Dict, List, Optional
 import datetime
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import LLMavenConfig, BackupJobConfig, CustomDomainConfig
+from ..config.schema import (
+    BackupJobConfig,
+    CustomDomainConfig,
+    IPSecurityRestrictionConfig,
+    LLMavenConfig,
+)
 
 
 def create_container_apps_environment(
@@ -20,7 +24,7 @@ def create_container_apps_environment(
     container_apps_subnet_id: Output[str],
     log_analytics_workspace: azure_native.operationalinsights.Workspace,
     config: LLMavenConfig,
-    tags: Dict[str, str],
+    tags: dict[str, str],
 ) -> azure_native.app.ManagedEnvironment:
     """
     Create Azure Container Apps Managed Environment.
@@ -124,21 +128,26 @@ def create_container_app_with_key_vault_secrets(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: Optional[Dict[str, str]] = None,
-    key_vault_secret_refs: Optional[Dict[str, str]] = None,
-    inline_secrets: Optional[Dict[str, str]] = None,
-    command_args: Optional[list] = None,
-    volumes: Optional[list] = None,
-    volume_mounts: Optional[list] = None,
-    managed_identity_id: Optional[Output[str]] = None,
+    env_vars: dict[str, str] | None = None,
+    key_vault_secret_refs: dict[str, str] | None = None,
+    inline_secrets: dict[str, str] | None = None,
+    command_args: list | None = None,
+    volumes: list | None = None,
+    volume_mounts: list | None = None,
+    managed_identity_id: Output[str] | None = None,
     environment: str = "dev",
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
     enable_ingress: bool = True,
     ingress_external: bool = True,
-    revision_suffix: Optional[str] = None,
-    refresh_trigger: Optional[str] = None,
-    custom_domains: Optional[List[CustomDomainConfig]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
+    revision_suffix: str | None = None,
+    refresh_trigger: str | None = None,
+    custom_domains: list[CustomDomainConfig] | None = None,
+    sidecars: list[azure_native.app.ContainerArgs] | None = None,
+    ingress_target_port: int | None = None,
+    health_probe_port: int | None = None,
+    health_probe_path: str = "/health/liveliness",
+    ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
 ) -> azure_native.app.ContainerApp:
     """
     Create Azure Container App with Key Vault secret references.
@@ -173,6 +182,15 @@ def create_container_app_with_key_vault_secrets(
         refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
         custom_domains: Hostnames to bind to existing managed certificates in the
             environment. Hostnames not listed are removed from the ingress on deploy.
+        sidecars: Extra containers in the same replica (they share localhost)
+        ingress_target_port: Port ingress sends traffic to; defaults to
+            container_port. Set it to a sidecar's port to put the sidecar in front.
+        health_probe_port: When set, the main container's probes are HTTP GETs of
+            health_probe_path on this port instead of TCP checks on container_port.
+            Use it when the main container listens only on localhost, which the
+            platform probes cannot reach.
+        health_probe_path: Health path for health_probe_port probes
+        ip_security_restrictions: Ingress IP rules for the whole app
 
     Returns:
         ContainerApp resource
@@ -248,7 +266,7 @@ def create_container_app_with_key_vault_secrets(
     if enable_ingress:
         ingress_config = azure_native.app.IngressArgs(
             external=ingress_external,
-            target_port=container_port,
+            target_port=ingress_target_port or container_port,
             transport="auto",
             allow_insecure=False,
             traffic=[
@@ -271,7 +289,87 @@ def create_container_app_with_key_vault_secrets(
             ]
             if custom_domains
             else None,
+            ip_security_restrictions=[
+                azure_native.app.IpSecurityRestrictionRuleArgs(
+                    name=rule.name,
+                    ip_address_range=rule.ip_address_range,
+                    action=rule.action,
+                    description=rule.description,
+                )
+                for rule in ip_security_restrictions
+            ]
+            if ip_security_restrictions
+            else None,
         )
+
+    if health_probe_port is None:
+        # Liveness and readiness match the TCP probes Azure adds by default, so
+        # declaring them keeps deploys from removing them.
+        probes = [
+            azure_native.app.ContainerAppProbeArgs(
+                type="Liveness",
+                tcp_socket=azure_native.app.ContainerAppProbeTcpSocketArgs(
+                    port=container_port,
+                ),
+                period_seconds=10,
+                timeout_seconds=5,
+                success_threshold=1,
+                failure_threshold=3,
+            ),
+            azure_native.app.ContainerAppProbeArgs(
+                type="Readiness",
+                tcp_socket=azure_native.app.ContainerAppProbeTcpSocketArgs(
+                    port=container_port,
+                ),
+                period_seconds=5,
+                timeout_seconds=5,
+                success_threshold=1,
+                failure_threshold=48,
+            ),
+            azure_native.app.ContainerAppProbeArgs(
+                type="Startup",
+                http_get=azure_native.app.ContainerAppProbeHttpGetArgs(
+                    path="/health/liveliness",
+                    port=container_port,
+                ),
+                initial_delay_seconds=10,
+                period_seconds=10,
+                failure_threshold=30,
+            ),
+        ]
+    else:
+        # Same thresholds, but checked over HTTP through the port that is
+        # reachable from outside the replica.
+        def _http(port: int) -> azure_native.app.ContainerAppProbeHttpGetArgs:
+            return azure_native.app.ContainerAppProbeHttpGetArgs(
+                path=health_probe_path, port=port
+            )
+
+        probes = [
+            azure_native.app.ContainerAppProbeArgs(
+                type="Liveness",
+                http_get=_http(health_probe_port),
+                period_seconds=10,
+                timeout_seconds=5,
+                success_threshold=1,
+                failure_threshold=3,
+            ),
+            azure_native.app.ContainerAppProbeArgs(
+                type="Readiness",
+                http_get=_http(health_probe_port),
+                period_seconds=5,
+                timeout_seconds=5,
+                success_threshold=1,
+                failure_threshold=48,
+            ),
+            azure_native.app.ContainerAppProbeArgs(
+                type="Startup",
+                http_get=_http(health_probe_port),
+                initial_delay_seconds=10,
+                period_seconds=10,
+                failure_threshold=30,
+            ),
+        ]
 
     # Create Container App
     container_app = azure_native.app.ContainerApp(
@@ -302,41 +400,9 @@ def create_container_app_with_key_vault_secrets(
                         memory=memory,
                     ),
                     env=env_list if env_list else None,
-                    # Liveness and readiness match the TCP probes Azure adds by
-                    # default, so declaring them keeps deploys from removing them.
-                    probes=[
-                        azure_native.app.ContainerAppProbeArgs(
-                            type="Liveness",
-                            tcp_socket=azure_native.app.ContainerAppProbeTcpSocketArgs(
-                                port=container_port,
-                            ),
-                            period_seconds=10,
-                            timeout_seconds=5,
-                            success_threshold=1,
-                            failure_threshold=3,
-                        ),
-                        azure_native.app.ContainerAppProbeArgs(
-                            type="Readiness",
-                            tcp_socket=azure_native.app.ContainerAppProbeTcpSocketArgs(
-                                port=container_port,
-                            ),
-                            period_seconds=5,
-                            timeout_seconds=5,
-                            success_threshold=1,
-                            failure_threshold=48,
-                        ),
-                        azure_native.app.ContainerAppProbeArgs(
-                            type="Startup",
-                            http_get=azure_native.app.ContainerAppProbeHttpGetArgs(
-                                path="/health/liveliness",
-                                port=container_port,
-                            ),
-                            initial_delay_seconds=10,
-                            period_seconds=10,
-                            failure_threshold=30,
-                        ),
-                    ],
-                )
+                    probes=probes,
+                ),
+                *(sidecars or []),
             ],
             scale=azure_native.app.ScaleArgs(
                 min_replicas=min_replicas,
@@ -400,12 +466,12 @@ def create_backup_job(
     location: str,
     managed_environment_id: Output[str],
     key_vault_uri: Output[str],
-    key_vault_secret_refs: Dict[str, str],
+    key_vault_secret_refs: dict[str, str],
     storage_conn_str: str,
     config: LLMavenConfig,
-    tags: Dict[str, str],
-    managed_identity_id: Optional[Output[str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
+    tags: dict[str, str],
+    managed_identity_id: Output[str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
 ) -> azure_native.app.Job:
     """Create a scheduled Container Apps Job that streams pg_dump to blob storage.
 

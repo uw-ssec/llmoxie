@@ -36,7 +36,7 @@ test = [
 ]
 deploy = [
     "pulumi>=3.100.0",
-    "pulumi-azure-native>=3.0.0",
+    "pulumi-azure-native>=3.29.0,<4",
     "pulumi-azuread>=5.0.0",
     "pulumi-random>=4.0.0",
     "pyyaml>=6.0.0",
@@ -65,3 +65,7 @@ exclude = ["tests/"]
 
 [tool.ruff]
 exclude = ["pixi.lock", "*.ipynb"]
+
+[tool.ruff.lint]
+# Preserve the pre-0.16 defaults; hook updates must not expand lint policy.
+select = ["E4", "E7", "E9", "F"]

@@ -3,9 +3,10 @@
 This module defines the Pydantic models for validating llmaven-config.yaml.
 """
 
-from typing import Any, Dict, List, Optional
+import ipaddress
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProjectConfig(BaseModel):
@@ -20,7 +21,7 @@ class ProjectConfig(BaseModel):
         default=False,
         description="Enable Pulumi passphrase protection (requires PULUMI_CONFIG_PASSPHRASE)",
     )
-    pulumi_state_store: Optional[str] = Field(
+    pulumi_state_store: str | None = Field(
         default=None,
         description="Azure Blob Storage account for Pulumi state storage (optional)",
     )
@@ -41,10 +42,10 @@ class AzureConfig(BaseModel):
     subscription_id: str = Field(
         default="", description="Azure subscription ID (required)"
     )
-    tenant_id: Optional[str] = Field(
+    tenant_id: str | None = Field(
         default=None, description="Azure AD tenant ID (optional, auto-detected)"
     )
-    resource_group: Optional[str] = Field(
+    resource_group: str | None = Field(
         default=None, description="Resource group name (optional, auto-created)"
     )
 
@@ -59,6 +60,52 @@ class NetworkingConfig(BaseModel):
         default="10.0.1.0/24", description="Container Apps subnet"
     )
     postgres_subnet: str = Field(default="10.0.2.0/24", description="PostgreSQL subnet")
+    private_endpoints_subnet: str | None = Field(
+        default=None,
+        description=(
+            "Subnet for private endpoints (Azure Managed Redis). Defaults to the "
+            "first /24 above the Container Apps and PostgreSQL subnets."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def resolve_private_endpoints_subnet(self) -> "NetworkingConfig":
+        """Derive the private endpoints subnet from the VNet when omitted.
+
+        Existing configs predate this field and use their own VNet ranges
+        (e.g. 172.16.0.0/16), so a fixed default would fall outside the VNet.
+        """
+        vnet = ipaddress.ip_network(self.vnet_address_space)
+        taken = [
+            ipaddress.ip_network(self.container_apps_subnet),
+            ipaddress.ip_network(self.postgres_subnet),
+        ]
+
+        if self.private_endpoints_subnet is None:
+            start = max(int(net.broadcast_address) for net in taken) + 1
+            candidate = ipaddress.ip_network((start, 24), strict=False)
+            if int(candidate.network_address) < start:
+                candidate = ipaddress.ip_network(
+                    (int(candidate.broadcast_address) + 1, 24)
+                )
+            # Left unset when the VNet has no room; LLMavenConfig only rejects
+            # that when Redis actually needs the subnet.
+            if candidate.subnet_of(vnet):
+                self.private_endpoints_subnet = str(candidate)
+            return self
+
+        subnet = ipaddress.ip_network(self.private_endpoints_subnet)
+        if not subnet.subnet_of(vnet):
+            raise ValueError(
+                f"networking.private_endpoints_subnet {subnet} is outside "
+                f"vnet_address_space {vnet}"
+            )
+        for net in taken:
+            if subnet.overlaps(net):
+                raise ValueError(
+                    f"networking.private_endpoints_subnet {subnet} overlaps {net}"
+                )
+        return self
 
 
 class DatabaseConfig(BaseModel):
@@ -73,7 +120,7 @@ class DatabaseConfig(BaseModel):
         description="SKU name (B_Standard_B1ms, GP_Standard_D2s_v3, etc.)",
     )
     storage_size_gb: int = Field(default=32, description="Storage size in GB", ge=32)
-    storage_type: Optional[str] = Field(
+    storage_type: str | None = Field(
         default=None,
         description="Storage type (e.g., Premium_LRS); Azure default if unset",
     )
@@ -87,9 +134,47 @@ class DatabaseConfig(BaseModel):
         default=False, description="Enable high availability"
     )
     postgresql_version: str = Field(default="16", description="PostgreSQL version")
-    databases: List[str] = Field(
+    databases: list[str] = Field(
         default=["llmaven", "mlflow_db", "litellm_db"], description="Database names"
     )
+
+
+class RedisConfig(BaseModel):
+    """Azure Managed Redis configuration, shared by LiteLLM replicas.
+
+    LiteLLM keeps rate limits, budgets and router state per replica unless the
+    replicas share a Redis, so Redis is required when ``litellm.max_replicas > 1``.
+    """
+
+    enabled: bool | None = Field(
+        default=None,
+        description="Provision Azure Managed Redis for LiteLLM. Defaults to true "
+        "when LiteLLM runs more than one replica, false otherwise",
+    )
+    sku_name: str = Field(
+        default="Balanced_B0",
+        description="Azure Managed Redis SKU (Balanced_B0, Balanced_B1, ...)",
+    )
+    high_availability: bool | None = Field(
+        default=None,
+        description="Replicate across two nodes. Defaults to true in prod, "
+        "false otherwise",
+    )
+    clustering_policy: str = Field(
+        default="EnterpriseCluster",
+        description="Clustering policy. Can't be changed after the database is created",
+    )
+
+    @field_validator("clustering_policy")
+    @classmethod
+    def validate_clustering_policy(cls, v: str) -> str:
+        """Allow only policies that present a single endpoint to LiteLLM."""
+        # OSSCluster needs a cluster-aware client (REDIS_CLUSTER_NODES), which
+        # the plain REDIS_HOST/REDIS_PORT wiring here doesn't provide.
+        allowed = ["EnterpriseCluster", "NoCluster"]
+        if v not in allowed:
+            raise ValueError(f"Clustering policy must be one of {allowed}")
+        return v
 
 
 class StorageConfig(BaseModel):
@@ -102,7 +187,7 @@ class StorageConfig(BaseModel):
     enable_hierarchical_namespace: bool = Field(
         default=True, description="Enable ADLS Gen2"
     )
-    containers: List[str] = Field(
+    containers: list[str] = Field(
         default=["mlflow", "llmaven", "litellm-logs"],
         description="Storage container names",
     )
@@ -155,7 +240,7 @@ class MonitoringConfig(BaseModel):
         default=True, description="Enable Application Insights"
     )
     enable_log_analytics: bool = Field(default=True, description="Enable Log Analytics")
-    daily_data_cap_gb: Optional[float] = Field(
+    daily_data_cap_gb: float | None = Field(
         default=None, description="Daily data cap in GB (null for unlimited)"
     )
 
@@ -170,6 +255,30 @@ class CustomDomainConfig(BaseModel):
     )
 
 
+class IPSecurityRestrictionConfig(BaseModel):
+    """Container Apps ingress IP rule (applies to the whole app)."""
+
+    name: str = Field(description="Rule name")
+    ip_address_range: str = Field(description="CIDR, e.g. 203.0.113.0/24")
+    action: str = Field(default="Allow", description="Allow or Deny")
+    description: str | None = Field(default=None, description="Rule description")
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in ("Allow", "Deny"):
+            raise ValueError("action must be Allow or Deny")
+        return v
+
+    @field_validator("ip_address_range")
+    @classmethod
+    def validate_ip_address_range(cls, v: str) -> str:
+        # Container Apps ingress IP restrictions accept IPv4 only.
+        if ipaddress.ip_network(v, strict=False).version != 4:
+            raise ValueError(f"ip_address_range {v!r} must be an IPv4 range")
+        return v
+
+
 class ContainerAppConfig(BaseModel):
     """Container App configuration."""
 
@@ -180,22 +289,22 @@ class ContainerAppConfig(BaseModel):
     memory: str = Field(default="1Gi", description="Memory allocation")
     min_replicas: int = Field(default=1, description="Minimum replicas", ge=0)
     max_replicas: int = Field(default=2, description="Maximum replicas", ge=1)
-    env_vars: Dict[str, str] = Field(
+    env_vars: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )
-    key_vault_secret_refs: Dict[str, str] = Field(
+    key_vault_secret_refs: dict[str, str] = Field(
         default_factory=dict, description="Key/Value mapping for Key Vault secrets"
     )
-    revision_suffix: Optional[str] = Field(
+    revision_suffix: str | None = Field(
         default=None,
         description="Revision name suffix (must change whenever the template changes)",
     )
-    refresh_trigger: Optional[str] = Field(
+    refresh_trigger: str | None = Field(
         default=None,
         description="Fixed REFRESH_TRIGGER value; defaults to the deploy timestamp, "
         "which forces a new revision on every deploy",
     )
-    custom_domains: List[CustomDomainConfig] = Field(
+    custom_domains: list[CustomDomainConfig] = Field(
         default_factory=list,
         description="Custom hostnames to keep bound to the ingress; a deploy removes "
         "any hostname that isn't listed here",
@@ -210,12 +319,12 @@ class MLflowConfig(ContainerAppConfig):
         description="MLflow container image",
     )
     port: int = Field(default=8080, description="MLflow port")
-    env_vars: Dict[str, str] = Field(
+    env_vars: dict[str, str] = Field(
         default_factory=lambda: {"MLFLOW_HOST": "0.0.0.0"},
         description="MLflow environment variables",
     )
 
-    key_vault_secret_refs: Dict[str, str] = Field(
+    key_vault_secret_refs: dict[str, str] = Field(
         default_factory=lambda: {
             "MLFLOW_BACKEND_STORE_URI": "db-connection-string-mlflow-db",
             "MLFLOW_DEFAULT_ARTIFACT_ROOT": "mlflow-artifact-root",
@@ -223,6 +332,108 @@ class MLflowConfig(ContainerAppConfig):
         },
         description="MLflow Key Vault secret references",
     )
+
+
+# LiteLLM v1.106.6 inference routes that stay public behind the proxy, with
+# their aliases. Exact paths only: broad prefixes such as /v1/ would also expose
+# LiteLLM's management routes. Everything else needs an allowlisted client IP.
+DEFAULT_PUBLIC_PATHS = [
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/v1/completions",
+    "/completions",
+    "/v1/embeddings",
+    "/embeddings",
+    "/v1/messages",
+    "/v1/messages/count_tokens",
+    "/v1/responses",
+    "/responses",
+    "/openai/v1/responses",
+    "/v1/rerank",
+    "/v2/rerank",
+    "/rerank",
+    "/v1/models",
+    "/models",
+]
+
+# Unauthenticated liveness endpoints. They are public and not rate limited,
+# because the platform probes reach LiteLLM through the proxy. Other /health/*
+# routes expose configuration and admin actions, so they stay allowlisted.
+DEFAULT_HEALTH_PATHS = ["/health/liveliness", "/health/liveness"]
+
+
+class LiteLLMProxyConfig(BaseModel):
+    """Optional Traefik sidecar in front of LiteLLM.
+
+    Ingress targets Traefik, which forwards to LiteLLM on 127.0.0.1. Listed
+    public and health paths are open; every other path (admin UI, key, team,
+    model and MCP routes) requires a client IP in admin_allowed_ips.
+    """
+
+    enabled: bool = Field(default=False, description="Run the Traefik sidecar")
+    image: str = Field(
+        default="docker.io/library/traefik:v3.7.17@sha256:"
+        "321153f6f732f912cf5c6f0597fe38743fc7895d482d7d8804a479ae0403e151",
+        description="Traefik image, pinned by digest",
+    )
+    port: int = Field(default=8080, ge=1, le=65535, description="Traefik port")
+    cpu: float = Field(
+        default=0.25,
+        ge=0.25,
+        description="Sidecar CPU; litellm.cpu + this must be a valid Container "
+        "Apps total",
+    )
+    memory: str = Field(
+        default="0.5Gi",
+        description="Sidecar memory; litellm.memory + this must be a valid "
+        "Container Apps total",
+    )
+    admin_allowed_ips: list[str] = Field(
+        default_factory=list,
+        description="Client CIDRs allowed to reach non-public paths. Empty "
+        "blocks the admin surface for everyone",
+    )
+    public_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_PUBLIC_PATHS),
+        description="Exact paths reachable from any IP",
+    )
+    health_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_HEALTH_PATHS),
+        description="Exact unauthenticated health paths reachable from any IP",
+    )
+    trusted_proxy_ips: list[str] | None = Field(
+        default=None,
+        description="Peers whose X-Forwarded-For Traefik keeps. Defaults to "
+        "networking.container_apps_subnet, where the Container Apps Envoy runs",
+    )
+    rate_limit_average: int = Field(
+        default=50,
+        ge=1,
+        description="Requests per second per client IP, per replica",
+    )
+    rate_limit_burst: int = Field(
+        default=100, ge=1, description="Burst size per client IP, per replica"
+    )
+    log_forwarded_for: bool = Field(
+        default=False,
+        description="Temporary staging diagnostic: JSON access logs with the raw "
+        "peer (ClientAddr) and X-Forwarded-For; other headers stay dropped",
+    )
+
+    @field_validator("admin_allowed_ips", "trusted_proxy_ips")
+    @classmethod
+    def validate_cidrs(cls, v: list[str] | None) -> list[str] | None:
+        for cidr in v or []:
+            ipaddress.ip_network(cidr, strict=False)
+        return v
+
+    @field_validator("public_paths", "health_paths")
+    @classmethod
+    def validate_paths(cls, v: list[str]) -> list[str]:
+        for path in v:
+            if not path.startswith("/") or "`" in path:
+                raise ValueError(f"Invalid path {path!r}: must start with '/'")
+        return v
 
 
 class LiteLLMConfig(ContainerAppConfig):
@@ -236,12 +447,12 @@ class LiteLLMConfig(ContainerAppConfig):
     config_file: str = Field(
         default="docker/config.yaml", description="Path to LiteLLM config file"
     )
-    env_vars: Dict[str, str] = Field(
+    env_vars: dict[str, str] = Field(
         default_factory=lambda: {"LITELLM_HOST": "0.0.0.0"},
         description="LiteLLM environment variables",
     )
 
-    key_vault_secret_refs: Dict[str, str] = Field(
+    key_vault_secret_refs: dict[str, str] = Field(
         default_factory=lambda: {
             "DATABASE_URL": "db-connection-string-litellm-db",
             "LITELLM_MASTER_KEY": "litellm-master-key",
@@ -254,6 +465,30 @@ class LiteLLMConfig(ContainerAppConfig):
             "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
         },
         description="LiteLLM Key Vault secret references",
+    )
+    ip_security_restrictions: list[IPSecurityRestrictionConfig] = Field(
+        default_factory=list,
+        description="Container Apps ingress IP rules for the whole app (all paths). "
+        "Empty leaves ingress open",
+    )
+
+    @field_validator("ip_security_restrictions")
+    @classmethod
+    def validate_single_action(
+        cls, v: list[IPSecurityRestrictionConfig]
+    ) -> list[IPSecurityRestrictionConfig]:
+        # Container Apps rejects a list that mixes Allow and Deny rules.
+        actions = {rule.action for rule in v}
+        if len(actions) > 1:
+            raise ValueError(
+                "ip_security_restrictions must all use the same action (all Allow "
+                "or all Deny); Container Apps rejects mixed lists"
+            )
+        return v
+
+    proxy: LiteLLMProxyConfig = Field(
+        default_factory=LiteLLMProxyConfig,
+        description="Optional Traefik sidecar for path-level access control",
     )
 
 
@@ -278,7 +513,7 @@ class KeyVaultConfig(BaseModel):
         default=90, description="Soft delete retention days", ge=7, le=90
     )
     enable_soft_delete: bool = Field(default=False, description="Enable soft delete")
-    enable_purge_protection: Optional[bool] = Field(
+    enable_purge_protection: bool | None = Field(
         default=None, description="Enable purge protection"
     )
 
@@ -287,7 +522,7 @@ class NetworkSecurityConfig(BaseModel):
     """Network security configuration."""
 
     allow_azure_services: bool = Field(default=True, description="Allow Azure services")
-    allowed_ip_ranges: List[str] = Field(
+    allowed_ip_ranges: list[str] = Field(
         default_factory=list, description="Allowed IP ranges for access control"
     )
 
@@ -361,8 +596,8 @@ FOUNDRY_MANAGED_SECRETS = ["azure-api-base", "azure-api-key", "azure-api-version
 
 
 def foundry_secret_collisions(
-    foundry_enabled: bool, user_secret_names: List[str]
-) -> List[str]:
+    foundry_enabled: bool, user_secret_names: list[str]
+) -> list[str]:
     """Return user-provided Key Vault secret names the Foundry stack would overwrite.
 
     Args:
@@ -433,13 +668,13 @@ class FoundryConfig(BaseModel):
         description="Provision the Foundry account and deployments in this stack; "
         "when false, bring your own endpoint through azure-api-* secrets",
     )
-    account_name: Optional[str] = Field(
+    account_name: str | None = Field(
         default=None,
         description="Account name and custom subdomain (globally unique); "
         "defaults to <project>-foundry-<environment>",
         pattern=r"^[a-zA-Z0-9][a-zA-Z0-9-]{1,62}[a-zA-Z0-9]$",
     )
-    location: Optional[str] = Field(
+    location: str | None = Field(
         default=None,
         description="Azure region for the account; defaults to project.location",
     )
@@ -448,15 +683,15 @@ class FoundryConfig(BaseModel):
         default="2025-04-01-preview",
         description="Azure OpenAI API version written to the azure-api-version secret",
     )
-    deployments: List[FoundryDeploymentConfig] = Field(
+    deployments: list[FoundryDeploymentConfig] = Field(
         default_factory=list, description="Model deployments"
     )
 
     @field_validator("deployments")
     @classmethod
     def validate_unique_deployment_names(
-        cls, v: List[FoundryDeploymentConfig]
-    ) -> List[FoundryDeploymentConfig]:
+        cls, v: list[FoundryDeploymentConfig]
+    ) -> list[FoundryDeploymentConfig]:
         """Reject duplicate deployment names."""
         names = [d.name for d in v]
         duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -482,6 +717,9 @@ class LLMavenConfig(BaseModel):
     )
     storage: StorageConfig = Field(
         default_factory=StorageConfig, description="Storage configuration"
+    )
+    redis: RedisConfig = Field(
+        default_factory=RedisConfig, description="Azure Managed Redis for LiteLLM"
     )
     container_registry: ContainerRegistryConfig = Field(
         default_factory=ContainerRegistryConfig,
@@ -510,7 +748,7 @@ class LLMavenConfig(BaseModel):
         default_factory=FoundryConfig,
         description="Azure AI Foundry account and model deployments",
     )
-    tags: Dict[str, str] = Field(
+    tags: dict[str, str] = Field(
         default_factory=lambda: {
             "Environment": "dev",
             "Project": "llmaven",
@@ -539,3 +777,78 @@ class LLMavenConfig(BaseModel):
                 f"backup_job.database '{self.backup_job.database}' is not in "
                 f"database.databases {self.database.databases}"
             )
+
+        # LiteLLM enforces rate limits and budgets per replica without a shared
+        # Redis, so more than one replica requires Redis.
+        litellm_multi_replica = self.litellm.enabled and self.litellm.max_replicas > 1
+        if self.redis.enabled is None:
+            self.redis.enabled = litellm_multi_replica
+        elif litellm_multi_replica and not self.redis.enabled:
+            raise ValueError(
+                f"redis.enabled is false but litellm.max_replicas is "
+                f"{self.litellm.max_replicas}. LiteLLM needs a shared Redis when it "
+                "runs more than one replica, otherwise rate limits and budgets are "
+                "enforced per replica. Enable redis or set litellm.max_replicas to 1."
+            )
+        # Existing prod configs predate the redis section and gain Redis
+        # automatically, so an omitted HA setting follows the environment.
+        if self.redis.high_availability is None:
+            self.redis.high_availability = self.project.environment == "prod"
+        if self.redis.enabled and self.networking.private_endpoints_subnet is None:
+            raise ValueError(
+                "Redis needs a private endpoints subnet, but there is no free /24 in "
+                f"{self.networking.vnet_address_space} after the Container Apps and "
+                "PostgreSQL subnets. Set networking.private_endpoints_subnet."
+            )
+
+        proxy = self.litellm.proxy
+        if self.litellm.enabled and proxy.enabled:
+            if proxy.port == self.litellm.port:
+                raise ValueError(
+                    f"litellm.proxy.port {proxy.port} must differ from litellm.port"
+                )
+            if not proxy.health_paths:
+                raise ValueError(
+                    "litellm.proxy.health_paths must not be empty: the platform "
+                    "probes reach LiteLLM through the first health path"
+                )
+            # A pinned suffix gets "-p<8 hex>" so policy changes roll a revision.
+            suffix = self.litellm.revision_suffix
+            if suffix and len(suffix) + 10 > 64:
+                raise ValueError(
+                    f"litellm.revision_suffix {suffix!r} is too long to carry the "
+                    "proxy policy digest: keep it at 54 characters or fewer"
+                )
+            if proxy.trusted_proxy_ips is None:
+                proxy.trusted_proxy_ips = [self.networking.container_apps_subnet]
+            _check_consumption_total(
+                self.litellm.cpu + proxy.cpu,
+                _memory_gi(self.litellm.memory) + _memory_gi(proxy.memory),
+            )
+
+
+def _memory_gi(value: str) -> float:
+    """Parse a Container Apps memory string such as '0.5Gi' or '4Gi'."""
+    if not value.endswith("Gi"):
+        raise ValueError(f"Memory {value!r} must be given in Gi, e.g. '0.5Gi'")
+    return float(value[:-2])
+
+
+def _check_consumption_total(cpu: float, memory_gi: float) -> None:
+    """Reject app totals the Consumption profile does not offer.
+
+    Consumption accepts 0.25 vCPU steps up to 4 vCPU, with memory equal to
+    twice the vCPU in Gi. The limit applies to the sum of all containers.
+    """
+    steps = cpu / 0.25
+    if not (
+        abs(steps - round(steps)) < 1e-9
+        and 0.25 <= cpu <= 4
+        and abs(memory_gi - 2 * cpu) < 1e-9
+    ):
+        raise ValueError(
+            f"LiteLLM plus the proxy sidecar total {cpu:g} vCPU / {memory_gi:g}Gi, "
+            "which Container Apps Consumption does not allow. The total must be a "
+            "0.25 vCPU step up to 4 vCPU with memory twice the vCPU (e.g. 2.25 / "
+            "4.5Gi). Adjust litellm.cpu/memory or litellm.proxy.cpu/memory."
+        )

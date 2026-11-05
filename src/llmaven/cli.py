@@ -5,19 +5,21 @@ This module provides command-line interface functionality for the LLMaven projec
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from datetime import UTC, datetime, time, timedelta
 from enum import Enum
+from pathlib import Path
 from time import sleep
-from datetime import datetime, time, timezone, timedelta
-from typing import TYPE_CHECKING, NoReturn, Optional
+from typing import TYPE_CHECKING, NoReturn
 
 import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
     from datetime import date
+
     from mlflow import MlflowClient
+
     from llmaven.deployment.loadtest import LoadTestResults
 
 console = Console()
@@ -70,7 +72,7 @@ def init(
         "-e",
         help="Environment to configure (dev, staging, prod)",
     ),
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -108,7 +110,7 @@ def init(
 
 @infra_app.command()
 def validate(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -126,7 +128,7 @@ def validate(
         is_flag=True,
         help="Skip secrets validation (use with caution)",
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
 ) -> None:
     """Validate LLMaven deployment configuration.
 
@@ -172,7 +174,7 @@ def validate(
 
 @infra_app.command()
 def deploy(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -192,7 +194,7 @@ def deploy(
         is_flag=True,
         help="Automatically approve deployment",
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
     expect_no_changes: bool = typer.Option(
         False,
         "--expect-no-changes",
@@ -245,7 +247,7 @@ def deploy(
 
 @infra_app.command()
 def destroy(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -295,7 +297,7 @@ def destroy(
 
 @infra_app.command()
 def status(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -332,7 +334,7 @@ def status(
 
 @infra_app.command()
 def refresh(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -383,14 +385,14 @@ class ExtractSource(str, Enum):
     mlflow = "mlflow"
 
 
-def _get_llmaven_secrets(env_file: Optional[Path]) -> dict:
+def _get_llmaven_secrets(env_file: Path | None) -> dict:
     """Wrapper to keep secrets import local and easy to mock in tests."""
     from llmaven.infrastructure.utils.secrets import get_llmaven_secrets
 
     return get_llmaven_secrets(env_file)
 
 
-def _get_litellm_credentials(env_file: Optional[Path]) -> tuple[str, str]:
+def _get_litellm_credentials(env_file: Path | None) -> tuple[str, str]:
     secrets = _get_llmaven_secrets(env_file)
 
     # Secrets are normalized to kebab-case when loaded from LLMAVEN_SECRETS_*.
@@ -405,7 +407,7 @@ def _get_litellm_credentials(env_file: Optional[Path]) -> tuple[str, str]:
     return litellm_base_url, litellm_master_key
 
 
-def _parse_utc_date(date_value: str) -> "date":
+def _parse_utc_date(date_value: str) -> date:
     """Parse a YYYY-MM-DD date, exiting with a helpful message on failure."""
 
     try:
@@ -436,8 +438,8 @@ def _serialize_to_jsonl(records: list[object]) -> str:
 
 
 def _prepare_extract_output_file(
-    output_file: Optional[Path],
-    source: "ExtractSource",
+    output_file: Path | None,
+    source: ExtractSource,
     from_date: str,
     to_date: str,
     use_zip: bool = True,
@@ -500,7 +502,7 @@ class _ExtractWriter:
         self._zipf_ctx = None
         self._zipf = None
 
-    def __enter__(self) -> "_ExtractWriter":
+    def __enter__(self) -> _ExtractWriter:
         if self._use_zip:
             import zipfile
 
@@ -592,10 +594,10 @@ def _http_get_with_retry(
 
 
 def _extract_litellm_logs(
-    start_date_obj: "date",
-    end_date_obj: "date",
+    start_date_obj: date,
+    end_date_obj: date,
     output_file: Path,
-    env_file: Optional[Path],
+    env_file: Path | None,
     use_zip: bool = True,
 ) -> None:
     import httpx
@@ -612,64 +614,62 @@ def _extract_litellm_logs(
 
     total_records = 0
 
-    with _ExtractWriter(
-        output_file, use_zip=use_zip, file_prefix="litellm_spend_logs_"
-    ) as zipf:
-        with httpx.Client(timeout=30.0) as http_client:
-            current_date = start_date_obj
-            while current_date <= end_date_obj:
-                date_str = current_date.isoformat()
-                day_records: list[object] = []
-                # failed_hours: list[int] = []
+    with (
+        _ExtractWriter(
+            output_file, use_zip=use_zip, file_prefix="litellm_spend_logs_"
+        ) as zipf,
+        httpx.Client(timeout=30.0) as http_client,
+    ):
+        current_date = start_date_obj
+        while current_date <= end_date_obj:
+            date_str = current_date.isoformat()
+            day_records: list[object] = []
+            # failed_hours: list[int] = []
 
-                # /spend/logs only accepts YYYY-MM-DD (no time component).
-                # summarize=false returns individual records instead of daily aggregates.
-                next_date_str = (current_date + timedelta(days=1)).isoformat()
-                params = {
-                    "start_date": date_str,
-                    "end_date": next_date_str,
-                    "summarize": "false",
-                }
+            # /spend/logs only accepts YYYY-MM-DD (no time component).
+            # summarize=false returns individual records instead of daily aggregates.
+            next_date_str = (current_date + timedelta(days=1)).isoformat()
+            params = {
+                "start_date": date_str,
+                "end_date": next_date_str,
+                "summarize": "false",
+            }
 
-                try:
-                    resp = _http_get_with_retry(
-                        http_client,
-                        url=endpoint,
-                        params=params,
-                        headers=headers,
-                    )
-                except (_TransientHTTPError, httpx.HTTPError) as exc:
-                    # Retries are exhausted or the error is not transient; fail
-                    # rather than fall through to a stale or unbound `resp`.
-                    _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
-
-                try:
-                    body = resp.json()
-                    if not isinstance(body, list):
-                        raise ValueError(f"expected list, got {type(body).__name__}")
-                    day_records.extend(body)
-                except Exception as exc:
-                    console_err.print(
-                        f"[yellow]![/yellow] {date_str}: skipping ({exc})"
-                    )
-
-                total_records += len(day_records)
-
-                try:
-                    jsonl_payload = _serialize_to_jsonl(day_records)
-                except Exception as exc:
-                    _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
-
-                if day_records:
-                    zipf.writestr(
-                        f"litellm_spend_logs_{date_str}.jsonl",
-                        jsonl_payload,
-                    )
-
-                console.print(
-                    f"[green]✓[/green] {date_str}: {len(day_records)} records"
+            try:
+                resp = _http_get_with_retry(
+                    http_client,
+                    url=endpoint,
+                    params=params,
+                    headers=headers,
                 )
-                current_date += timedelta(days=1)
+            except (_TransientHTTPError, httpx.HTTPError) as exc:
+                # Retries are exhausted or the error is not transient; fail
+                # rather than fall through to a stale or unbound `resp`.
+                _fail_extract(f"LiteLLM /spend/logs failed for {date_str}: {exc}")
+
+            try:
+                body = resp.json()
+                if not isinstance(body, list):
+                    raise ValueError(f"expected list, got {type(body).__name__}")
+                day_records.extend(body)
+            except Exception as exc:
+                console_err.print(f"[yellow]![/yellow] {date_str}: skipping ({exc})")
+
+            total_records += len(day_records)
+
+            try:
+                jsonl_payload = _serialize_to_jsonl(day_records)
+            except Exception as exc:
+                _fail_extract(f"Failed to serialize records for {date_str}: {exc}")
+
+            if day_records:
+                zipf.writestr(
+                    f"litellm_spend_logs_{date_str}.jsonl",
+                    jsonl_payload,
+                )
+
+            console.print(f"[green]✓[/green] {date_str}: {len(day_records)} records")
+            current_date += timedelta(days=1)
 
     console.print(
         "[green]✓[/green] Extraction complete! "
@@ -677,8 +677,8 @@ def _extract_litellm_logs(
     )
 
 
-def _utc_date_to_epoch_ms(d: "date") -> int:
-    return int(datetime.combine(d, time.min, tzinfo=timezone.utc).timestamp() * 1000)
+def _utc_date_to_epoch_ms(d: date) -> int:
+    return int(datetime.combine(d, time.min, tzinfo=UTC).timestamp() * 1000)
 
 
 def _fetch_mlflow_experiment_ids_for_date_range(
@@ -687,7 +687,7 @@ def _fetch_mlflow_experiment_ids_for_date_range(
     from mlflow.entities import ViewType
 
     experiment_ids: list[str] = []
-    page_token: Optional[str] = None
+    page_token: str | None = None
 
     # Use only creation_time as a coarse pre-filter for experiments.
     # If an experiment was created after the requested window ends, it cannot
@@ -734,7 +734,7 @@ def _fetch_mlflow_experiment_traces_in_date_range(
     )
 
     all_traces = []
-    page_token: Optional[str] = None
+    page_token: str | None = None
     page_num = 0
 
     with console.status("[blue]Fetching MLflow traces...[/blue]") as status:
@@ -763,7 +763,7 @@ def _fetch_mlflow_experiment_traces_in_date_range(
     return all_traces
 
 
-def _get_mlflow_tracking_uri(env_file: Optional[Path]) -> str:
+def _get_mlflow_tracking_uri(env_file: Path | None) -> str:
     secrets = _get_llmaven_secrets(env_file)
 
     # Secrets are normalized to kebab-case when loaded from LLMAVEN_SECRETS_*.
@@ -775,10 +775,10 @@ def _get_mlflow_tracking_uri(env_file: Optional[Path]) -> str:
 
 
 def _extract_mlflow_logs(
-    start_date_obj: "date",
-    end_date_obj: "date",
+    start_date_obj: date,
+    end_date_obj: date,
     output_file: Path,
-    env_file: Optional[Path],
+    env_file: Path | None,
     use_zip: bool = True,
 ) -> None:
     from collections import defaultdict
@@ -905,7 +905,7 @@ def extract(
         "--to",
         help="End date (YYYY-MM-DD, interpreted as a UTC calendar date, inclusive)",
     ),
-    output_file: Optional[Path] = typer.Option(
+    output_file: Path | None = typer.Option(
         None,
         "--out",
         help="Output path (zip file, or directory when --no-zip is used)",
@@ -924,7 +924,7 @@ def extract(
             "is just an extra step."
         ),
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
 ) -> None:
     """Extract source logs/traces into a day-partitioned JSONL zip.
 
@@ -985,7 +985,7 @@ def extract(
 
 @infra_app.command()
 def cancel(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
@@ -1021,7 +1021,7 @@ def cancel(
         raise typer.Exit(code=1)
 
 
-def _print_loadtest_results(results: "LoadTestResults") -> None:
+def _print_loadtest_results(results: LoadTestResults) -> None:
     from rich.table import Table
 
     table = Table(title="Load Test Results", show_header=True, header_style="bold")
@@ -1080,7 +1080,7 @@ def loadtest(
         "-m",
         help="Anthropic model name to test (e.g. claude-haiku-4-5-20251001). Must match a model configured on the proxy.",
     ),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -1088,7 +1088,7 @@ def loadtest(
         dir_okay=False,
         resolve_path=True,
     ),
-    env_file: Optional[Path] = ENV_FILE_OPTION,
+    env_file: Path | None = ENV_FILE_OPTION,
 ) -> None:
     """Load test the LiteLLM proxy using historical requests.
 
@@ -1109,8 +1109,8 @@ def loadtest(
                 --workers 150 --output results.csv --env-file .env
     """
     from llmaven.deployment.loadtest import (
-        LoadTestError,
         _ANTHROPIC_API_PATH,
+        LoadTestError,
         _load_requests,
         preflight_check,
         run_load_test,
@@ -1196,7 +1196,7 @@ def loadtest(
 
 @backup_infra_app.command(name="deploy")
 def backup_infra_deploy(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         "llmaven-backup-config.yaml",
         "--config",
         "-c",
@@ -1255,18 +1255,18 @@ def backup_infra_deploy(
 
 @backup_infra_app.command(name="output")
 def backup_infra_output(
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         "llmaven-backup-config.yaml",
         "--config",
         "-c",
         help="Path to backup configuration file",
     ),
-    secret: Optional[str] = typer.Option(
+    secret: str | None = typer.Option(
         None,
         "--secret",
         help="Name of a secret output to retrieve (revealed in plaintext)",
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None,
         "--name",
         "-n",

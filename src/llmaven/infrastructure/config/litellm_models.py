@@ -1,7 +1,6 @@
 """Consistency checks between LiteLLM's model_list and Foundry deployments."""
 
 from pathlib import Path
-from typing import List
 
 import yaml
 
@@ -16,7 +15,7 @@ def resolve_litellm_config_file(config: LLMavenConfig, config_path: Path) -> Pat
     return path
 
 
-def missing_foundry_deployments(config: LLMavenConfig, config_path: Path) -> List[str]:
+def missing_foundry_deployments(config: LLMavenConfig, config_path: Path) -> list[str]:
     """List problems where LiteLLM's model_list points at an undeployed Foundry model.
 
     Every ``azure/<deployment>`` model in the LiteLLM config must name one of

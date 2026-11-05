@@ -30,6 +30,13 @@ from .key_vault import (
     grant_key_vault_access,
     transform_env_var_to_secret_name,
 )
+from .redis import (
+    REDIS_ENV_VARS,
+    REDIS_KEY_VAULT_SECRET_REFS,
+    REDIS_PORT,
+    apply_redis_router_settings,
+    create_redis,
+)
 from .secrets_manager import SecretsManager
 from .storage import (
     create_blob_containers,
@@ -66,6 +73,12 @@ __all__ = [
     "get_secret_reference",
     "grant_key_vault_access",
     "transform_env_var_to_secret_name",
+    # Azure Managed Redis resources
+    "create_redis",
+    "apply_redis_router_settings",
+    "REDIS_PORT",
+    "REDIS_ENV_VARS",
+    "REDIS_KEY_VAULT_SECRET_REFS",
     # Secrets Manager
     "SecretsManager",
     # Helper functions for high-level resource creation

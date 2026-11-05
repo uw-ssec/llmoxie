@@ -1,21 +1,33 @@
 """Helper functions for creating Azure resources with LLMaven configuration."""
 
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import CustomDomainConfig
+from ..config.schema import (
+    CustomDomainConfig,
+    IPSecurityRestrictionConfig,
+    LiteLLMProxyConfig,
+)
 from .container_apps import create_container_app_with_key_vault_secrets
+from .redis import apply_redis_router_settings
+from .traefik import (
+    TRAEFIK_DYNAMIC_SECRET,
+    build_traefik_container,
+    build_traefik_volume,
+    policy_digest,
+    policy_revision_suffix,
+    render_dynamic_config,
+)
 
 
 def create_user_assigned_managed_identity(
     name: str,
     resource_group_name: Output[str],
     location: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.managedidentity.UserAssignedIdentity:
     """Create a user-assigned managed identity.
 
@@ -42,7 +54,7 @@ def create_user_assigned_managed_identity(
 def create_resource_group(
     name: str,
     location: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.resources.ResourceGroup:
     """Create an Azure Resource Group.
 
@@ -67,7 +79,7 @@ def create_virtual_network(
     resource_group_name: Output[str],
     location: str,
     address_space: str,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.network.VirtualNetwork:
     """Create an Azure Virtual Network.
 
@@ -98,7 +110,7 @@ def create_log_analytics_workspace(
     resource_group_name: Output[str],
     location: str,
     retention_days: int = 90,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.operationalinsights.Workspace:
     """Create a Log Analytics Workspace for monitoring.
 
@@ -135,9 +147,9 @@ def create_postgres_flexible_server(
     high_availability: bool,
     backup_retention_days: int,
     geo_redundant_backup: bool,
-    databases: List[str],
+    databases: list[str],
     key_vault: azure_native.keyvault.Vault,
-    tags: Optional[Dict[str, str]] = None,
+    tags: dict[str, str] | None = None,
 ) -> azure_native.dbforpostgresql.Server:
     """Create a PostgreSQL Flexible Server with databases.
 
@@ -189,13 +201,13 @@ def create_mlflow_app(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: Dict[str, str],
+    env_vars: dict[str, str],
     key_vault: azure_native.keyvault.Vault,
-    key_vault_secret_refs: Dict[str, str],
-    managed_identity_id: Optional[Output[str]] = None,
-    tags: Optional[Dict[str, str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
-    custom_domains: Optional[List[CustomDomainConfig]] = None,
+    key_vault_secret_refs: dict[str, str],
+    managed_identity_id: Output[str] | None = None,
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+    custom_domains: list[CustomDomainConfig] | None = None,
 ) -> azure_native.app.ContainerApp:
     """Create MLflow Container App.
 
@@ -280,17 +292,21 @@ def create_litellm_app(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: Dict[str, str],
+    env_vars: dict[str, str],
     key_vault: azure_native.keyvault.Vault,
-    key_vault_secret_refs: Dict[str, str],
-    config_file: Optional[str] = None,
-    managed_identity_id: Optional[Output[str]] = None,
-    tags: Optional[Dict[str, str]] = None,
-    opts: Optional[pulumi.ResourceOptions] = None,
-    extra_modules: Optional[List[Path]] = None,
-    revision_suffix: Optional[str] = None,
-    refresh_trigger: Optional[str] = None,
-    custom_domains: Optional[List[CustomDomainConfig]] = None,
+    key_vault_secret_refs: dict[str, str],
+    config_file: str | None = None,
+    managed_identity_id: Output[str] | None = None,
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+    extra_modules: list[Path] | None = None,
+    revision_suffix: str | None = None,
+    refresh_trigger: str | None = None,
+    custom_domains: list[CustomDomainConfig] | None = None,
+    redis_enabled: bool = False,
+    redis_clustering_policy: str = "EnterpriseCluster",
+    proxy: LiteLLMProxyConfig | None = None,
+    ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -316,6 +332,13 @@ def create_litellm_app(
         revision_suffix: Revision name suffix (optional)
         refresh_trigger: Fixed REFRESH_TRIGGER value (defaults to the current time)
         custom_domains: Hostnames to bind to existing managed certificates
+        redis_enabled: Add router_settings.redis_* to the mounted LiteLLM config
+        redis_clustering_policy: Redis clustering policy, which decides whether
+            LiteLLM must group rate-limit keys by hash slot
+        proxy: Traefik sidecar settings. When enabled, ingress targets Traefik,
+            LiteLLM listens on 127.0.0.1 only, and LiteLLM's probes go through
+            Traefik's health route.
+        ip_security_restrictions: Ingress IP rules for the whole app
 
     Returns:
         ContainerApp resource
@@ -375,7 +398,15 @@ def create_litellm_app(
             secret_name = (
                 file_path.name.replace(".", "-").replace(" ", "-").replace("_", "-")
             )
-            inline_secrets[secret_name] = read_file_content(file_path)
+            content = read_file_content(file_path)
+            # The config file is shared across environments, so the Redis block
+            # is added only where Redis is deployed. Without Redis the file is
+            # mounted unchanged.
+            if redis_enabled and file_path == Path(config_file):
+                content = apply_redis_router_settings(
+                    content, clustering_policy=redis_clustering_policy
+                )
+            inline_secrets[secret_name] = content
             secret_volume_items.append(
                 azure_native.app.SecretVolumeItemArgs(
                     secret_ref=secret_name,
@@ -401,6 +432,23 @@ def create_litellm_app(
 
         # LiteLLM expects: --config /app/config/<actual-config-filename>
         command_args = ["--config", f"/app/config/{config_filename}"]
+
+    proxy_enabled = bool(proxy and proxy.enabled)
+    sidecars = None
+    if proxy_enabled:
+        # Only the sidecar can reach LiteLLM. LiteLLM reads its bind address
+        # from --host (env HOST); LITELLM_HOST is not used by LiteLLM.
+        command_args = [*(command_args or []), "--host", "127.0.0.1"]
+        dynamic_config = render_dynamic_config(proxy, port)
+        digest = policy_digest(proxy, dynamic_config)
+        inline_secrets = {
+            **(inline_secrets or {}),
+            TRAEFIK_DYNAMIC_SECRET: dynamic_config,
+        }
+        volumes = [*(volumes or []), build_traefik_volume()]
+        sidecars = [build_traefik_container(proxy, digest)]
+        if revision_suffix:
+            revision_suffix = policy_revision_suffix(revision_suffix, digest)
 
     # Create container app
     return create_container_app_with_key_vault_secrets(
@@ -429,5 +477,12 @@ def create_litellm_app(
         revision_suffix=revision_suffix,
         refresh_trigger=refresh_trigger,
         custom_domains=custom_domains,
+        sidecars=sidecars,
+        ingress_target_port=proxy.port if proxy_enabled else None,
+        health_probe_port=proxy.port if proxy_enabled else None,
+        health_probe_path=proxy.health_paths[0]
+        if proxy_enabled
+        else "/health/liveliness",
+        ip_security_restrictions=ip_security_restrictions,
         opts=opts,
     )
