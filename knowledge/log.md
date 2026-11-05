@@ -1,7 +1,6 @@
 ## 2026-11-05
-* **Update**: Linked `decisions/multi-tenant-hub-and-helm-direction.md` to `facts/production-readiness-gaps.md` (The spec maps onto #193 items).
-* **Update**: Linked `decisions/multi-tenant-hub-and-helm-direction.md` to `requirements/litellm-master-and-salt-key.md` (The spec sets the salt key before the first model).
-* **Update**: Linked `decisions/multi-tenant-hub-and-helm-direction.md` to `decisions/stay-on-oss-litellm-gateway.md` (Why the console is custom).
+* **Update**: Updated concept `requirements/traefik-sidecar-allowlist-and-client-ip.md`.
+* **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
 * **Update**: Linked `decisions/calver-with-hatch-vcs.md` to `facts/image-builds-and-workflow-pinning.md` (Tags drive the same image workflow).
 * **Update**: Linked `facts/production-readiness-gaps.md` to `facts/managed-redis-rollout-and-limits.md` (Redis was split out of #193).
 * **Update**: Linked `facts/production-readiness-gaps.md` to `requirements/litellm-master-and-salt-key.md` (Salt key was split out of #193).
@@ -42,7 +41,6 @@
 * **Update**: Linked `facts/rebrand-compat-and-safe-names.md` to `decisions/rebrand-keeps-deployed-identifiers.md` (Compatibility details for the same rebrand).
 * **Update**: Linked `facts/project-history-superseded-directions.md` to `decisions/platform-only-scope.md` (Earlier stages of the project scope).
 * **Update**: Linked `decisions/data-pipeline-moves-to-llmoxie-analysis.md` to `decisions/platform-only-scope.md` (The same scoping decision applied to the data pipeline).
-* **Creation**: Documented concept `decisions/multi-tenant-hub-and-helm-direction.md` (Multi-tenant hub on a Helm chart in this repo (draft spec, nothing on main)).
 * **Creation**: Documented concept `decisions/calver-with-hatch-vcs.md` (Releases use CalVer vYYYY.M.MICRO, with the version from hatch-vcs (planned)).
 * **Creation**: Documented concept `facts/production-readiness-gaps.md` (Production-readiness gaps are tracked in #193, and some settings do less than they suggest).
 * **Creation**: Documented concept `facts/known-stale-docs.md` (Docs and comments that disagree with the code at e248584).
