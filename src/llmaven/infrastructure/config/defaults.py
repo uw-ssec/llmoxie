@@ -344,6 +344,14 @@ litellm:
     MLFLOW_EXPERIMENT_NAME: "mlflow-experiment-name"
     MLFLOW_TRACKING_URI: "mlflow-tracking-uri"
 
+  # Optional Traefik sidecar: keeps inference paths public and limits every
+  # other path (admin UI, key/team/model management) to admin_allowed_ips.
+  # LiteLLM cpu/memory plus the proxy's 0.25 / 0.5Gi must be a valid pair.
+  # proxy:
+  #   enabled: true
+  #   admin_allowed_ips:
+  #     - 203.0.113.0/24
+
 # LLMaven API Container App (optional)
 llmaven_api:
   enabled: false

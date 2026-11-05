@@ -261,6 +261,87 @@ Resource Group
     └── LiteLLM Container App (managed identity → Key Vault)
 ```
 
+### Restricting LiteLLM admin routes (optional Traefik proxy)
+
+LiteLLM serves the inference API and its admin surface (UI, key, team, model and
+MCP management) on one port, and Container Apps ingress can only filter by IP
+for the whole app. Setting `litellm.proxy.enabled` adds a Traefik sidecar to the
+LiteLLM app. Ingress sends every hostname (the platform FQDN and custom domains)
+to Traefik, and LiteLLM then listens on `127.0.0.1` only.
+
+- **Public:** exact inference paths (`/v1/chat/completions`, `/v1/messages`,
+  `/v1/responses`, `/v1/embeddings`, `/v1/models`, … and their aliases; see
+  `DEFAULT_PUBLIC_PATHS`), rate limited per client IP.
+- **Health:** `/health/liveliness` and `/health/liveness`, public and not rate
+  limited. The platform probes reach LiteLLM through these paths.
+- **Everything else:** only from `admin_allowed_ips`. Leave the list empty and
+  the admin surface is closed to everyone.
+
+```yaml
+litellm:
+  cpu: 2
+  memory: 4Gi # LiteLLM + proxy must total a valid pair, here 2.25 / 4.5Gi
+  proxy:
+    enabled: true
+    admin_allowed_ips:
+      - 203.0.113.0/24 # e.g. campus or VPN egress
+    # trusted_proxy_ips defaults to networking.container_apps_subnet
+    rate_limit_average: 50 # requests/s per client IP, per replica
+    rate_limit_burst: 100
+  # Optional, independent of the proxy: Container Apps IP rules for all paths
+  # ip_security_restrictions:
+  #   - name: campus
+  #     ip_address_range: 198.51.100.0/24
+  #     action: Allow
+```
+
+The client IP is the last `X-Forwarded-For` entry, which the Container Apps
+Envoy appends. Traefik keeps that header only from `trusted_proxy_ips`. Rate
+limits are counted per replica.
+
+**Rollout (staging first).** Steps 3 and 4 are gates: don't enable the proxy in
+prod until both pass.
+
+1. Enable the proxy in the staging config with `log_forwarded_for: true`, then
+   run `llmaven infra deploy --preview`. Expect only the LiteLLM app to change:
+   a second container, a new secret and volume, ingress `targetPort` 8080 and
+   HTTP probes.
+2. Deploy staging. From an allowlisted network, check that the admin UI works.
+   From any other network, check that `/ui` returns 403 and that
+   `/v1/chat/completions` works, including with `stream: true`.
+3. **Peer and client IP.** In Log Analytics (`ContainerAppConsoleLogs_CL`,
+   container `traefik`), the JSON access log shows `ClientAddr`, which is the
+   raw TCP peer (Envoy), and `request_X-Forwarded-For`, which is the chain. No
+   other headers are logged, so Authorization is never recorded. `ClientAddr`
+   must fall inside `trusted_proxy_ips`, and the last X-Forwarded-For entry must
+   be your real client address. If admin requests get 403 from an allowlisted
+   network, the peer range is wrong.
+4. **No spoofing from inside the environment.** Another workload in the same
+   environment can connect straight to the replica's proxy port, skipping Envoy.
+   Get the LiteLLM replica IP
+   (`az containerapp exec -n <litellm-app> -g <rg> --container traefik --command "ip -4 addr show eth0"`).
+   Then, from a shell in a different app in the environment, such as MLflow
+   (`az containerapp exec -n <mlflow-app> -g <rg> --command sh`), request
+   `http://<replica-ip>:8080/ui` with `X-Forwarded-For: <an allowlisted IP>`.
+   The request must be refused (403, connection refused or timeout). A 200 means
+   workloads in `trusted_proxy_ips` can impersonate allowlisted clients. In that
+   case, narrow `trusted_proxy_ips` to the Envoy peers observed in step 3, or
+   keep the proxy out of prod.
+5. Set `log_forwarded_for: false`, redeploy staging, then repeat for prod.
+
+Any proxy change rolls a new LiteLLM revision. That includes revoking
+`admin_allowed_ips`, toggling `log_forwarded_for` and narrowing
+`trusted_proxy_ips`. A digest of the proxy config is part of the sidecar
+template. A pinned `litellm.revision_suffix` gets `-p<digest>` appended, so keep
+a pinned suffix to 54 characters or fewer. You don't need a new suffix for
+proxy-only changes.
+
+To roll back, set `litellm.proxy.enabled: false` and deploy. Ingress returns to
+port 4000 and the template matches the pre-proxy one. If
+`litellm.revision_suffix` is pinned, change it as part of the rollback: the
+plain suffix already names the pre-proxy revision, and Container Apps rejects a
+reused suffix.
+
 ## Development
 
 ```bash

@@ -255,6 +255,30 @@ class CustomDomainConfig(BaseModel):
     )
 
 
+class IPSecurityRestrictionConfig(BaseModel):
+    """Container Apps ingress IP rule (applies to the whole app)."""
+
+    name: str = Field(description="Rule name")
+    ip_address_range: str = Field(description="CIDR, e.g. 203.0.113.0/24")
+    action: str = Field(default="Allow", description="Allow or Deny")
+    description: str | None = Field(default=None, description="Rule description")
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in ("Allow", "Deny"):
+            raise ValueError("action must be Allow or Deny")
+        return v
+
+    @field_validator("ip_address_range")
+    @classmethod
+    def validate_ip_address_range(cls, v: str) -> str:
+        # Container Apps ingress IP restrictions accept IPv4 only.
+        if ipaddress.ip_network(v, strict=False).version != 4:
+            raise ValueError(f"ip_address_range {v!r} must be an IPv4 range")
+        return v
+
+
 class ContainerAppConfig(BaseModel):
     """Container App configuration."""
 
@@ -310,6 +334,108 @@ class MLflowConfig(ContainerAppConfig):
     )
 
 
+# LiteLLM v1.106.6 inference routes that stay public behind the proxy, with
+# their aliases. Exact paths only: broad prefixes such as /v1/ would also expose
+# LiteLLM's management routes. Everything else needs an allowlisted client IP.
+DEFAULT_PUBLIC_PATHS = [
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/v1/completions",
+    "/completions",
+    "/v1/embeddings",
+    "/embeddings",
+    "/v1/messages",
+    "/v1/messages/count_tokens",
+    "/v1/responses",
+    "/responses",
+    "/openai/v1/responses",
+    "/v1/rerank",
+    "/v2/rerank",
+    "/rerank",
+    "/v1/models",
+    "/models",
+]
+
+# Unauthenticated liveness endpoints. They are public and not rate limited,
+# because the platform probes reach LiteLLM through the proxy. Other /health/*
+# routes expose configuration and admin actions, so they stay allowlisted.
+DEFAULT_HEALTH_PATHS = ["/health/liveliness", "/health/liveness"]
+
+
+class LiteLLMProxyConfig(BaseModel):
+    """Optional Traefik sidecar in front of LiteLLM.
+
+    Ingress targets Traefik, which forwards to LiteLLM on 127.0.0.1. Listed
+    public and health paths are open; every other path (admin UI, key, team,
+    model and MCP routes) requires a client IP in admin_allowed_ips.
+    """
+
+    enabled: bool = Field(default=False, description="Run the Traefik sidecar")
+    image: str = Field(
+        default="docker.io/library/traefik:v3.7.17@sha256:"
+        "321153f6f732f912cf5c6f0597fe38743fc7895d482d7d8804a479ae0403e151",
+        description="Traefik image, pinned by digest",
+    )
+    port: int = Field(default=8080, ge=1, le=65535, description="Traefik port")
+    cpu: float = Field(
+        default=0.25,
+        ge=0.25,
+        description="Sidecar CPU; litellm.cpu + this must be a valid Container "
+        "Apps total",
+    )
+    memory: str = Field(
+        default="0.5Gi",
+        description="Sidecar memory; litellm.memory + this must be a valid "
+        "Container Apps total",
+    )
+    admin_allowed_ips: list[str] = Field(
+        default_factory=list,
+        description="Client CIDRs allowed to reach non-public paths. Empty "
+        "blocks the admin surface for everyone",
+    )
+    public_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_PUBLIC_PATHS),
+        description="Exact paths reachable from any IP",
+    )
+    health_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_HEALTH_PATHS),
+        description="Exact unauthenticated health paths reachable from any IP",
+    )
+    trusted_proxy_ips: list[str] | None = Field(
+        default=None,
+        description="Peers whose X-Forwarded-For Traefik keeps. Defaults to "
+        "networking.container_apps_subnet, where the Container Apps Envoy runs",
+    )
+    rate_limit_average: int = Field(
+        default=50,
+        ge=1,
+        description="Requests per second per client IP, per replica",
+    )
+    rate_limit_burst: int = Field(
+        default=100, ge=1, description="Burst size per client IP, per replica"
+    )
+    log_forwarded_for: bool = Field(
+        default=False,
+        description="Temporary staging diagnostic: JSON access logs with the raw "
+        "peer (ClientAddr) and X-Forwarded-For; other headers stay dropped",
+    )
+
+    @field_validator("admin_allowed_ips", "trusted_proxy_ips")
+    @classmethod
+    def validate_cidrs(cls, v: list[str] | None) -> list[str] | None:
+        for cidr in v or []:
+            ipaddress.ip_network(cidr, strict=False)
+        return v
+
+    @field_validator("public_paths", "health_paths")
+    @classmethod
+    def validate_paths(cls, v: list[str]) -> list[str]:
+        for path in v:
+            if not path.startswith("/") or "`" in path:
+                raise ValueError(f"Invalid path {path!r}: must start with '/'")
+        return v
+
+
 class LiteLLMConfig(ContainerAppConfig):
     """LiteLLM-specific configuration."""
 
@@ -339,6 +465,30 @@ class LiteLLMConfig(ContainerAppConfig):
             "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
         },
         description="LiteLLM Key Vault secret references",
+    )
+    ip_security_restrictions: list[IPSecurityRestrictionConfig] = Field(
+        default_factory=list,
+        description="Container Apps ingress IP rules for the whole app (all paths). "
+        "Empty leaves ingress open",
+    )
+
+    @field_validator("ip_security_restrictions")
+    @classmethod
+    def validate_single_action(
+        cls, v: list[IPSecurityRestrictionConfig]
+    ) -> list[IPSecurityRestrictionConfig]:
+        # Container Apps rejects a list that mixes Allow and Deny rules.
+        actions = {rule.action for rule in v}
+        if len(actions) > 1:
+            raise ValueError(
+                "ip_security_restrictions must all use the same action (all Allow "
+                "or all Deny); Container Apps rejects mixed lists"
+            )
+        return v
+
+    proxy: LiteLLMProxyConfig = Field(
+        default_factory=LiteLLMProxyConfig,
+        description="Optional Traefik sidecar for path-level access control",
     )
 
 
@@ -519,3 +669,55 @@ class LLMavenConfig(BaseModel):
                 f"{self.networking.vnet_address_space} after the Container Apps and "
                 "PostgreSQL subnets. Set networking.private_endpoints_subnet."
             )
+
+        proxy = self.litellm.proxy
+        if self.litellm.enabled and proxy.enabled:
+            if proxy.port == self.litellm.port:
+                raise ValueError(
+                    f"litellm.proxy.port {proxy.port} must differ from litellm.port"
+                )
+            if not proxy.health_paths:
+                raise ValueError(
+                    "litellm.proxy.health_paths must not be empty: the platform "
+                    "probes reach LiteLLM through the first health path"
+                )
+            # A pinned suffix gets "-p<8 hex>" so policy changes roll a revision.
+            suffix = self.litellm.revision_suffix
+            if suffix and len(suffix) + 10 > 64:
+                raise ValueError(
+                    f"litellm.revision_suffix {suffix!r} is too long to carry the "
+                    "proxy policy digest: keep it at 54 characters or fewer"
+                )
+            if proxy.trusted_proxy_ips is None:
+                proxy.trusted_proxy_ips = [self.networking.container_apps_subnet]
+            _check_consumption_total(
+                self.litellm.cpu + proxy.cpu,
+                _memory_gi(self.litellm.memory) + _memory_gi(proxy.memory),
+            )
+
+
+def _memory_gi(value: str) -> float:
+    """Parse a Container Apps memory string such as '0.5Gi' or '4Gi'."""
+    if not value.endswith("Gi"):
+        raise ValueError(f"Memory {value!r} must be given in Gi, e.g. '0.5Gi'")
+    return float(value[:-2])
+
+
+def _check_consumption_total(cpu: float, memory_gi: float) -> None:
+    """Reject app totals the Consumption profile does not offer.
+
+    Consumption accepts 0.25 vCPU steps up to 4 vCPU, with memory equal to
+    twice the vCPU in Gi. The limit applies to the sum of all containers.
+    """
+    steps = cpu / 0.25
+    if not (
+        abs(steps - round(steps)) < 1e-9
+        and 0.25 <= cpu <= 4
+        and abs(memory_gi - 2 * cpu) < 1e-9
+    ):
+        raise ValueError(
+            f"LiteLLM plus the proxy sidecar total {cpu:g} vCPU / {memory_gi:g}Gi, "
+            "which Container Apps Consumption does not allow. The total must be a "
+            "0.25 vCPU step up to 4 vCPU with memory twice the vCPU (e.g. 2.25 / "
+            "4.5Gi). Adjust litellm.cpu/memory or litellm.proxy.cpu/memory."
+        )

@@ -433,6 +433,8 @@ def create_pulumi_program(config_path: Path):
                 custom_domains=config.litellm.custom_domains,
                 redis_enabled=bool(config.redis.enabled),
                 redis_clustering_policy=config.redis.clustering_policy,
+                proxy=config.litellm.proxy,
+                ip_security_restrictions=config.litellm.ip_security_restrictions,
             )
 
             # Export LiteLLM URL

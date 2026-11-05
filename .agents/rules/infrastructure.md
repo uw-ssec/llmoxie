@@ -100,3 +100,37 @@ then run `llmaven infra deploy`. The deploy reads the new key and updates the
 create one by default, but if `litellm.refresh_trigger` is pinned, restart the
 active revision (`az containerapp revision restart`). Until then LiteLLM can't
 reach Redis, so rotate in a quiet window.
+
+## Traefik proxy for LiteLLM
+
+`litellm.proxy.enabled` (off by default) adds a Traefik sidecar, built in
+`resources/traefik.py`. Ingress `targetPort` moves to the proxy port, and
+LiteLLM is started with `--host 127.0.0.1`. LiteLLM reads `--host` or `HOST`;
+the `LITELLM_HOST` env var has no effect.
+
+- Routing is an allowlist of exact paths. Never add `PathPrefix` routes for
+  `/v1/` or `/health/`: LiteLLM 1.106.6 serves management routes under both.
+- The client IP comes from `ipStrategy.depth: 1`, the rightmost
+  `X-Forwarded-For` entry, which Envoy appends. Both the allowlist and the rate
+  limiter use it. Traefik deletes X-Forwarded-* from peers outside
+  `forwardedHeaders.trustedIPs` (default: the Container Apps subnet).
+- Platform probes can't reach a localhost-only LiteLLM, so with the proxy on,
+  LiteLLM's probes are HTTP GETs of the first `health_paths` entry on the proxy
+  port. With the proxy off the probes are unchanged.
+- The sidecar mounts only the Traefik config secret. The template's total CPU
+  and memory must be a valid Consumption pair, and the schema checks this.
+- The dynamic config is an app-level secret, and Container Apps does not restart
+  revisions when secrets change. The SHA-256 of that config plus the sidecar's
+  static settings (args, image, cpu, memory) is set as `TRAEFIK_POLICY_SHA256`
+  on the sidecar, and a pinned `revision_suffix` gets `-p<digest[:8]>`. Any
+  proxy change, such as revoking an admin IP, toggling `log_forwarded_for` or
+  narrowing `trusted_proxy_ips`, therefore rolls a new revision under a new
+  name.
+- `ip_security_restrictions` must be IPv4 and use a single action, because
+  Container Apps rejects mixed Allow/Deny lists.
+- Before prod, pass the README staging gates. Step 3 confirms the Envoy peer is
+  inside `trusted_proxy_ips`, using `log_forwarded_for`. Step 4 confirms that
+  another workload calling the replica's proxy port with a forged allowlisted
+  XFF is refused.
+- With the proxy disabled the template is unchanged, so
+  `deploy --expect-no-changes` still passes.
