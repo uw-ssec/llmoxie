@@ -273,7 +273,9 @@ class IPSecurityRestrictionConfig(BaseModel):
     @field_validator("ip_address_range")
     @classmethod
     def validate_ip_address_range(cls, v: str) -> str:
-        ipaddress.ip_network(v, strict=False)
+        # Container Apps ingress IP restrictions accept IPv4 only.
+        if ipaddress.ip_network(v, strict=False).version != 4:
+            raise ValueError(f"ip_address_range {v!r} must be an IPv4 range")
         return v
 
 
@@ -412,6 +414,11 @@ class LiteLLMProxyConfig(BaseModel):
     rate_limit_burst: int = Field(
         default=100, ge=1, description="Burst size per client IP, per replica"
     )
+    log_forwarded_for: bool = Field(
+        default=False,
+        description="Temporary staging diagnostic: JSON access logs with the raw "
+        "peer (ClientAddr) and X-Forwarded-For; other headers stay dropped",
+    )
 
     @field_validator("admin_allowed_ips", "trusted_proxy_ips")
     @classmethod
@@ -464,6 +471,21 @@ class LiteLLMConfig(ContainerAppConfig):
         description="Container Apps ingress IP rules for the whole app (all paths). "
         "Empty leaves ingress open",
     )
+
+    @field_validator("ip_security_restrictions")
+    @classmethod
+    def validate_single_action(
+        cls, v: list[IPSecurityRestrictionConfig]
+    ) -> list[IPSecurityRestrictionConfig]:
+        # Container Apps rejects a list that mixes Allow and Deny rules.
+        actions = {rule.action for rule in v}
+        if len(actions) > 1:
+            raise ValueError(
+                "ip_security_restrictions must all use the same action (all Allow "
+                "or all Deny); Container Apps rejects mixed lists"
+            )
+        return v
+
     proxy: LiteLLMProxyConfig = Field(
         default_factory=LiteLLMProxyConfig,
         description="Optional Traefik sidecar for path-level access control",
@@ -658,6 +680,13 @@ class LLMavenConfig(BaseModel):
                 raise ValueError(
                     "litellm.proxy.health_paths must not be empty: the platform "
                     "probes reach LiteLLM through the first health path"
+                )
+            # A pinned suffix gets "-p<8 hex>" so policy changes roll a revision.
+            suffix = self.litellm.revision_suffix
+            if suffix and len(suffix) + 10 > 64:
+                raise ValueError(
+                    f"litellm.revision_suffix {suffix!r} is too long to carry the "
+                    "proxy policy digest: keep it at 54 characters or fewer"
                 )
             if proxy.trusted_proxy_ips is None:
                 proxy.trusted_proxy_ips = [self.networking.container_apps_subnet]

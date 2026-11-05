@@ -62,6 +62,8 @@ def _create(config: LLMavenConfig):
             config_file=str(LITELLM_CONFIG),
             proxy=config.litellm.proxy,
             ip_security_restrictions=config.litellm.ip_security_restrictions,
+            revision_suffix=config.litellm.revision_suffix,
+            refresh_trigger=config.litellm.refresh_trigger,
         )
     return create_app.call_args.kwargs
 
@@ -210,23 +212,104 @@ def test_mounted_dynamic_config_matches_builder():
     assert mounted == traefik.build_dynamic_config(config.litellm.proxy, 4000)
 
 
-def test_ip_security_restrictions_pass_through():
+@pytest.mark.parametrize("action", ["Allow", "Deny"])
+def test_ip_security_restrictions_pass_through(action):
     config = _config(
         ip_security_restrictions=[
-            {"name": "campus", "ip_address_range": "198.51.100.0/24"},
+            {"name": "a", "ip_address_range": "198.51.100.0/24", "action": action},
             {
-                "name": "blocked",
+                "name": "b",
                 "ip_address_range": "192.0.2.1/32",
-                "action": "Deny",
-                "description": "abuse",
+                "action": action,
+                "description": "note",
             },
         ]
     )
     rules = _create(config)["configuration"].ingress.ip_security_restrictions
     assert [(r.name, r.ip_address_range, r.action, r.description) for r in rules] == [
-        ("campus", "198.51.100.0/24", "Allow", None),
-        ("blocked", "192.0.2.1/32", "Deny", "abuse"),
+        ("a", "198.51.100.0/24", action, None),
+        ("b", "192.0.2.1/32", action, "note"),
     ]
+
+
+def test_mixed_ip_security_actions_are_rejected():
+    with pytest.raises(ValidationError, match="same action"):
+        _config(
+            ip_security_restrictions=[
+                {"name": "a", "ip_address_range": "198.51.100.0/24"},
+                {"name": "b", "ip_address_range": "192.0.2.1/32", "action": "Deny"},
+            ]
+        )
+
+
+def test_ipv6_ip_security_restriction_is_rejected():
+    with pytest.raises(ValidationError, match="IPv4"):
+        _config(
+            ip_security_restrictions=[
+                {"name": "v6", "ip_address_range": "2001:db8::/32"}
+            ]
+        )
+
+
+# --- policy changes roll a new revision --------------------------------------
+
+
+def _traefik_digest(kwargs) -> str:
+    sidecar = kwargs["template"].containers[1]
+    [env] = sidecar.env
+    assert env.name == traefik.POLICY_DIGEST_ENV
+    return env.value
+
+
+def test_policy_digest_matches_mounted_config():
+    kwargs = _create(_config({"enabled": True}))
+    secrets = {s.name: s.value for s in kwargs["configuration"].secrets}
+    assert _traefik_digest(kwargs) == traefik.policy_digest(
+        secrets[traefik.TRAEFIK_DYNAMIC_SECRET]
+    )
+
+
+def test_revoking_admin_ips_changes_template_with_fixed_refresh_trigger():
+    # A secret update alone does not restart the revision, so revocation must
+    # change the template even when REFRESH_TRIGGER is pinned.
+    granted = _create(
+        _config(
+            {"enabled": True, "admin_allowed_ips": ["203.0.113.0/24"]},
+            refresh_trigger="fixed",
+        )
+    )
+    revoked = _create(_config({"enabled": True}, refresh_trigger="fixed"))
+
+    assert _traefik_digest(granted) != _traefik_digest(revoked)
+    assert granted["template"].revision_suffix is None
+    litellm_env = {e.name: e.value for e in revoked["template"].containers[0].env}
+    assert litellm_env["REFRESH_TRIGGER"] == "fixed"
+
+
+def test_pinned_revision_suffix_follows_policy():
+    def suffix(**proxy) -> str:
+        config = _config(
+            {"enabled": True, **proxy},
+            revision_suffix="v2026-11-5",
+            refresh_trigger="x",
+        )
+        return _create(config)["template"].revision_suffix
+
+    granted = suffix(admin_allowed_ips=["203.0.113.0/24"])
+    assert granted.startswith("v2026-11-5-p") and len(granted) == len("v2026-11-5") + 10
+    assert granted == suffix(admin_allowed_ips=["203.0.113.0/24"])  # stable
+    assert granted != suffix()  # revoked
+
+
+def test_pinned_revision_suffix_is_untouched_without_proxy():
+    config = _config(revision_suffix="v2026-11-5")
+    assert _create(config)["template"].revision_suffix == "v2026-11-5"
+
+
+def test_too_long_revision_suffix_is_rejected_with_proxy():
+    with pytest.raises(ValidationError, match="54 characters"):
+        _config({"enabled": True}, revision_suffix="a" * 55)
+    _config({"enabled": True}, revision_suffix="a" * 54)
 
 
 # --- Traefik configuration ---------------------------------------------------
@@ -294,3 +377,15 @@ def test_static_args_trust_only_configured_peers_and_disable_api():
     )
     assert not any("insecure" in a for a in args)
     assert not any("accessLog.fields" in a for a in args)
+    assert not any("accessLog.format" in a for a in args)
+
+
+def test_forwarded_for_logging_keeps_only_xff():
+    config = _config({"enabled": True, "log_forwarded_for": True})
+    args = traefik.build_static_args(config.litellm.proxy)
+
+    assert "--accessLog.format=json" in args
+    assert "--accessLog.fields.headers.defaultMode=drop" in args
+    assert "--accessLog.fields.headers.names.X-Forwarded-For=keep" in args
+    kept = [a for a in args if a.endswith("=keep")]
+    assert kept == ["--accessLog.fields.headers.names.X-Forwarded-For=keep"]

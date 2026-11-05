@@ -17,8 +17,10 @@ client-supplied X-Forwarded-For value is never used.
 
 from __future__ import annotations
 
-import yaml
+import hashlib
+
 import pulumi_azure_native as azure_native
+import yaml
 
 from ..config.schema import LiteLLMProxyConfig
 
@@ -27,6 +29,12 @@ TRAEFIK_VOLUME_NAME = "traefik-config-volume"
 TRAEFIK_CONFIG_DIR = "/etc/traefik/dynamic"
 TRAEFIK_DYNAMIC_FILE = "dynamic.yaml"
 TRAEFIK_DYNAMIC_SECRET = "traefik-dynamic-yaml"
+# The dynamic config is an app-level secret, and Container Apps does not
+# restart revisions when a secret changes (Traefik's file watch is also off).
+# Its digest goes into the sidecar template so a policy change, such as
+# revoking admin_allowed_ips, always rolls a new revision.
+POLICY_DIGEST_ENV = "TRAEFIK_POLICY_SHA256"
+POLICY_SUFFIX_LENGTH = 8
 ENTRYPOINT = "web"
 
 # Envoy appends the client address as the last X-Forwarded-For entry.
@@ -109,6 +117,16 @@ def build_static_args(proxy: LiteLLMProxyConfig) -> list[str]:
     request headers, so Authorization is never logged.
     """
     trusted = ",".join(proxy.trusted_proxy_ips or [])
+    access_log = ["--accessLog=true"]
+    if proxy.log_forwarded_for:
+        # Staging diagnostics: JSON records ClientAddr (the raw TCP peer) and
+        # the X-Forwarded-For chain. Every other header, including
+        # Authorization, stays dropped.
+        access_log += [
+            "--accessLog.format=json",
+            "--accessLog.fields.headers.defaultMode=drop",
+            "--accessLog.fields.headers.names.X-Forwarded-For=keep",
+        ]
     return [
         f"--entryPoints.{ENTRYPOINT}.address=:{proxy.port}",
         f"--entryPoints.{ENTRYPOINT}.forwardedHeaders.trustedIPs={trusted}",
@@ -117,7 +135,7 @@ def build_static_args(proxy: LiteLLMProxyConfig) -> list[str]:
         f"--entryPoints.{ENTRYPOINT}.transport.respondingTimeouts.readTimeout=300s",
         f"--providers.file.filename={TRAEFIK_CONFIG_DIR}/{TRAEFIK_DYNAMIC_FILE}",
         "--providers.file.watch=false",
-        "--accessLog=true",
+        *access_log,
         "--log.level=INFO",
         "--global.checkNewVersion=false",
         "--global.sendAnonymousUsage=false",
@@ -128,6 +146,20 @@ def render_dynamic_config(proxy: LiteLLMProxyConfig, litellm_port: int) -> str:
     return yaml.safe_dump(
         build_dynamic_config(proxy, litellm_port), sort_keys=False, width=1000
     )
+
+
+def policy_digest(dynamic_config: str) -> str:
+    """SHA-256 of the rendered dynamic config."""
+    return hashlib.sha256(dynamic_config.encode()).hexdigest()
+
+
+def policy_revision_suffix(revision_suffix: str, digest: str) -> str:
+    """Pinned revision suffix with the policy digest appended.
+
+    Container Apps rejects a template change that reuses an existing suffix, so a
+    pinned suffix must change with the policy.
+    """
+    return f"{revision_suffix}-p{digest[:POLICY_SUFFIX_LENGTH]}"
 
 
 def build_traefik_volume() -> azure_native.app.VolumeArgs:
@@ -144,9 +176,13 @@ def build_traefik_volume() -> azure_native.app.VolumeArgs:
 
 
 def build_traefik_container(
-    proxy: LiteLLMProxyConfig,
+    proxy: LiteLLMProxyConfig, digest: str
 ) -> azure_native.app.ContainerArgs:
-    """Traefik sidecar container, with TCP probes on its own port."""
+    """Traefik sidecar container, with TCP probes on its own port.
+
+    ``digest`` is the policy digest; it is set as an env var so the template
+    changes whenever the dynamic config does.
+    """
 
     def _tcp() -> azure_native.app.ContainerAppProbeTcpSocketArgs:
         return azure_native.app.ContainerAppProbeTcpSocketArgs(port=proxy.port)
@@ -155,6 +191,7 @@ def build_traefik_container(
         name=TRAEFIK_CONTAINER_NAME,
         image=proxy.image,
         args=build_static_args(proxy),
+        env=[azure_native.app.EnvironmentVarArgs(name=POLICY_DIGEST_ENV, value=digest)],
         resources=azure_native.app.ContainerResourcesArgs(
             cpu=proxy.cpu, memory=proxy.memory
         ),

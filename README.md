@@ -299,21 +299,40 @@ The client IP is the last `X-Forwarded-For` entry, which the Container Apps
 Envoy appends. Traefik keeps that header only from `trusted_proxy_ips`. Rate
 limits are counted per replica.
 
-**Rollout (staging first):**
+**Rollout (staging first).** Steps 3 and 4 are gates: don't enable the proxy in
+prod until both pass.
 
-1. Enable the proxy in the staging config and run
-   `llmaven infra deploy --preview`. Expect only the LiteLLM app to change: a
-   second container, a new secret and volume, ingress `targetPort` 8080 and HTTP
-   probes.
+1. Enable the proxy in the staging config with `log_forwarded_for: true`, then
+   run `llmaven infra deploy --preview`. Expect only the LiteLLM app to change:
+   a second container, a new secret and volume, ingress `targetPort` 8080 and
+   HTTP probes.
 2. Deploy staging. From an allowlisted network, check that the admin UI works.
    From any other network, check that `/ui` returns 403 and that
    `/v1/chat/completions` works, including with `stream: true`.
-3. Check the client IP Traefik sees, using the access log in Log Analytics
-   (`ContainerAppConsoleLogs_CL` for the `traefik` container). It must be the
-   real client address, and the Envoy peer must fall inside `trusted_proxy_ips`.
-   If admin requests get 403 from an allowlisted network, the peer range is
-   wrong.
-4. Repeat for prod.
+3. **Peer and client IP.** In Log Analytics (`ContainerAppConsoleLogs_CL`,
+   container `traefik`), the JSON access log shows `ClientAddr`, which is the
+   raw TCP peer (Envoy), and `request_X-Forwarded-For`, which is the chain. No
+   other headers are logged, so Authorization is never recorded. `ClientAddr`
+   must fall inside `trusted_proxy_ips`, and the last X-Forwarded-For entry must
+   be your real client address. If admin requests get 403 from an allowlisted
+   network, the peer range is wrong.
+4. **No spoofing from inside the environment.** Another workload in the same
+   environment can connect straight to the replica's proxy port, skipping Envoy.
+   Get the LiteLLM replica IP
+   (`az containerapp exec -n <litellm-app> -g <rg> --container traefik --command "ip -4 addr show eth0"`).
+   Then, from a shell in a different app in the environment, such as MLflow
+   (`az containerapp exec -n <mlflow-app> -g <rg> --command sh`), request
+   `http://<replica-ip>:8080/ui` with `X-Forwarded-For: <an allowlisted IP>`.
+   The request must be refused (403, connection refused or timeout). A 200 means
+   workloads in `trusted_proxy_ips` can impersonate allowlisted clients. In that
+   case, narrow `trusted_proxy_ips` to the Envoy peers observed in step 3, or
+   keep the proxy out of prod.
+5. Set `log_forwarded_for: false`, redeploy staging, then repeat for prod.
+
+A change to the Traefik policy, such as revoking `admin_allowed_ips`, always
+rolls a new LiteLLM revision. The policy digest is part of the sidecar template,
+and a pinned `litellm.revision_suffix` gets `-p<digest>` appended, so keep a
+pinned suffix to 54 characters or fewer.
 
 To roll back, set `litellm.proxy.enabled: false` and deploy. Ingress returns to
 port 4000 and the template matches the pre-proxy one.

@@ -119,5 +119,16 @@ the `LITELLM_HOST` env var has no effect.
   port. With the proxy off the probes are unchanged.
 - The sidecar mounts only the Traefik config secret. The template's total CPU
   and memory must be a valid Consumption pair, and the schema checks this.
+- The dynamic config is an app-level secret, and Container Apps does not restart
+  revisions when secrets change. Its SHA-256 is therefore set as
+  `TRAEFIK_POLICY_SHA256` on the sidecar, and a pinned `revision_suffix` gets
+  `-p<digest[:8]>`, so a policy change (such as revoking an admin IP) always
+  rolls a new revision.
+- `ip_security_restrictions` must be IPv4 and use a single action, because
+  Container Apps rejects mixed Allow/Deny lists.
+- Before prod, pass the README staging gates. Step 3 confirms the Envoy peer is
+  inside `trusted_proxy_ips`, using `log_forwarded_for`. Step 4 confirms that
+  another workload calling the replica's proxy port with a forged allowlisted
+  XFF is refused.
 - With the proxy disabled the template is unchanged, so
   `deploy --expect-no-changes` still passes.

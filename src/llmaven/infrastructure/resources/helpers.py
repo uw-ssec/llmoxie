@@ -17,6 +17,8 @@ from .traefik import (
     TRAEFIK_DYNAMIC_SECRET,
     build_traefik_container,
     build_traefik_volume,
+    policy_digest,
+    policy_revision_suffix,
     render_dynamic_config,
 )
 
@@ -437,12 +439,16 @@ def create_litellm_app(
         # Only the sidecar can reach LiteLLM. LiteLLM reads its bind address
         # from --host (env HOST); LITELLM_HOST is not used by LiteLLM.
         command_args = [*(command_args or []), "--host", "127.0.0.1"]
+        dynamic_config = render_dynamic_config(proxy, port)
+        digest = policy_digest(dynamic_config)
         inline_secrets = {
             **(inline_secrets or {}),
-            TRAEFIK_DYNAMIC_SECRET: render_dynamic_config(proxy, port),
+            TRAEFIK_DYNAMIC_SECRET: dynamic_config,
         }
         volumes = [*(volumes or []), build_traefik_volume()]
-        sidecars = [build_traefik_container(proxy)]
+        sidecars = [build_traefik_container(proxy, digest)]
+        if revision_suffix:
+            revision_suffix = policy_revision_suffix(revision_suffix, digest)
 
     # Create container app
     return create_container_app_with_key_vault_secrets(
