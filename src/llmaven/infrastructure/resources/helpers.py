@@ -110,6 +110,7 @@ def create_log_analytics_workspace(
     resource_group_name: Output[str],
     location: str,
     retention_days: int = 90,
+    daily_quota_gb: float | None = None,
     tags: dict[str, str] | None = None,
 ) -> azure_native.operationalinsights.Workspace:
     """Create a Log Analytics Workspace for monitoring.
@@ -119,17 +120,26 @@ def create_log_analytics_workspace(
         resource_group_name: Resource group name
         location: Azure region
         retention_days: Data retention in days
+        daily_quota_gb: Daily ingestion cap in GB; None leaves ingestion uncapped
         tags: Resource tags
 
     Returns:
         Workspace resource
     """
+    workspace_capping = (
+        azure_native.operationalinsights.WorkspaceCappingArgs(
+            daily_quota_gb=daily_quota_gb,
+        )
+        if daily_quota_gb is not None
+        else None
+    )
     return azure_native.operationalinsights.Workspace(
         "log-analytics",
         workspace_name=name,
         resource_group_name=resource_group_name,
         location=location,
         retention_in_days=retention_days,
+        workspace_capping=workspace_capping,
         sku=azure_native.operationalinsights.WorkspaceSkuArgs(
             name="PerGB2018",
         ),

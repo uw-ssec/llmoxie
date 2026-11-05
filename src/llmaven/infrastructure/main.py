@@ -329,6 +329,7 @@ def create_pulumi_program(config_path: Path):
                 resource_group_name=resource_group,
                 location=location,
                 retention_days=config.monitoring.retention_days,
+                daily_quota_gb=config.monitoring.daily_data_cap_gb,
                 tags=config.tags,
             )
         else:
