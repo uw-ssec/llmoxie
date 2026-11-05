@@ -394,6 +394,52 @@ class SecretsManager:
 
         return secret_resource
 
+    def create_foundry_secrets(
+        self,
+        api_base: Output[str],
+        api_key: Output[str],
+        api_version: str,
+    ) -> list[azure_native.keyvault.Secret]:
+        """
+        Store the stack-managed Foundry endpoint, key and API version in Key Vault.
+
+        These replace the user-provided azure-api-* secrets when foundry.enabled.
+
+        Args:
+            api_base: Azure OpenAI endpoint of the Foundry account
+            api_key: Account key (a Pulumi secret)
+            api_version: Azure OpenAI API version
+
+        Returns:
+            The three Secret resources
+        """
+        values = {
+            "azure-api-base": Output.from_input(api_base),
+            "azure-api-key": Output.secret(api_key),
+            "azure-api-version": Output.from_input(api_version),
+        }
+        created = []
+        for secret_name, value in values.items():
+            secret_resource = create_secret(
+                resource_group_name=self.resource_group_name,
+                vault_name=self.vault_name,
+                secret_name=secret_name,
+                secret_value=value,
+                environment=self.environment,
+                tags={
+                    "ManagedBy": "Pulumi",
+                    "Source": "AzureResource",
+                    "Environment": self.environment,
+                },
+            )
+            self.auto_secrets[secret_name] = secret_resource
+            self.all_secrets[secret_name] = secret_resource
+            created.append(secret_resource)
+
+        pulumi.log.info("✓ Stored Foundry endpoint, key and API version in Key Vault")
+
+        return created
+
     def create_redis_secrets(
         self,
         host_name: Output[str],

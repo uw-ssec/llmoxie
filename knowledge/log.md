@@ -1,4 +1,5 @@
 ## 2026-11-05
+* **Update**: Updated concept `requirements/foundry-subnet-only-network-acl.md`.
 * **Update**: Updated concept `requirements/traefik-sidecar-allowlist-and-client-ip.md`.
 * **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
 * **Update**: Linked `decisions/calver-with-hatch-vcs.md` to `facts/image-builds-and-workflow-pinning.md` (Tags drive the same image workflow).

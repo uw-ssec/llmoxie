@@ -8,7 +8,12 @@ import subprocess
 from pathlib import Path
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
-from ..infrastructure.config.schema import LLMavenConfig
+from ..infrastructure.config.litellm_models import missing_foundry_deployments
+from ..infrastructure.config.schema import (
+    FOUNDRY_MANAGED_SECRETS,
+    LLMavenConfig,
+    foundry_secret_collisions,
+)
 from ..infrastructure.utils.secrets import get_llmaven_secrets
 
 
@@ -110,12 +115,13 @@ def check_subscription_access(subscription_id: str) -> tuple[bool, str]:
 
 
 def check_required_providers(
-    subscription_id: str, redis_enabled: bool = False
+    subscription_id: str, foundry_enabled: bool = False, redis_enabled: bool = False
 ) -> tuple[bool, str]:
     """Check if required Azure resource providers are registered.
 
     Args:
         subscription_id: Azure subscription ID
+        foundry_enabled: Also require Microsoft.CognitiveServices
         redis_enabled: Also require Microsoft.Cache for Azure Managed Redis
 
     Returns:
@@ -129,6 +135,8 @@ def check_required_providers(
         "Microsoft.OperationalInsights",  # Log Analytics
         "Microsoft.Insights",  # Application Insights
     ]
+    if foundry_enabled:
+        required_providers.append("Microsoft.CognitiveServices")  # Foundry
     if redis_enabled:
         required_providers.append("Microsoft.Cache")  # Azure Managed Redis
 
@@ -242,6 +250,8 @@ def check_secrets(
                 "storage-connection-string",
             ]:
                 continue
+            if config.foundry.enabled and secret_name in FOUNDRY_MANAGED_SECRETS:
+                continue
 
             if secret_name not in available_secrets:
                 env_var_name = (
@@ -258,6 +268,18 @@ def check_secrets(
         "placeholder",
         "example",
     ]
+
+    collisions = foundry_secret_collisions(
+        config.foundry.enabled, list(available_secrets)
+    )
+    if collisions:
+        all_secrets_found = False
+        for secret_name in collisions:
+            env_var_name = f"LLMAVEN_SECRETS_{secret_name.upper().replace('-', '_')}"
+            messages.append(
+                f"  ✗ {secret_name} is managed by the stack when foundry.enabled; "
+                f"unset {env_var_name}"
+            )
 
     for secret_name, secret_value in available_secrets.items():
         for pattern in placeholder_patterns:
@@ -499,7 +521,9 @@ def validate_config(
     # Check required providers
     if not errors:
         success, message = check_required_providers(
-            config.azure.subscription_id, redis_enabled=bool(config.redis.enabled)
+            config.azure.subscription_id,
+            foundry_enabled=config.foundry.enabled,
+            redis_enabled=bool(config.redis.enabled),
         )
         if success:
             print(f"   ✓ {message}")
@@ -517,8 +541,28 @@ def validate_config(
     for msg in messages:
         print(msg)
     if not success:
-        errors.append("Required secrets are missing")
+        errors.append("Required secrets are missing or conflict with Foundry")
     print()
+
+    # 4.1. Foundry model deployments
+    if config.foundry.enabled:
+        print("4.1. Foundry Model Deployments")
+        for d in config.foundry.deployments:
+            print(
+                f"   ✓ {d.name}: {d.model_format} {d.model_name} {d.model_version} "
+                f"({d.sku}, capacity {d.capacity}, {d.version_upgrade_option})"
+            )
+        if not config.foundry.deployments:
+            warnings.append("foundry.enabled but foundry.deployments is empty")
+            print("   ⚠️  No model deployments configured")
+        for message in missing_foundry_deployments(config, config_path):
+            print(f"   ✗ {message}")
+            errors.append(message)
+        print(
+            "   ℹ️  Quota and regional model availability are checked by Azure, "
+            "not here; they surface at deploy time"
+        )
+        print()
 
     # 5. Cost Estimation
     print("5. Cost Estimation")

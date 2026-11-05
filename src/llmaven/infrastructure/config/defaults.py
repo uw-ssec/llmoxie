@@ -362,6 +362,29 @@ llmaven_api:
   min_replicas: 1
   max_replicas: 3
 
+# Azure AI Foundry (optional)
+# enabled: false -> bring your own endpoint via LLMAVEN_SECRETS_AZURE_API_BASE/KEY/VERSION.
+# enabled: true  -> the stack creates the account and deployments and writes
+#   azure-api-base, azure-api-key and azure-api-version to Key Vault itself
+#   (do not set those LLMAVEN_SECRETS_* variables). The account only accepts
+#   traffic from the Container Apps subnet. Every azure/<name> model in the
+#   LiteLLM config must match a deployment name below.
+foundry:
+  enabled: false
+  account_name: null  # Globally unique subdomain; default <project>-foundry-<environment>
+  location: null  # Defaults to project.location
+  sku: S0
+  api_version: "2025-04-01-preview"
+  deployments: []
+  # deployments:
+  #   - name: gpt-5-mini  # LiteLLM model: azure/gpt-5-mini
+  #     model_name: gpt-5-mini
+  #     model_format: OpenAI
+  #     model_version: "2025-08-07"
+  #     sku: GlobalStandard
+  #     capacity: 10  # Thousands of tokens per minute
+  #     version_upgrade_option: NoAutoUpgrade
+
 # Security Configuration
 security:
   enable_private_endpoints: {str(config.security.enable_private_endpoints).lower()}  # Enable for production

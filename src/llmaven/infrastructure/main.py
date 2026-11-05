@@ -101,6 +101,28 @@ def create_pulumi_program(config_path: Path):
 
         # Create subnets
         pulumi.log.info("Setting up for container apps subnet...")
+        foundry_enabled = config.foundry.enabled
+        if foundry_enabled:
+            from llmaven.infrastructure.config.litellm_models import (
+                missing_foundry_deployments,
+            )
+            from llmaven.infrastructure.config.schema import foundry_secret_collisions
+            from llmaven.infrastructure.resources.key_vault import (
+                get_llmaven_secrets_from_env,
+            )
+
+            collisions = foundry_secret_collisions(
+                True, list(get_llmaven_secrets_from_env())
+            )
+            if collisions:
+                raise ValueError(
+                    f"foundry.enabled=true manages {collisions} in Key Vault; "
+                    "unset the matching LLMAVEN_SECRETS_* variables"
+                )
+            model_errors = missing_foundry_deployments(config, config_path)
+            if model_errors:
+                raise ValueError("; ".join(model_errors))
+
         container_apps_subnet = azure_native.network.Subnet(
             "container-apps-subnet",
             resource_group_name=resource_group,
@@ -113,6 +135,17 @@ def create_pulumi_program(config_path: Path):
                     service_name="Microsoft.App/environments",
                 )
             ],
+            # The Foundry account's network ACL allows only this subnet, which
+            # requires the Cognitive Services service endpoint on it.
+            service_endpoints=(
+                [
+                    azure_native.network.ServiceEndpointPropertiesFormatArgs(
+                        service="Microsoft.CognitiveServices"
+                    )
+                ]
+                if foundry_enabled
+                else None
+            ),
         )
 
         pulumi.log.info("Setting up for postgres subnet...")
@@ -178,6 +211,31 @@ def create_pulumi_program(config_path: Path):
         # 3.2. Generate PostgreSQL admin password
         pulumi.log.info("Generating PostgreSQL admin password...")
         admin_password = secrets_manager.create_postgres_admin_password()
+
+        # 3.3. Azure AI Foundry account, model deployments and their KV secrets
+        foundry_dependencies = []
+        if foundry_enabled:
+            from llmaven.infrastructure.resources.foundry import (
+                create_foundry,
+                foundry_account_name,
+                foundry_openai_endpoint,
+                get_foundry_api_key,
+            )
+
+            pulumi.log.info("Creating Azure AI Foundry account and deployments...")
+            foundry_account, foundry_deployments = create_foundry(
+                resource_group_name=resource_group,
+                location=location,
+                allowed_subnet_id=container_apps_subnet.id,
+                config=config,
+                tags=config.tags,
+            )
+            foundry_secrets = secrets_manager.create_foundry_secrets(
+                api_base=foundry_openai_endpoint(foundry_account_name(config)),
+                api_key=get_foundry_api_key(resource_group, foundry_account),
+                api_version=config.foundry.api_version,
+            )
+            foundry_dependencies = [*foundry_secrets, *foundry_deployments]
 
         # 4. Create PostgreSQL Flexible Server
         pulumi.log.info("Creating PostgreSQL Flexible Server...")
@@ -424,6 +482,7 @@ def create_pulumi_program(config_path: Path):
                     depends_on=[
                         shared_kv_access_policy,
                         storage_conn_str_secret,
+                        *foundry_dependencies,
                         *redis_dependencies,
                     ]
                 ),
