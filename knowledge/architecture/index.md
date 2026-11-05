@@ -1,0 +1,4 @@
+# Architecture
+* [The Pulumi state store and resource group live outside the Pulumi program](pulumi-state-store-bootstrap.md) - Pre-deploy az calls create them and rewrite the config, so infra destroy can't remove them, and an unset state store creates another account.
+* [Backup storage is a separate Pulumi stack; the backup job stays in the main stack](backup-storage-isolated-stack.md) - Scheduled pg_dump is a safety net because deleting the server deletes native backups, so storage lives in its own stack while the job runs in the VNet with the main stack.
+* [LiteLLM's config and logger are mounted at deploy time, not built into the image](litellm-config-and-logger-mounted-as-secrets.md) - Both are inline Container App secrets mounted together because LiteLLM finds callbacks beside its config, so changing them needs a deploy and, when pinned, a trigger bump.
