@@ -120,10 +120,12 @@ the `LITELLM_HOST` env var has no effect.
 - The sidecar mounts only the Traefik config secret. The template's total CPU
   and memory must be a valid Consumption pair, and the schema checks this.
 - The dynamic config is an app-level secret, and Container Apps does not restart
-  revisions when secrets change. Its SHA-256 is therefore set as
-  `TRAEFIK_POLICY_SHA256` on the sidecar, and a pinned `revision_suffix` gets
-  `-p<digest[:8]>`, so a policy change (such as revoking an admin IP) always
-  rolls a new revision.
+  revisions when secrets change. The SHA-256 of that config plus the sidecar's
+  static settings (args, image, cpu, memory) is set as `TRAEFIK_POLICY_SHA256`
+  on the sidecar, and a pinned `revision_suffix` gets `-p<digest[:8]>`. Any
+  proxy change, such as revoking an admin IP, toggling `log_forwarded_for` or
+  narrowing `trusted_proxy_ips`, therefore rolls a new revision under a new
+  name.
 - `ip_security_restrictions` must be IPv4 and use a single action, because
   Container Apps rejects mixed Allow/Deny lists.
 - Before prod, pass the README staging gates. Step 3 confirms the Envoy peer is

@@ -18,6 +18,7 @@ client-supplied X-Forwarded-For value is never used.
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pulumi_azure_native as azure_native
 import yaml
@@ -31,8 +32,9 @@ TRAEFIK_DYNAMIC_FILE = "dynamic.yaml"
 TRAEFIK_DYNAMIC_SECRET = "traefik-dynamic-yaml"
 # The dynamic config is an app-level secret, and Container Apps does not
 # restart revisions when a secret changes (Traefik's file watch is also off).
-# Its digest goes into the sidecar template so a policy change, such as
-# revoking admin_allowed_ips, always rolls a new revision.
+# A digest of it plus the sidecar's static settings goes into the template, so
+# a policy change (such as revoking admin_allowed_ips) always rolls a new
+# revision, and a pinned revision suffix changes whenever the sidecar does.
 POLICY_DIGEST_ENV = "TRAEFIK_POLICY_SHA256"
 POLICY_SUFFIX_LENGTH = 8
 ENTRYPOINT = "web"
@@ -148,9 +150,21 @@ def render_dynamic_config(proxy: LiteLLMProxyConfig, litellm_port: int) -> str:
     )
 
 
-def policy_digest(dynamic_config: str) -> str:
-    """SHA-256 of the rendered dynamic config."""
-    return hashlib.sha256(dynamic_config.encode()).hexdigest()
+def policy_digest(proxy: LiteLLMProxyConfig, dynamic_config: str) -> str:
+    """SHA-256 of everything the proxy contributes to the revision.
+
+    Covers the rendered dynamic config and the sidecar's static settings (args,
+    image, resources), so changing e.g. log_forwarded_for or trusted_proxy_ips
+    also changes a pinned revision suffix.
+    """
+    static = {
+        "args": build_static_args(proxy),
+        "image": proxy.image,
+        "cpu": proxy.cpu,
+        "memory": proxy.memory,
+    }
+    payload = json.dumps(static, sort_keys=True) + "\n" + dynamic_config
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def policy_revision_suffix(revision_suffix: str, digest: str) -> str:

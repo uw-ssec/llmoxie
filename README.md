@@ -329,13 +329,18 @@ prod until both pass.
    keep the proxy out of prod.
 5. Set `log_forwarded_for: false`, redeploy staging, then repeat for prod.
 
-A change to the Traefik policy, such as revoking `admin_allowed_ips`, always
-rolls a new LiteLLM revision. The policy digest is part of the sidecar template,
-and a pinned `litellm.revision_suffix` gets `-p<digest>` appended, so keep a
-pinned suffix to 54 characters or fewer.
+Any proxy change rolls a new LiteLLM revision. That includes revoking
+`admin_allowed_ips`, toggling `log_forwarded_for` and narrowing
+`trusted_proxy_ips`. A digest of the proxy config is part of the sidecar
+template. A pinned `litellm.revision_suffix` gets `-p<digest>` appended, so keep
+a pinned suffix to 54 characters or fewer. You don't need a new suffix for
+proxy-only changes.
 
 To roll back, set `litellm.proxy.enabled: false` and deploy. Ingress returns to
-port 4000 and the template matches the pre-proxy one.
+port 4000 and the template matches the pre-proxy one. If
+`litellm.revision_suffix` is pinned, change it as part of the rollback: the
+plain suffix already names the pre-proxy revision, and Container Apps rejects a
+reused suffix.
 
 ## Development
 

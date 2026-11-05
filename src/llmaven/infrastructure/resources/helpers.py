@@ -440,7 +440,7 @@ def create_litellm_app(
         # from --host (env HOST); LITELLM_HOST is not used by LiteLLM.
         command_args = [*(command_args or []), "--host", "127.0.0.1"]
         dynamic_config = render_dynamic_config(proxy, port)
-        digest = policy_digest(dynamic_config)
+        digest = policy_digest(proxy, dynamic_config)
         inline_secrets = {
             **(inline_secrets or {}),
             TRAEFIK_DYNAMIC_SECRET: dynamic_config,

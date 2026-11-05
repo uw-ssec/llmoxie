@@ -262,11 +262,43 @@ def _traefik_digest(kwargs) -> str:
 
 
 def test_policy_digest_matches_mounted_config():
-    kwargs = _create(_config({"enabled": True}))
+    config = _config({"enabled": True})
+    kwargs = _create(config)
     secrets = {s.name: s.value for s in kwargs["configuration"].secrets}
     assert _traefik_digest(kwargs) == traefik.policy_digest(
-        secrets[traefik.TRAEFIK_DYNAMIC_SECRET]
+        config.litellm.proxy, secrets[traefik.TRAEFIK_DYNAMIC_SECRET]
     )
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        # README step 5: turn the staging diagnostics off again.
+        ({"log_forwarded_for": True}, {"log_forwarded_for": False}),
+        # README step 4 mitigation: narrow the trusted peers.
+        ({}, {"trusted_proxy_ips": ["172.16.0.4/32"]}),
+        ({}, {"cpu": 0.5, "memory": "1Gi"}),
+        ({}, {"image": "docker.io/library/traefik:v3.7.18@sha256:" + "0" * 64}),
+    ],
+)
+def test_static_proxy_changes_roll_pinned_suffix(before, after):
+    def suffix(proxy: dict) -> str:
+        litellm = {"cpu": 1.75, "memory": "3.5Gi"} if "cpu" in proxy else {}
+        config = _config(
+            {"enabled": True, **proxy},
+            revision_suffix="review",
+            refresh_trigger="fixed",
+            **litellm,
+        )
+        kwargs = _create(config)
+        return kwargs["template"].revision_suffix, _traefik_digest(kwargs)
+
+    (suffix_before, digest_before), (suffix_after, digest_after) = (
+        suffix(before),
+        suffix(after),
+    )
+    assert suffix_before != suffix_after
+    assert digest_before != digest_after
 
 
 def test_revoking_admin_ips_changes_template_with_fixed_refresh_trigger():
