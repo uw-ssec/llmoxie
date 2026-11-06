@@ -65,6 +65,7 @@ def create_pulumi_program(config_path: Path):
             create_litellm_app,
             create_log_analytics_workspace,
             create_mlflow_app,
+            create_monitoring,
             create_postgres_server,
             create_redis,
             create_storage_account,
@@ -329,6 +330,7 @@ def create_pulumi_program(config_path: Path):
                 resource_group_name=resource_group,
                 location=location,
                 retention_days=config.monitoring.retention_days,
+                daily_quota_gb=config.monitoring.daily_data_cap_gb,
                 tags=config.tags,
             )
         else:
@@ -398,6 +400,7 @@ def create_pulumi_program(config_path: Path):
             ]
 
         # 8. Deploy Container Apps
+        mlflow_app = litellm_app = backup_job = None
 
         # 8.1. MLflow Container App
         if config.mlflow and config.mlflow.enabled:
@@ -536,7 +539,7 @@ def create_pulumi_program(config_path: Path):
             )
 
             pulumi.log.info(f"Backup target database: {config.backup_job.database!r}")
-            create_backup_job(
+            backup_job = create_backup_job(
                 resource_group_name=resource_group,
                 location=location,
                 managed_environment_id=container_env.id,
@@ -556,6 +559,19 @@ def create_pulumi_program(config_path: Path):
                     ]
                 ),
             )
+
+        # 10. Monitoring alerts (no-op unless monitoring.alerts.enabled_alerts)
+        create_monitoring(
+            config=config,
+            resource_group_name=resource_group,
+            location=location,
+            log_analytics_workspace=log_analytics,
+            litellm_app=litellm_app,
+            mlflow_app=mlflow_app,
+            postgres_server=postgres_server,
+            backup_job=backup_job,
+            tags=config.tags,
+        )
 
         # Export common outputs
         pulumi.export("resource_group_name", resource_group)

@@ -30,6 +30,7 @@ from .key_vault import (
     grant_key_vault_access,
     transform_env_var_to_secret_name,
 )
+from .monitoring import create_monitoring
 from .redis import (
     REDIS_ENV_VARS,
     REDIS_KEY_VAULT_SECRET_REFS,
@@ -79,6 +80,8 @@ __all__ = [
     "REDIS_PORT",
     "REDIS_ENV_VARS",
     "REDIS_KEY_VAULT_SECRET_REFS",
+    # Monitoring
+    "create_monitoring",
     # Secrets Manager
     "BACKUP_STORAGE_SECRET_NAME",
     "SecretsManager",

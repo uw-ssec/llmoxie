@@ -21,6 +21,11 @@ class ValidationError(Exception):
     """Exception raised when validation fails."""
 
 
+# RFC 2606 reserved domains. The generated configs ship ops@example.org, so an
+# address at one of these means alerting was deployed but never wired up.
+PLACEHOLDER_EMAIL_DOMAINS = ("@example.org", "@example.com", "@example.net")
+
+
 def check_azure_cli() -> tuple[bool, str]:
     """Check if Azure CLI is installed and logged in.
 
@@ -133,7 +138,7 @@ def check_required_providers(
         "Microsoft.Storage",  # Blob Storage
         "Microsoft.KeyVault",  # Key Vault
         "Microsoft.OperationalInsights",  # Log Analytics
-        "Microsoft.Insights",  # Application Insights
+        "Microsoft.Insights",  # Azure Monitor alerts and action groups
     ]
     if foundry_enabled:
         required_providers.append("Microsoft.CognitiveServices")  # Foundry
@@ -365,6 +370,10 @@ HOURS_PER_MONTH = 730
 # A private endpoint is about $0.01/hour plus data processing.
 PRIVATE_ENDPOINT_MIN_COST = 7.3
 PRIVATE_ENDPOINT_MAX_COST = 10.0
+# Unconfirmed estimate; see docs/superpowers/plans/2026-11-05-monitoring-alerts-pr1.md "Verified facts" row 6.
+METRIC_ALERT_MONTHLY_COST = 0.10
+# Unconfirmed estimate; see docs/superpowers/plans/2026-11-05-monitoring-alerts-pr1.md "Verified facts" row 6.
+LOG_ALERT_MONTHLY_COST = 0.50
 
 
 def estimate_redis_monthly_cost(config: LLMavenConfig) -> float | None:
@@ -374,6 +383,26 @@ def estimate_redis_monthly_cost(config: LLMavenConfig) -> float | None:
         return None
     nodes = 2 if config.redis.high_availability else 1
     return hourly * nodes * HOURS_PER_MONTH
+
+
+def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
+    """Return the monthly cost of the enabled alert rules.
+
+    Gateway alerts only exist when LiteLLM is enabled. replica_restarts is
+    created once per enabled container app (LiteLLM, MLflow). cloud_budget is free.
+    """
+    enabled = set(config.monitoring.alerts.enabled_alerts)
+    metric_count = len(enabled & {"db_storage", "db_cpu"})
+    if config.litellm.enabled:
+        metric_count += len(enabled & {"gateway_errors", "gateway_latency"})
+    if "replica_restarts" in enabled:
+        metric_count += int(bool(config.litellm.enabled)) + int(
+            bool(config.mlflow.enabled)
+        )
+    log_count = (
+        1 if "backup_job_failures" in enabled and config.backup_job.enabled else 0
+    )
+    return metric_count * METRIC_ALERT_MONTHLY_COST + log_count * LOG_ALERT_MONTHLY_COST
 
 
 def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
@@ -441,9 +470,9 @@ def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
             max_cost += redis_cost
 
     # Monitoring costs
-    if config.monitoring.enable_application_insights:
-        min_cost += 5.0
-        max_cost += 20.0
+    alerts_cost = estimate_alerts_monthly_cost(config)
+    min_cost += alerts_cost
+    max_cost += alerts_cost
 
     return min_cost, max_cost
 
@@ -562,6 +591,30 @@ def validate_config(
             "   ℹ️  Quota and regional model availability are checked by Azure, "
             "not here; they surface at deploy time"
         )
+        print()
+
+    # 4.2. Alert recipients
+    alerts = config.monitoring.alerts
+    if alerts.enabled_alerts:
+        print("4.2. Alert Recipients")
+        placeholders = [
+            address
+            for address in alerts.email_receivers
+            if address.lower().endswith(PLACEHOLDER_EMAIL_DOMAINS)
+        ]
+        if placeholders:
+            message = (
+                "monitoring.alerts.email_receivers still uses the placeholder "
+                f"address(es) {', '.join(placeholders)}; alerts would be "
+                "created but nobody would receive them"
+            )
+            warnings.append(message)
+            print(f"   ⚠️  {message}")
+        else:
+            print(
+                f"   ✓ {len(alerts.enabled_alerts)} alert(s) notify "
+                f"{len(alerts.email_receivers)} address(es)"
+            )
         print()
 
     # 5. Cost Estimation

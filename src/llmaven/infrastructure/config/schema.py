@@ -4,7 +4,9 @@ This module defines the Pydantic models for validating llmaven-config.yaml.
 """
 
 import ipaddress
-from typing import Any
+import re
+import warnings
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -230,6 +232,158 @@ class ContainerRegistryConfig(BaseModel):
         return v
 
 
+AlertName = Literal[
+    "gateway_errors",
+    "gateway_latency",
+    "replica_restarts",
+    "db_storage",
+    "db_cpu",
+    "backup_job_failures",
+    "cloud_budget",
+]
+ALL_ALERTS: tuple[AlertName, ...] = get_args(AlertName)
+# Alerts that query Log Analytics, so they need monitoring.enable_log_analytics.
+LOG_BASED_ALERTS: frozenset[AlertName] = frozenset({"backup_job_failures"})
+# Evaluation window sizes (minutes) Azure Monitor metric alerts accept.
+ALLOWED_WINDOW_MINUTES = (1, 5, 15, 30, 60, 360, 720, 1440)
+
+_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _check_window_minutes(v: int) -> int:
+    """Validate that a window size is one Azure Monitor accepts."""
+    if v not in ALLOWED_WINDOW_MINUTES:
+        allowed = ", ".join(str(m) for m in ALLOWED_WINDOW_MINUTES)
+        raise ValueError(f"window_minutes must be one of {allowed}, got {v}")
+    return v
+
+
+class GatewayErrorsAlert(BaseModel):
+    """Alert when the gateway returns too many 5xx responses."""
+
+    max_5xx_count: int = Field(default=10, ge=1, description="Max 5xx responses")
+    window_minutes: int = Field(default=15, description="Evaluation window (minutes)")
+
+    check_window = field_validator("window_minutes")(_check_window_minutes)
+
+
+class GatewayLatencyAlert(BaseModel):
+    """Alert when average gateway response time is too high."""
+
+    max_avg_ms: int = Field(
+        default=300000, ge=1, description="Max average response time (ms)"
+    )
+    window_minutes: int = Field(default=15, description="Evaluation window (minutes)")
+
+    check_window = field_validator("window_minutes")(_check_window_minutes)
+
+
+class ReplicaRestartsAlert(BaseModel):
+    """Alert when container replicas restart too often."""
+
+    max_count: int = Field(default=3, ge=1, description="Max replica restarts")
+    window_minutes: int = Field(default=30, description="Evaluation window (minutes)")
+
+    check_window = field_validator("window_minutes")(_check_window_minutes)
+
+
+class DbStorageAlert(BaseModel):
+    """Alert when database storage use is too high."""
+
+    max_percent: int = Field(
+        default=80, ge=1, le=100, description="Max storage used (%)"
+    )
+
+
+class DbCpuAlert(BaseModel):
+    """Alert when database CPU use is too high."""
+
+    max_percent: int = Field(default=85, ge=1, le=100, description="Max CPU (%)")
+    window_minutes: int = Field(default=30, description="Evaluation window (minutes)")
+
+    check_window = field_validator("window_minutes")(_check_window_minutes)
+
+
+class BackupJobFailuresAlert(BaseModel):
+    """Alert when the backup job fails. Has no tunable threshold."""
+
+
+# Azure rejects a budget with more than five notifications.
+MAX_BUDGET_NOTIFICATIONS = 5
+
+
+class CloudBudgetAlert(BaseModel):
+    """Monthly cloud budget with notification thresholds."""
+
+    monthly_usd: float = Field(default=500, gt=0, description="Monthly budget (USD)")
+    notify_at_percent: list[int] = Field(
+        default_factory=lambda: [80, 100],
+        min_length=1,
+        description="Percent of budget at which to notify",
+    )
+
+    @field_validator("notify_at_percent")
+    @classmethod
+    def validate_percents(cls, v: list[int]) -> list[int]:
+        """Validate the thresholds are within 1..1000 and at most five distinct."""
+        for percent in v:
+            if not 1 <= percent <= 1000:
+                raise ValueError(
+                    f"notify_at_percent values must be between 1 and 1000, got {percent}"
+                )
+        if len(set(v)) > MAX_BUDGET_NOTIFICATIONS:
+            raise ValueError(
+                f"notify_at_percent allows at most {MAX_BUDGET_NOTIFICATIONS} "
+                f"distinct values, got {len(set(v))}"
+            )
+        return v
+
+
+class AlertsConfig(BaseModel):
+    """Alert rules and who is notified. Alerting is off unless enabled_alerts is set."""
+
+    email_receivers: list[str] = Field(
+        default_factory=list, description="Email addresses notified by alerts"
+    )
+    enabled_alerts: list[AlertName] = Field(
+        default_factory=list, description="Alerts to create"
+    )
+    gateway_errors: GatewayErrorsAlert = Field(default_factory=GatewayErrorsAlert)
+    gateway_latency: GatewayLatencyAlert = Field(default_factory=GatewayLatencyAlert)
+    replica_restarts: ReplicaRestartsAlert = Field(default_factory=ReplicaRestartsAlert)
+    db_storage: DbStorageAlert = Field(default_factory=DbStorageAlert)
+    db_cpu: DbCpuAlert = Field(default_factory=DbCpuAlert)
+    backup_job_failures: BackupJobFailuresAlert = Field(
+        default_factory=BackupJobFailuresAlert
+    )
+    cloud_budget: CloudBudgetAlert = Field(default_factory=CloudBudgetAlert)
+
+    @field_validator("email_receivers")
+    @classmethod
+    def validate_email_receivers(cls, v: list[str]) -> list[str]:
+        """Validate each receiver looks like an email address."""
+        for address in v:
+            if not _EMAIL_PATTERN.match(address):
+                raise ValueError(f"email_receivers entry '{address}' is not an email")
+        return v
+
+    @field_validator("enabled_alerts")
+    @classmethod
+    def deduplicate_enabled_alerts(cls, v: list[AlertName]) -> list[AlertName]:
+        """Drop repeated alert names, keeping first-seen order."""
+        return list(dict.fromkeys(v))
+
+    @model_validator(mode="after")
+    def require_receivers_when_enabled(self) -> "AlertsConfig":
+        """Enabled alerts need somebody to notify."""
+        if self.enabled_alerts and not self.email_receivers:
+            raise ValueError(
+                "alerts.email_receivers must list at least one address when "
+                "alerts.enabled_alerts is not empty"
+            )
+        return self
+
+
 class MonitoringConfig(BaseModel):
     """Monitoring configuration."""
 
@@ -237,12 +391,32 @@ class MonitoringConfig(BaseModel):
         default=90, description="Log retention in days", ge=30, le=730
     )
     enable_application_insights: bool = Field(
-        default=True, description="Enable Application Insights"
+        default=False,
+        description="Deprecated: Application Insights is not used by LLMaven",
     )
     enable_log_analytics: bool = Field(default=True, description="Enable Log Analytics")
     daily_data_cap_gb: float | None = Field(
         default=None, description="Daily data cap in GB (null for unlimited)"
     )
+    alerts: AlertsConfig = Field(
+        default_factory=AlertsConfig, description="Alert rules and notifications"
+    )
+
+    @field_validator("enable_application_insights")
+    @classmethod
+    def warn_application_insights_deprecated(cls, v: bool) -> bool:
+        """Warn that enabling Application Insights is deprecated."""
+        if v:
+            # FutureWarning, not DeprecationWarning: Python hides the latter
+            # outside __main__, so operators loading a config would never see
+            # it. Every config generated before alerting has this set to true.
+            warnings.warn(
+                "monitoring.enable_application_insights is deprecated and has no "
+                "effect; remove it from your config.",
+                FutureWarning,
+                stacklevel=2,
+            )
+        return v
 
 
 class CustomDomainConfig(BaseModel):
@@ -799,6 +973,16 @@ class LLMavenConfig(BaseModel):
                 "Redis needs a private endpoints subnet, but there is no free /24 in "
                 f"{self.networking.vnet_address_space} after the Container Apps and "
                 "PostgreSQL subnets. Set networking.private_endpoints_subnet."
+            )
+
+        log_alerts = LOG_BASED_ALERTS.intersection(
+            self.monitoring.alerts.enabled_alerts
+        )
+        if log_alerts and not self.monitoring.enable_log_analytics:
+            raise ValueError(
+                f"monitoring.alerts.enabled_alerts includes {sorted(log_alerts)}, "
+                "which query Log Analytics, but monitoring.enable_log_analytics is "
+                "false. Enable it or remove those alerts."
             )
 
         proxy = self.litellm.proxy
