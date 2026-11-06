@@ -271,28 +271,44 @@ emails every address in `monitoring.alerts.email_receivers`, which is required
 when any alert is enabled. An alert whose target isn't deployed (for example
 `backup_job_failures` with the backup job disabled) is skipped with a warning.
 
-| Alert                 | Watches                                                 | Default threshold                      |
-| --------------------- | ------------------------------------------------------- | -------------------------------------- |
-| `gateway_errors`      | LiteLLM 5xx responses                                   | more than 10 in 15 minutes             |
-| `gateway_latency`     | LiteLLM average response time                           | above 300000 ms over 15 minutes        |
-| `replica_restarts`    | LiteLLM (and MLflow, if enabled) replica restarts       | more than 3 in 30 minutes              |
-| `db_storage`          | PostgreSQL storage used                                 | above 80%                              |
-| `db_cpu`              | PostgreSQL CPU                                          | above 85% over 30 minutes              |
-| `backup_job_failures` | Failed backup job executions (Log Analytics query)      | any failure                            |
-| `cloud_budget`        | Azure cost for the resource group, actual monthly spend | notifies at 80% and 100% of the budget |
+| Alert                 | Watches                                                       | Default threshold                      |
+| --------------------- | ------------------------------------------------------------- | -------------------------------------- |
+| `gateway_errors`      | LiteLLM 5xx responses                                         | more than 10 in 15 minutes             |
+| `gateway_latency`     | LiteLLM average response time                                 | above 300000 ms over 15 minutes        |
+| `replica_restarts`    | Restarts of a single LiteLLM (and MLflow, if enabled) replica | more than 3 since the replica started  |
+| `db_storage`          | PostgreSQL storage used                                       | above 80%                              |
+| `db_cpu`              | PostgreSQL CPU                                                | above 85% over 30 minutes              |
+| `backup_job_failures` | Failed backup job executions (Log Analytics query)            | any failure                            |
+| `cloud_budget`        | Azure cost for the resource group, actual monthly spend       | notifies at 80% and 100% of the budget |
 
 Thresholds are absolute values, not baselines. Override them under
 `monitoring.alerts` in your config. `cloud_budget.monthly_usd` defaults to 200
 (dev), 300 (staging) and 500 (prod); these are placeholders, so set your own.
 
+`replica_restarts` watches each replica separately. Azure's `RestartCount` is
+the cumulative number of restarts of one replica since it was created, so the
+threshold means "a single replica has restarted more than `max_count` times
+since it started", not "this many restarts across the app in the window".
+
+`cloud_budget` is scoped to the whole resource group, with no tag filter: it
+measures every resource in the group, including ones this stack didn't create.
+The default resource group name is `rg-{project}-{location}` and contains no
+environment, so **dev, staging and prod in the same region share one resource
+group and therefore one budget** — each environment's `monthly_usd` is then
+compared against the combined spend of all of them. Set a distinct
+`azure.resource_group` per environment (for example `rg-llmaven-eastus-prod`) if
+you want per-environment budgets.
+
 Per-environment defaults: dev enables no alerts (`[]`); staging and prod enable
 all seven. The generated `email_receivers` entry is the placeholder
-`ops@example.org`; replace it before deploying.
+`ops@example.org`; replace it before deploying. `llmaven infra validate` warns
+(and fails under `--strict`) if a receiver still uses a placeholder domain.
 
-`monitoring.daily_data_cap_gb` is applied to the Log Analytics workspace. When
-the cap is reached, `backup_job_failures` sees no data and stops alerting until
-the cap resets. `monitoring.enable_application_insights` is deprecated and does
-nothing.
+`monitoring.daily_data_cap_gb` is applied to the Log Analytics workspace. Once
+the daily cap is reached the workspace stops ingesting, so the log-based
+`backup_job_failures` alert may not see new failures until the cap resets at the
+start of the next daily cycle. `monitoring.enable_application_insights` is
+deprecated and does nothing.
 
 The Azure budget covers Azure costs only. Spend on other LLM providers (for
 example Anthropic) is not covered yet.

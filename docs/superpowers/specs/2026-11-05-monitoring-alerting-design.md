@@ -113,15 +113,15 @@ changes only this resource.
 
 ### Alerts
 
-| Alert name            | Azure resource     | Target                                  | Condition                                                                                        |
-| --------------------- | ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `gateway_errors`      | MetricAlert        | LiteLLM app                             | `Requests` filtered to 5xx status codes, total > `max_5xx_count` over `window_minutes`           |
-| `gateway_latency`     | MetricAlert        | LiteLLM app                             | `ResponseTime` average > `max_avg_ms` over `window_minutes`                                      |
-| `replica_restarts`    | MetricAlert        | LiteLLM app, plus MLflow app if enabled | `RestartCount` total > `max_count` over `window_minutes`                                         |
-| `db_storage`          | MetricAlert        | Postgres server                         | `storage_percent` maximum > `max_percent`                                                        |
-| `db_cpu`              | MetricAlert        | Postgres server                         | `cpu_percent` average > `max_percent` over `window_minutes`                                      |
-| `backup_job_failures` | ScheduledQueryRule | Workspace                               | KQL over `ContainerAppSystemLogs_CL` finds a failed execution of the backup job                  |
-| `cloud_budget`        | consumption.Budget | Resource group                          | Actual monthly cost crosses each `notify_at_percent` of `monthly_usd`; notifies the action group |
+| Alert name            | Azure resource     | Target                                  | Condition                                                                                                                                                                                                        |
+| --------------------- | ------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gateway_errors`      | MetricAlert        | LiteLLM app                             | `Requests` filtered to 5xx status codes, total > `max_5xx_count` over `window_minutes`                                                                                                                           |
+| `gateway_latency`     | MetricAlert        | LiteLLM app                             | `ResponseTime` average > `max_avg_ms` over `window_minutes`                                                                                                                                                      |
+| `replica_restarts`    | MetricAlert        | LiteLLM app, plus MLflow app if enabled | `RestartCount` maximum > `max_count`, split per `podName`, over `window_minutes`; `RestartCount` is cumulative per replica, so this means "a replica has restarted more than `max_count` times since it started" |
+| `db_storage`          | MetricAlert        | Postgres server                         | `storage_percent` maximum > `max_percent`                                                                                                                                                                        |
+| `db_cpu`              | MetricAlert        | Postgres server                         | `cpu_percent` average > `max_percent` over `window_minutes`                                                                                                                                                      |
+| `backup_job_failures` | ScheduledQueryRule | Workspace                               | KQL over `ContainerAppSystemLogs_CL` finds a failed execution of the backup job                                                                                                                                  |
+| `cloud_budget`        | consumption.Budget | Resource group                          | Actual monthly cost crosses each `notify_at_percent` of `monthly_usd`; notifies the action group                                                                                                                 |
 
 ### Behavior
 
