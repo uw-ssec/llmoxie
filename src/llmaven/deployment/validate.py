@@ -394,7 +394,9 @@ def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
         metric_count += int(bool(config.litellm.enabled)) + int(
             bool(config.mlflow.enabled)
         )
-    log_count = 1 if "backup_job_failures" in enabled and config.backup_job.enabled else 0
+    log_count = (
+        1 if "backup_job_failures" in enabled and config.backup_job.enabled else 0
+    )
     return metric_count * METRIC_ALERT_MONTHLY_COST + log_count * LOG_ALERT_MONTHLY_COST
 
 
