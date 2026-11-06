@@ -1,4 +1,4 @@
-"""Azure Monitor alerting: an email action group and metric alerts.
+"""Azure Monitor alerting: an email action group, metric and log alerts, a budget.
 
 Each alert named in ``monitoring.alerts.enabled_alerts`` is built by a small
 function that looks up its target resource. When the target is not deployed
@@ -6,6 +6,7 @@ the alert is skipped with a warning rather than failing the whole deployment.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable
 
 import pulumi
@@ -28,6 +29,16 @@ EVALUATION_FREQUENCY = "PT5M"
 # Azure rejects a window shorter than the evaluation frequency.
 ONE_MINUTE = "PT1M"
 DB_STORAGE_WINDOW = "PT15M"
+BACKUP_FAILURE_PERIOD = "PT1H"
+
+# Container Apps system logs, classic ``log_analytics_configuration`` schema
+# (``_CL`` table, ``_s`` columns). The ``Reason_s`` values are unverified:
+# confirm them in dev. The rule fires when this query returns any row.
+BACKUP_FAILURE_QUERY = """\
+ContainerAppSystemLogs_CL
+| where JobName_s == "{job_name}"
+| where Reason_s in ("BackoffLimitExceeded", "DeadlineExceeded", "ContainerTerminated") or Type_s == "Error"
+"""
 
 # Window sizes of 60 minutes and above use hour notation in ISO 8601.
 _HOUR_WINDOWS = {60: "PT1H", 360: "PT6H", 720: "PT12H", 1440: "PT24H"}
@@ -57,6 +68,12 @@ class _Context:
     mlflow_app: azure_native.app.ContainerApp | None
     postgres_server: azure_native.dbforpostgresql.Server | None
     tags: dict[str, str]
+    location: str
+    log_analytics_workspace: azure_native.operationalinsights.Workspace | None
+    backup_job: azure_native.app.Job | None
+    subscription_id: str
+    project_name: str
+    environment: str
 
 
 def _metric_alert(
@@ -220,6 +237,80 @@ def _db_cpu(ctx: _Context) -> dict[str, pulumi.CustomResource]:
     }
 
 
+def _backup_job_failures(ctx: _Context) -> dict[str, pulumi.CustomResource]:
+    if ctx.backup_job is None:
+        _warn_skipped("backup_job_failures", "backup job")
+        return {}
+    if ctx.log_analytics_workspace is None:
+        _warn_skipped("backup_job_failures", "log analytics workspace")
+        return {}
+    query = ctx.backup_job.name.apply(
+        lambda job_name: BACKUP_FAILURE_QUERY.format(job_name=job_name)
+    )
+    return {
+        "alert-backup-job-failures": azure_native.monitor.ScheduledQueryRule(
+            "alert-backup-job-failures",
+            resource_group_name=ctx.resource_group_name,
+            location=ctx.location,
+            kind="LogAlert",
+            enabled=True,
+            scopes=[ctx.log_analytics_workspace.id],
+            severity=1,
+            evaluation_frequency=BACKUP_FAILURE_PERIOD,
+            window_size=BACKUP_FAILURE_PERIOD,
+            criteria=azure_native.monitor.ScheduledQueryRuleCriteriaArgs(
+                all_of=[
+                    azure_native.monitor.ConditionArgs(
+                        query=query,
+                        time_aggregation="Count",
+                        operator="GreaterThan",
+                        threshold=0,
+                    )
+                ]
+            ),
+            actions=azure_native.monitor.ActionsArgs(
+                action_groups=[ctx.action_group.id]
+            ),
+            tags=ctx.tags,
+        )
+    }
+
+
+def _cloud_budget(ctx: _Context) -> dict[str, pulumi.CustomResource]:
+    cfg = ctx.alerts_config.cloud_budget
+    today = datetime.now(timezone.utc)
+    return {
+        "budget-monthly": azure_native.consumption.Budget(
+            "budget-monthly",
+            opts=pulumi.ResourceOptions(ignore_changes=["timePeriod"]),
+            scope=(
+                f"/subscriptions/{ctx.subscription_id}"
+                f"/resourceGroups/{ctx.resource_group_name}"
+            ),
+            budget_name=f"{ctx.project_name}-{ctx.environment}-monthly",
+            category="Cost",
+            time_grain="Monthly",
+            amount=cfg.monthly_usd,
+            # The start date is the first of the current month at creation;
+            # ignore_changes keeps later runs from rewriting it.
+            time_period=azure_native.consumption.BudgetTimePeriodArgs(
+                start_date=f"{today.year:04d}-{today.month:02d}-01T00:00:00Z"
+            ),
+            notifications={
+                f"actual_{percent}": azure_native.consumption.NotificationArgs(
+                    enabled=True,
+                    operator="GreaterThan",
+                    threshold=percent,
+                    threshold_type="Actual",
+                    contact_emails=ctx.alerts_config.email_receivers,
+                    contact_groups=[ctx.action_group.id],
+                )
+                for percent in cfg.notify_at_percent
+            },
+        )
+    }
+
+
 # Alert name -> builder. Enabled alerts with no builder here are skipped.
 _BUILDERS: dict[str, Callable[[_Context], dict[str, pulumi.CustomResource]]] = {
     "gateway_errors": _gateway_errors,
@@ -227,6 +318,8 @@ _BUILDERS: dict[str, Callable[[_Context], dict[str, pulumi.CustomResource]]] = {
     "replica_restarts": _replica_restarts,
     "db_storage": _db_storage,
     "db_cpu": _db_cpu,
+    "backup_job_failures": _backup_job_failures,
+    "cloud_budget": _cloud_budget,
 }
 
 
@@ -245,8 +338,8 @@ def create_monitoring(
     """Create the email action group and the enabled alerts.
 
     Returns ``None`` when no alerts are enabled. ``location``,
-    ``log_analytics_workspace`` and ``backup_job`` are not used by the metric
-    alerts; they are accepted for the log-based alert and budget builders.
+    ``log_analytics_workspace`` and ``backup_job`` feed the backup-failure log
+    alert; the budget needs only the resource group and the project settings.
     """
     alerts_config = config.monitoring.alerts
     if not alerts_config.enabled_alerts:
@@ -277,6 +370,12 @@ def create_monitoring(
         mlflow_app=mlflow_app,
         postgres_server=postgres_server,
         tags=tags,
+        location=location,
+        log_analytics_workspace=log_analytics_workspace,
+        backup_job=backup_job,
+        subscription_id=config.azure.subscription_id,
+        project_name=config.project.name,
+        environment=config.project.environment,
     )
     alerts: dict[str, pulumi.CustomResource] = {}
     for name in alerts_config.enabled_alerts:

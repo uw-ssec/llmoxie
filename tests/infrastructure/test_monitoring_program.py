@@ -9,7 +9,9 @@ import pulumi
 import pytest
 import yaml
 
+from llmaven.infrastructure.config.schema import ALL_ALERTS
 from llmaven.infrastructure.main import create_pulumi_program
+from llmaven.infrastructure import resources as resources_pkg
 from llmaven.infrastructure.resources import helpers
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -87,6 +89,16 @@ def _run(
     monkeypatch.setattr(
         helpers, "create_container_app_with_key_vault_secrets", fake_create_app
     )
+
+    # The backup job is stubbed for the same reason: the mock serializer cannot
+    # round-trip its identity output. Only its Azure job name matters here.
+    def fake_create_backup_job(**kwargs):
+        return SimpleNamespace(
+            id=pulumi.Output.from_input("backup-job-id"),
+            name=pulumi.Output.from_input("llmaven-backup-dev"),
+        )
+
+    monkeypatch.setattr(resources_pkg, "create_backup_job", fake_create_backup_job)
 
     # Record each resource's ignoreChanges by name.
     ignore_changes: dict[str, list[str]] = {}
@@ -263,3 +275,44 @@ def test_litellm_disabled_skips_gateway_alerts_without_crashing(tmp_path, monkey
 def _reset_pulumi_mocks():
     yield
     pulumi.runtime.settings.configure(pulumi.runtime.Settings(project="", stack=""))
+
+
+FULL = {
+    "monitoring": {
+        "enable_log_analytics": True,
+        "alerts": {
+            "email_receivers": ["ops@example.org"],
+            "enabled_alerts": list(ALL_ALERTS),
+            "cloud_budget": {"monthly_usd": 300, "notify_at_percent": [50, 100]},
+        },
+    },
+    "backup_job": {"enabled": True},
+}
+
+
+def test_backup_failure_rule_targets_workspace(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
+    resources, _, _ = _run(tmp_path, monkeypatch, FULL)
+    [rule] = _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+    assert rule.name == "alert-backup-job-failures"
+    assert rule.inputs["scopes"] == ["log-analytics-id"]
+    assert rule.inputs["actions"]["actionGroups"] == ["alerts-action-group-id"]
+
+
+def test_backup_disabled_skips_rule_with_warning(tmp_path, monkeypatch):
+    cfg = {**FULL, "backup_job": {"enabled": False}}
+    resources, _, warnings = _run(tmp_path, monkeypatch, cfg)
+    assert not _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+    assert any("backup_job_failures" in w for w in warnings)
+
+
+def test_budget_notifies_action_group_and_ignores_time_period(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
+    resources, ignore, _ = _run(tmp_path, monkeypatch, FULL)
+    [budget] = _by_type(resources, "azure-native:consumption:Budget")
+    assert budget.inputs["amount"] == 300
+    assert budget.inputs["timePeriod"]["startDate"].endswith("-01T00:00:00Z")
+    notes = budget.inputs["notifications"]
+    assert set(notes) == {"actual_50", "actual_100"}
+    assert notes["actual_100"]["contactGroups"] == ["alerts-action-group-id"]
+    assert "timePeriod" in ignore["budget-monthly"]
