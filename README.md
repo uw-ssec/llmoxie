@@ -290,6 +290,12 @@ the cumulative number of restarts of one replica since it was created, so the
 threshold means "a single replica has restarted more than `max_count` times
 since it started", not "this many restarts across the app in the window".
 
+`backup_job_failures` fires on an execution that timed out or used up its
+retries, and a run that recovers on retry doesn't count. It reads Log Analytics
+hourly over a two-hour window, so an email can arrive up to an hour or so after
+the failure. `cloud_budget.notify_at_percent` takes at most five distinct
+values, which is Azure's limit.
+
 `cloud_budget` is scoped to the whole resource group, with no tag filter: it
 measures every resource in the group, including ones this stack didn't create.
 The default resource group name is `rg-{project}-{location}` and contains no

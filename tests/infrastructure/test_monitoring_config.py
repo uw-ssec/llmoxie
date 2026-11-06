@@ -111,3 +111,19 @@ def test_environment_defaults_round_trip_through_template(env, alerts, budget):
         assert cfg.monitoring.alerts.enabled_alerts == alerts
         assert cfg.monitoring.alerts.cloud_budget.monthly_usd == budget
         assert cfg.monitoring.enable_application_insights is False
+
+
+def test_budget_allows_five_distinct_notifications():
+    budget = CloudBudgetAlert(notify_at_percent=[50, 60, 70, 80, 90])
+    assert len(budget.notify_at_percent) == 5
+
+
+def test_budget_rejects_six_distinct_notifications():
+    with pytest.raises(ValidationError, match="at most 5 distinct values, got 6"):
+        CloudBudgetAlert(notify_at_percent=[50, 60, 70, 80, 90, 100])
+
+
+def test_budget_limit_counts_distinct_values():
+    # _cloud_budget generates one notification per distinct percentage.
+    budget = CloudBudgetAlert(notify_at_percent=[50, 60, 70, 80, 90, 90])
+    assert len(set(budget.notify_at_percent)) == 5

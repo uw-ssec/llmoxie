@@ -1,4 +1,5 @@
 ## 2026-11-06
+* **Update**: Updated concept `decisions/monitoring-alerts-config.md`.
 * **Update**: Updated concept `facts/production-readiness-gaps.md`.
 * **Update**: Linked `decisions/monitoring-alerts-config.md` to `facts/production-readiness-gaps.md` (Alerting closes the monitoring gaps this fact tracks and records how the alert config behaves).
 * **Creation**: Documented concept `decisions/monitoring-alerts-config.md` (Monitoring alerts are email-only, opt-in per environment, and the budget is scoped to the resource group).

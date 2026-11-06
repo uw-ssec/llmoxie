@@ -363,7 +363,10 @@ def test_backup_failure_rule_query_and_settings(tmp_path, monkeypatch):
     assert rule.inputs["kind"] == "LogAlert"
     assert rule.inputs["severity"] == 1
     assert rule.inputs["evaluationFrequency"] == "PT1H"
-    assert rule.inputs["windowSize"] == "PT1H"
+    # The window overlaps the frequency to tolerate ingestion delay, and the
+    # stateful rule doesn't email again while the same alert stays fired.
+    assert rule.inputs["windowSize"] == "PT2H"
+    assert rule.inputs["autoMitigate"] is True
     [condition] = rule.inputs["criteria"]["allOf"]
     assert condition["timeAggregation"] == "Count"
     assert condition["operator"] == "GreaterThan"
@@ -374,7 +377,14 @@ def test_backup_failure_rule_query_and_settings(tmp_path, monkeypatch):
     query = condition["query"]
     assert "ContainerAppSystemLogs_CL" in query
     assert 'JobName_s == "llmaven-backup-dev"' in query
-    assert 'Type_s == "Error"' in query
+    # Every run logs ContainerTerminated, including successful ones, so only
+    # terminal failure events count, and a retry that completed cancels them.
+    assert "ContainerTerminated" not in query
+    assert 'Type_s == "Error"' not in query
+    assert '"BackoffLimitExceeded", "DeadlineExceeded"' in query
+    assert 'countif(Reason_s == "Completed")' in query
+    assert "by ExecutionName_s" in query
+    assert "Failed > 0 and Completed == 0" in query
     assert "{" not in query
 
 

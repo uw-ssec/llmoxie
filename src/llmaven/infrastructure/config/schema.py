@@ -308,6 +308,10 @@ class BackupJobFailuresAlert(BaseModel):
     """Alert when the backup job fails. Has no tunable threshold."""
 
 
+# Azure rejects a budget with more than five notifications.
+MAX_BUDGET_NOTIFICATIONS = 5
+
+
 class CloudBudgetAlert(BaseModel):
     """Monthly cloud budget with notification thresholds."""
 
@@ -321,12 +325,17 @@ class CloudBudgetAlert(BaseModel):
     @field_validator("notify_at_percent")
     @classmethod
     def validate_percents(cls, v: list[int]) -> list[int]:
-        """Validate each notification threshold is within 1..1000."""
+        """Validate the thresholds are within 1..1000 and at most five distinct."""
         for percent in v:
             if not 1 <= percent <= 1000:
                 raise ValueError(
                     f"notify_at_percent values must be between 1 and 1000, got {percent}"
                 )
+        if len(set(v)) > MAX_BUDGET_NOTIFICATIONS:
+            raise ValueError(
+                f"notify_at_percent allows at most {MAX_BUDGET_NOTIFICATIONS} "
+                f"distinct values, got {len(set(v))}"
+            )
         return v
 
 

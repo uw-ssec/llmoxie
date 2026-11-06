@@ -3,7 +3,7 @@ type: Decision
 title: "Monitoring alerts are email-only, opt-in per environment, and the budget is scoped to the resource group"
 description: "Alerting uses one email action group, absolute thresholds listed in enabled_alerts, a resource-group-scoped budget with no tag filter, and Maximum-per-podName for restarts."
 tags: [azure, monitoring, alerts]
-generated: { by: "copilot-vscode:ssec-claude-opus-5-5", at: "2026-11-06T03:19:46Z" }
+generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-06T17:53:26Z" }
 status: stable
 code_refs: [src/llmaven/infrastructure/resources/monitoring.py, src/llmaven/infrastructure/config/schema.py]
 ---
@@ -21,6 +21,9 @@ The monitoring-alerting work adds Azure Monitor alert rules, one action group an
 - **`replica_restarts` uses `Maximum` split per `podName`, not `Total`.** Azure `RestartCount` is the cumulative number of restarts of one replica since it was created. Summing it over a window latches as soon as any replica has ever restarted, and because the alert is stateful it would then never email again on a real crash loop. The threshold now means "one replica has restarted more than `max_count` times since it started".
 - **Evaluation frequency is derived from the window:** `PT1M` for a 1-minute window, `PT1H` for windows of 360 minutes and above, `PT5M` otherwise. Azure restricts which frequencies pair with which window sizes.
 - **The backup-failure `ScheduledQueryRule` sets `skip_query_validation=True`.** A fresh workspace has no `ContainerAppSystemLogs_CL` table, and Azure validates the KQL at create time, so the rule would fail to create on a new stack.
+- **The backup-failure query counts failed executions, not terminated containers.** It fires on `DeadlineExceeded` or `BackoffLimitExceeded` for an execution with no `Completed` event. Every run logs `ContainerTerminated`, including successful ones (exit code 0), so that reason can't be used. Read-only checks on 2026-11-06 over 120 days of logs flagged 70 of 125 prod executions, all timeouts from before September 16, and none of the 90 dev or 123 ISS executions. `BackoffLimitExceeded` hasn't been seen on a real run; confirm it by forcing a failure.
+- **The backup rule evaluates hourly over a two-hour window.** Prod backup system logs took a median of 131 s to ingest, so the overlap covers records that arrive after an evaluation. The rule is stateful (`auto_mitigate`), so the overlap shouldn't send a second email.
+- **`cloud_budget.notify_at_percent` is limited to five distinct values,** because Azure rejects more notifications than that.
 - **`monitoring.enable_application_insights` is deprecated** and provisions nothing. Loading a config with it set raises `FutureWarning`, not `DeprecationWarning`, which Python hides outside `__main__` so operators would never see it.
 
 ## Follow-ups

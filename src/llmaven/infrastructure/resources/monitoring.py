@@ -35,15 +35,27 @@ ONE_MINUTE = "PT1M"
 HOURLY_FREQUENCY = "PT1H"
 LONG_WINDOW_MINUTES = 360
 DB_STORAGE_WINDOW = "PT15M"
-BACKUP_FAILURE_PERIOD = "PT1H"
+BACKUP_FAILURE_FREQUENCY = "PT1H"
+# Twice the frequency, so a record ingested after one evaluation is still in the
+# next one's window. The rule is stateful, so the overlap doesn't email twice.
+BACKUP_FAILURE_WINDOW = "PT2H"
 
 # Container Apps system logs, classic ``log_analytics_configuration`` schema
-# (``_CL`` table, ``_s`` columns). The ``Reason_s`` values are unverified:
-# confirm them in dev. The rule fires when this query returns any row.
+# (``_CL`` table, ``_s`` columns). The rule fires when this query returns any
+# row, one per failed execution.
+#
+# ContainerTerminated can't be used: every run logs it, including successful
+# ones and attempts recovered by a retry. DeadlineExceeded is confirmed from 70
+# timed-out production runs. BackoffLimitExceeded (retries exhausted) has not
+# been observed live, so confirm it by forcing a failure.
 BACKUP_FAILURE_QUERY = """\
 ContainerAppSystemLogs_CL
 | where JobName_s == "{job_name}"
-| where Reason_s in ("BackoffLimitExceeded", "DeadlineExceeded", "ContainerTerminated") or Type_s == "Error"
+| summarize
+    Failed = countif(Reason_s in ("BackoffLimitExceeded", "DeadlineExceeded")),
+    Completed = countif(Reason_s == "Completed")
+    by ExecutionName_s
+| where Failed > 0 and Completed == 0
 """
 
 # Window sizes of 60 minutes and above use hour notation in ISO 8601.
@@ -287,8 +299,9 @@ def _backup_job_failures(ctx: _Context) -> dict[str, pulumi.CustomResource]:
             enabled=True,
             scopes=[ctx.log_analytics_workspace.id],
             severity=1,
-            evaluation_frequency=BACKUP_FAILURE_PERIOD,
-            window_size=BACKUP_FAILURE_PERIOD,
+            evaluation_frequency=BACKUP_FAILURE_FREQUENCY,
+            window_size=BACKUP_FAILURE_WINDOW,
+            auto_mitigate=True,
             # A fresh workspace has no ContainerAppSystemLogs_CL table until
             # the first backup run, and Azure validates the query at create
             # time. Without this the rule fails to create on a new stack.
