@@ -10,11 +10,13 @@ from __future__ import annotations
 import pytest
 
 from llmaven.deployment.validate import (
+    METRIC_ALERT_MONTHLY_COST,
     STATE_STORE_MAX_COST,
     STATE_STORE_MIN_COST,
     estimate_monthly_cost,
 )
 from llmaven.infrastructure.config.schema import (
+    AlertsConfig,
     BackupJobConfig,
     DatabaseConfig,
     LiteLLMConfig,
@@ -37,7 +39,7 @@ def _minimal_config() -> LLMavenConfig:
         mlflow=MLflowConfig(enabled=False),
         litellm=LiteLLMConfig(enabled=False),
         llmaven_api=LLMavenAPIConfig(enabled=False),
-        monitoring=MonitoringConfig(enable_application_insights=False),
+        monitoring=MonitoringConfig(),
         # backup_job.database is required; enabled defaults False so the
         # cross-field validation against database.databases is skipped.
         backup_job=BackupJobConfig(database="llmaven"),
@@ -78,3 +80,24 @@ def test_enabling_a_container_app_still_adds_its_cost():
     # 0.5 vCPU * 15/30 per the existing rough rates.
     assert with_mlflow_min == pytest.approx(base_min + 0.5 * 15.0)
     assert with_mlflow_max == pytest.approx(base_max + 0.5 * 30.0)
+
+
+def test_application_insights_flag_no_longer_costs_anything():
+    base = _minimal_config()
+    with pytest.warns(DeprecationWarning):
+        flagged = _minimal_config().model_copy(
+            update={"monitoring": MonitoringConfig(enable_application_insights=True)}
+        )
+    assert estimate_monthly_cost(flagged) == estimate_monthly_cost(base)
+
+
+def test_alerts_add_their_rule_costs():
+    cfg = _minimal_config()
+    cfg.monitoring.alerts = AlertsConfig(
+        email_receivers=["a@b.org"],
+        enabled_alerts=["db_cpu", "db_storage", "cloud_budget"],
+    )
+    lo, hi = estimate_monthly_cost(cfg)
+    base_lo, base_hi = estimate_monthly_cost(_minimal_config())
+    assert lo - base_lo == pytest.approx(2 * METRIC_ALERT_MONTHLY_COST)
+    assert hi - base_hi == pytest.approx(2 * METRIC_ALERT_MONTHLY_COST)

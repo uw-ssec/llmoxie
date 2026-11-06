@@ -365,6 +365,10 @@ HOURS_PER_MONTH = 730
 # A private endpoint is about $0.01/hour plus data processing.
 PRIVATE_ENDPOINT_MIN_COST = 7.3
 PRIVATE_ENDPOINT_MAX_COST = 10.0
+# Unconfirmed estimate; see docs/superpowers/plans/2026-11-05-monitoring-alerts-pr1.md "Verified facts" row 6.
+METRIC_ALERT_MONTHLY_COST = 0.10
+# Unconfirmed estimate; see docs/superpowers/plans/2026-11-05-monitoring-alerts-pr1.md "Verified facts" row 6.
+LOG_ALERT_MONTHLY_COST = 0.50
 
 
 def estimate_redis_monthly_cost(config: LLMavenConfig) -> float | None:
@@ -374,6 +378,24 @@ def estimate_redis_monthly_cost(config: LLMavenConfig) -> float | None:
         return None
     nodes = 2 if config.redis.high_availability else 1
     return hourly * nodes * HOURS_PER_MONTH
+
+
+def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
+    """Return the monthly cost of the enabled alert rules.
+
+    Gateway alerts only exist when LiteLLM is enabled. replica_restarts is
+    created once per enabled container app (LiteLLM, MLflow). cloud_budget is free.
+    """
+    enabled = set(config.monitoring.alerts.enabled_alerts)
+    metric_count = len(enabled & {"db_storage", "db_cpu"})
+    if config.litellm.enabled:
+        metric_count += len(enabled & {"gateway_errors", "gateway_latency"})
+    if "replica_restarts" in enabled:
+        metric_count += int(bool(config.litellm.enabled)) + int(
+            bool(config.mlflow.enabled)
+        )
+    log_count = 1 if "backup_job_failures" in enabled and config.backup_job.enabled else 0
+    return metric_count * METRIC_ALERT_MONTHLY_COST + log_count * LOG_ALERT_MONTHLY_COST
 
 
 def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
@@ -441,9 +463,9 @@ def estimate_monthly_cost(config: LLMavenConfig) -> tuple[float, float]:
             max_cost += redis_cost
 
     # Monitoring costs
-    if config.monitoring.enable_application_insights:
-        min_cost += 5.0
-        max_cost += 20.0
+    alerts_cost = estimate_alerts_monthly_cost(config)
+    min_cost += alerts_cost
+    max_cost += alerts_cost
 
     return min_cost, max_cost
 
