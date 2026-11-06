@@ -62,18 +62,33 @@ Calls marked "Proposed" are the author's and are open to change on review.
 
 ## Architecture
 
-```text
- Browsers (SSEC admins, org leads, participants)     Participant tools (API keys)
-              |                                                 |
-              v external ingress                                v external ingress
-        console-web  -----> External ID                         gateway (Traefik)
-              |                                                 | exact AI paths only
-              | internal, authenticated                         |
-              v                                                 v
-       console-broker ---- admin API (internal ingress) --> LiteLLM --> providers
-              |                                                 |
-              v                                                 v
-       console database                     litellm_db, Redis, Key Vault, ADLS logs
+```mermaid
+flowchart TD
+    browsers["Browsers<br/>SSEC admins, org leads, participants"]
+    tools["Participant tools<br/>API keys"]
+    entra["Entra External ID<br/>hosted sign-in"]
+    providers["Model providers"]
+
+    subgraph env["Container Apps environment"]
+        web["console-web<br/>external ingress<br/>new"]
+        gateway["gateway (Traefik)<br/>external ingress<br/>new"]
+        broker["console-broker<br/>internal ingress<br/>new"]
+        litellm["LiteLLM<br/>internal ingress"]
+    end
+
+    consoledb[("Console database<br/>new")]
+    backing[("litellm_db, Redis,<br/>Key Vault, ADLS logs")]
+
+    browsers --> web
+    tools --> gateway
+    web -- "sign-in" --> entra
+    web -- "authenticated calls" --> broker
+    gateway -- "exact AI paths only" --> litellm
+    broker -- "admin API" --> litellm
+    web -- "sessions only" --> consoledb
+    broker -- "org data" --> consoledb
+    litellm --> backing
+    litellm --> providers
 ```
 
 **New Container Apps**
