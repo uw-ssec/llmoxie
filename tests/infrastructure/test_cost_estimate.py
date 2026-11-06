@@ -84,7 +84,7 @@ def test_enabling_a_container_app_still_adds_its_cost():
 
 def test_application_insights_flag_no_longer_costs_anything():
     base = _minimal_config()
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(FutureWarning):
         flagged = _minimal_config().model_copy(
             update={"monitoring": MonitoringConfig(enable_application_insights=True)}
         )

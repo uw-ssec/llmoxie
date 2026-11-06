@@ -21,6 +21,11 @@ class ValidationError(Exception):
     """Exception raised when validation fails."""
 
 
+# RFC 2606 reserved domains. The generated configs ship ops@example.org, so an
+# address at one of these means alerting was deployed but never wired up.
+PLACEHOLDER_EMAIL_DOMAINS = ("@example.org", "@example.com", "@example.net")
+
+
 def check_azure_cli() -> tuple[bool, str]:
     """Check if Azure CLI is installed and logged in.
 
@@ -133,7 +138,7 @@ def check_required_providers(
         "Microsoft.Storage",  # Blob Storage
         "Microsoft.KeyVault",  # Key Vault
         "Microsoft.OperationalInsights",  # Log Analytics
-        "Microsoft.Insights",  # Application Insights
+        "Microsoft.Insights",  # Azure Monitor alerts and action groups
     ]
     if foundry_enabled:
         required_providers.append("Microsoft.CognitiveServices")  # Foundry
@@ -586,6 +591,30 @@ def validate_config(
             "   ℹ️  Quota and regional model availability are checked by Azure, "
             "not here; they surface at deploy time"
         )
+        print()
+
+    # 4.2. Alert recipients
+    alerts = config.monitoring.alerts
+    if alerts.enabled_alerts:
+        print("4.2. Alert Recipients")
+        placeholders = [
+            address
+            for address in alerts.email_receivers
+            if address.lower().endswith(PLACEHOLDER_EMAIL_DOMAINS)
+        ]
+        if placeholders:
+            message = (
+                "monitoring.alerts.email_receivers still uses the placeholder "
+                f"address(es) {', '.join(placeholders)}; alerts would be "
+                "created but nobody would receive them"
+            )
+            warnings.append(message)
+            print(f"   ⚠️  {message}")
+        else:
+            print(
+                f"   ✓ {len(alerts.enabled_alerts)} alert(s) notify "
+                f"{len(alerts.email_receivers)} address(es)"
+            )
         print()
 
     # 5. Cost Estimation

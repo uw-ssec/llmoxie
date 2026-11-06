@@ -73,7 +73,8 @@ def test_log_alert_needs_log_analytics():
 
 
 def test_application_insights_true_warns_but_loads():
-    with pytest.warns(DeprecationWarning, match="enable_application_insights"):
+    # FutureWarning so the warning is shown under Python's default filters.
+    with pytest.warns(FutureWarning, match="enable_application_insights"):
         cfg = MonitoringConfig(enable_application_insights=True)
     assert cfg.enable_application_insights is True
 

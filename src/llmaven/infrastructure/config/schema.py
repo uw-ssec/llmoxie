@@ -398,10 +398,13 @@ class MonitoringConfig(BaseModel):
     def warn_application_insights_deprecated(cls, v: bool) -> bool:
         """Warn that enabling Application Insights is deprecated."""
         if v:
+            # FutureWarning, not DeprecationWarning: Python hides the latter
+            # outside __main__, so operators loading a config would never see
+            # it. Every config generated before alerting has this set to true.
             warnings.warn(
                 "monitoring.enable_application_insights is deprecated and has no "
                 "effect; remove it from your config.",
-                DeprecationWarning,
+                FutureWarning,
                 stacklevel=2,
             )
         return v

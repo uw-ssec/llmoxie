@@ -326,7 +326,7 @@ monitoring:
   enable_log_analytics: {str(config.monitoring.enable_log_analytics).lower()}
   daily_data_cap_gb: {config.monitoring.daily_data_cap_gb if config.monitoring.daily_data_cap_gb else "null"}  # null for unlimited
   # Alerts are off unless enabled_alerts is non-empty. Thresholds not listed here
-  # use the schema defaults (see docs/superpowers/specs/2026-11-05-monitoring-alerting-design.md).
+  # use the schema defaults (see the "Alerting" section of the LLMoxie README).
   alerts:
     # Replace the placeholder address with a real one before deploying.
     email_receivers:{receivers_block}

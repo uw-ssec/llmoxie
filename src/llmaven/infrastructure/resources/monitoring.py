@@ -21,6 +21,8 @@ CONTAINER_APP_STATUS_DIMENSION = "statusCodeCategory"
 CONTAINER_APP_STATUS_5XX = "5xx"
 CONTAINER_APP_RESPONSE_TIME_METRIC = "ResponseTime"
 CONTAINER_APP_RESTART_METRIC = "RestartCount"
+# RestartCount is cumulative per replica, so the restart alert splits by pod.
+CONTAINER_APP_POD_DIMENSION = "podName"
 POSTGRES_STORAGE_METRIC = "storage_percent"
 POSTGRES_CPU_METRIC = "cpu_percent"
 
@@ -28,6 +30,10 @@ ACTION_GROUP_SHORT_NAME = "llmoxie"  # Azure allows at most 12 characters.
 EVALUATION_FREQUENCY = "PT5M"
 # Azure rejects a window shorter than the evaluation frequency.
 ONE_MINUTE = "PT1M"
+# Azure pairs frequency with window size; PT1H is the safe pairing for the
+# long windows (6 hours and above).
+HOURLY_FREQUENCY = "PT1H"
+LONG_WINDOW_MINUTES = 360
 DB_STORAGE_WINDOW = "PT15M"
 BACKUP_FAILURE_PERIOD = "PT1H"
 
@@ -42,11 +48,24 @@ ContainerAppSystemLogs_CL
 
 # Window sizes of 60 minutes and above use hour notation in ISO 8601.
 _HOUR_WINDOWS = {60: "PT1H", 360: "PT6H", 720: "PT12H", 1440: "PT24H"}
+# Windows of LONG_WINDOW_MINUTES and above, in the ISO 8601 form Azure uses.
+_LONG_WINDOWS = frozenset(
+    size for minutes, size in _HOUR_WINDOWS.items() if minutes >= LONG_WINDOW_MINUTES
+)
 
 
 def _window_size(minutes: int) -> str:
     """Convert a window in minutes to the ISO 8601 form Azure Monitor accepts."""
     return _HOUR_WINDOWS.get(minutes, f"PT{minutes}M")
+
+
+def _evaluation_frequency(window_size: str) -> str:
+    """Pick the evaluation frequency Azure accepts alongside ``window_size``."""
+    if window_size == ONE_MINUTE:
+        return ONE_MINUTE
+    if window_size in _LONG_WINDOWS:
+        return HOURLY_FREQUENCY
+    return EVALUATION_FREQUENCY
 
 
 @dataclass
@@ -97,9 +116,7 @@ def _metric_alert(
         scopes=[target_id],
         severity=severity,
         enabled=True,
-        evaluation_frequency=(
-            ONE_MINUTE if window_size == ONE_MINUTE else EVALUATION_FREQUENCY
-        ),
+        evaluation_frequency=_evaluation_frequency(window_size),
         window_size=window_size,
         auto_mitigate=True,
         criteria=azure_native.monitor.MetricAlertSingleResourceMultipleMetricCriteriaArgs(
@@ -177,6 +194,13 @@ def _gateway_latency(ctx: _Context) -> dict[str, pulumi.CustomResource]:
 
 
 def _replica_restarts(ctx: _Context) -> dict[str, pulumi.CustomResource]:
+    """Alert when a single replica has restarted more than ``max_count`` times.
+
+    ``RestartCount`` is the cumulative number of restarts of a replica since it
+    was created, so summing it over a window latches as soon as any replica has
+    ever restarted. Taking the Maximum, split per ``podName``, keeps the
+    threshold meaning "one replica restarted this many times since it started".
+    """
     cfg = ctx.alerts_config.replica_restarts
     created: dict[str, pulumi.CustomResource] = {}
     for label, app in (("litellm", ctx.litellm_app), ("mlflow", ctx.mlflow_app)):
@@ -190,10 +214,17 @@ def _replica_restarts(ctx: _Context) -> dict[str, pulumi.CustomResource]:
             alert_name="replica_restarts",
             target_id=app.id,
             metric_name=CONTAINER_APP_RESTART_METRIC,
-            aggregation="Total",
+            aggregation="Maximum",
             threshold=cfg.max_count,
             window_size=_window_size(cfg.window_minutes),
             severity=2,
+            dimensions=[
+                azure_native.monitor.MetricDimensionArgs(
+                    name=CONTAINER_APP_POD_DIMENSION,
+                    operator="Include",
+                    values=["*"],
+                )
+            ],
         )
     return created
 
@@ -258,6 +289,10 @@ def _backup_job_failures(ctx: _Context) -> dict[str, pulumi.CustomResource]:
             severity=1,
             evaluation_frequency=BACKUP_FAILURE_PERIOD,
             window_size=BACKUP_FAILURE_PERIOD,
+            # A fresh workspace has no ContainerAppSystemLogs_CL table until
+            # the first backup run, and Azure validates the query at create
+            # time. Without this the rule fails to create on a new stack.
+            skip_query_validation=True,
             criteria=azure_native.monitor.ScheduledQueryRuleCriteriaArgs(
                 all_of=[
                     azure_native.monitor.ConditionArgs(
@@ -277,6 +312,21 @@ def _backup_job_failures(ctx: _Context) -> dict[str, pulumi.CustomResource]:
 
 
 def _cloud_budget(ctx: _Context) -> dict[str, pulumi.CustomResource]:
+    """Create the monthly budget. Its scope is the whole resource group.
+
+    Environments that share a resource group therefore share one budget; see
+    the README "Alerting" section.
+    """
+    if not ctx.subscription_id:
+        raise ValueError(
+            "cloud_budget needs a subscription to scope the budget to; set "
+            "azure.subscription_id in your config"
+        )
+    if not ctx.resource_group_name:
+        raise ValueError(
+            "cloud_budget needs a resource group to scope the budget to; set "
+            "azure.resource_group in your config"
+        )
     cfg = ctx.alerts_config.cloud_budget
     today = datetime.now(timezone.utc)
     return {
@@ -297,12 +347,17 @@ def _cloud_budget(ctx: _Context) -> dict[str, pulumi.CustomResource]:
                 start_date=f"{today.year:04d}-{today.month:02d}-01T00:00:00Z"
             ),
             notifications={
+                # The action group is the single place receivers live, so a
+                # webhook added there also reaches budget notifications. Listing
+                # the same addresses in contact_emails would double every mail,
+                # but the provider's NotificationArgs requires the argument, so
+                # it is passed empty rather than omitted.
                 f"actual_{percent}": azure_native.consumption.NotificationArgs(
                     enabled=True,
                     operator="GreaterThan",
                     threshold=percent,
                     threshold_type="Actual",
-                    contact_emails=ctx.alerts_config.email_receivers,
+                    contact_emails=[],
                     contact_groups=[ctx.action_group.id],
                 )
                 for percent in cfg.notify_at_percent

@@ -12,7 +12,7 @@ import yaml
 from llmaven.infrastructure.config.schema import ALL_ALERTS
 from llmaven.infrastructure.main import create_pulumi_program
 from llmaven.infrastructure import resources as resources_pkg
-from llmaven.infrastructure.resources import helpers
+from llmaven.infrastructure.resources import helpers, monitoring
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -215,6 +215,61 @@ def test_metric_alerts_target_metric_and_threshold(tmp_path, monkeypatch):
         assert a["actions"][0]["actionGroupId"] == "alerts-action-group-id"
 
 
+def test_replica_restarts_uses_maximum_per_pod(tmp_path, monkeypatch):
+    # RestartCount is cumulative per replica since it was created, so a Total
+    # over the window latches once any replica has ever restarted. Maximum,
+    # split per pod, means "a replica has restarted more than max_count times".
+    resources, _, _ = _run(tmp_path, monkeypatch, ALL_ON)
+    restart_alerts = [
+        r
+        for r in _by_type(resources, "azure-native:monitor:MetricAlert")
+        if r.name.startswith("alert-replica-restarts-")
+    ]
+    assert {r.name for r in restart_alerts} == {
+        "alert-replica-restarts-litellm",
+        "alert-replica-restarts-mlflow",
+    }
+    for alert in restart_alerts:
+        crit = alert.inputs["criteria"]["allOf"][0]
+        assert crit["metricName"] == "RestartCount"
+        assert crit["timeAggregation"] == "Maximum"
+        assert crit["operator"] == "GreaterThan"
+        assert crit["threshold"] == 3
+        [dim] = crit["dimensions"]
+        assert dim["name"] == monitoring.CONTAINER_APP_POD_DIMENSION == "podName"
+        assert dim["operator"] == "Include"
+        assert dim["values"] == ["*"]
+        assert alert.inputs["windowSize"] == "PT30M"
+
+
+@pytest.mark.parametrize(
+    "minutes,expected",
+    [(1, "PT1M"), (5, "PT5M"), (15, "PT15M"), (30, "PT30M")]
+    + [(60, "PT1H"), (360, "PT6H"), (720, "PT12H"), (1440, "PT24H")],
+)
+def test_window_size_uses_hour_notation_above_an_hour(minutes, expected):
+    assert monitoring._window_size(minutes) == expected
+
+
+def test_long_window_gets_hourly_evaluation_frequency(tmp_path, monkeypatch):
+    # Azure pairs evaluation frequency with window size; PT1H is the safe
+    # pairing for windows of 6 hours and above.
+    overrides = {
+        "monitoring": {
+            "enable_log_analytics": True,
+            "alerts": {
+                "email_receivers": ["ops@llmoxie.test"],
+                "enabled_alerts": ["gateway_errors"],
+                "gateway_errors": {"max_5xx_count": 10, "window_minutes": 720},
+            },
+        }
+    }
+    resources, _, _ = _run(tmp_path, monkeypatch, overrides)
+    [alert] = _by_type(resources, "azure-native:monitor:MetricAlert")
+    assert alert.inputs["windowSize"] == "PT12H"
+    assert alert.inputs["evaluationFrequency"] == "PT1H"
+
+
 def test_default_evaluation_frequency_is_five_minutes(tmp_path, monkeypatch):
     resources, _, _ = _run(tmp_path, monkeypatch, ALL_ON)
     alerts = {
@@ -313,6 +368,9 @@ def test_backup_failure_rule_query_and_settings(tmp_path, monkeypatch):
     assert condition["timeAggregation"] == "Count"
     assert condition["operator"] == "GreaterThan"
     assert condition["threshold"] == 0
+    # A fresh workspace has no ContainerAppSystemLogs_CL table yet, so Azure's
+    # create-time query validation would reject the rule.
+    assert rule.inputs["skipQueryValidation"] is True
     query = condition["query"]
     assert "ContainerAppSystemLogs_CL" in query
     assert 'JobName_s == "llmaven-backup-dev"' in query
@@ -336,4 +394,45 @@ def test_budget_notifies_action_group_and_ignores_time_period(tmp_path, monkeypa
     notes = budget.inputs["notifications"]
     assert set(notes) == {"actual_50", "actual_100"}
     assert notes["actual_100"]["contactGroups"] == ["alerts-action-group-id"]
+    # The action group is the single place receivers live; listing them in
+    # contactEmails too would send every budget alert twice. The provider
+    # requires the field, so it is present but empty.
+    assert notes["actual_100"].get("contactEmails") == []
+    assert budget.inputs["scope"] == (
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test"
+    )
     assert "timePeriod" in ignore["budget-monthly"]
+
+
+@pytest.mark.parametrize(
+    "subscription_id,resource_group,missing",
+    [
+        ("", "rg-test", "azure.subscription_id"),
+        ("00000000-0000-0000-0000-000000000000", "", "resource group"),
+    ],
+)
+def test_budget_scope_requires_subscription_and_resource_group(
+    subscription_id, resource_group, missing
+):
+    from llmaven.infrastructure.resources.monitoring import _cloud_budget, _Context
+    from llmaven.infrastructure.config.schema import AlertsConfig
+
+    ctx = _Context(
+        alerts_config=AlertsConfig(
+            email_receivers=["ops@llmoxie.test"], enabled_alerts=["cloud_budget"]
+        ),
+        resource_group_name=resource_group,
+        action_group=None,
+        litellm_app=None,
+        mlflow_app=None,
+        postgres_server=None,
+        tags={},
+        location="eastus",
+        log_analytics_workspace=None,
+        backup_job=None,
+        subscription_id=subscription_id,
+        project_name="llmaven",
+        environment="dev",
+    )
+    with pytest.raises(ValueError, match=missing):
+        _cloud_budget(ctx)
