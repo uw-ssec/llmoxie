@@ -256,11 +256,46 @@ Resource Group
 ├── PostgreSQL Flexible Server (llmaven, mlflow_db, litellm_db)
 ├── Storage Account (ADLS Gen2: mlflow, llmaven containers)
 ├── Log Analytics Workspace
+├── Action group + alert rules + budget (only for alerts in monitoring.alerts.enabled_alerts)
 ├── Azure AI Foundry account + model deployments (only with foundry.enabled)
 └── Container Apps Environment
     ├── MLflow Container App (managed identity → Key Vault)
     └── LiteLLM Container App (managed identity → Key Vault)
 ```
+
+#### Alerting
+
+Alerts are email-only and created only for names listed in
+`monitoring.alerts.enabled_alerts`. One action group (`alerts-action-group`)
+emails every address in `monitoring.alerts.email_receivers`, which is required
+when any alert is enabled. An alert whose target isn't deployed (for example
+`backup_job_failures` with the backup job disabled) is skipped with a warning.
+
+| Alert                 | Watches                                                 | Default threshold                      |
+| --------------------- | ------------------------------------------------------- | -------------------------------------- |
+| `gateway_errors`      | LiteLLM 5xx responses                                   | more than 10 in 15 minutes             |
+| `gateway_latency`     | LiteLLM average response time                           | above 300000 ms over 15 minutes        |
+| `replica_restarts`    | LiteLLM (and MLflow, if enabled) replica restarts       | more than 3 in 30 minutes              |
+| `db_storage`          | PostgreSQL storage used                                 | above 80%                              |
+| `db_cpu`              | PostgreSQL CPU                                          | above 85% over 30 minutes              |
+| `backup_job_failures` | Failed backup job executions (Log Analytics query)      | any failure                            |
+| `cloud_budget`        | Azure cost for the resource group, actual monthly spend | notifies at 80% and 100% of the budget |
+
+Thresholds are absolute values, not baselines. Override them under
+`monitoring.alerts` in your config. `cloud_budget.monthly_usd` defaults to 200
+(dev), 300 (staging) and 500 (prod); these are placeholders, so set your own.
+
+Per-environment defaults: dev enables no alerts (`[]`); staging and prod enable
+all seven. The generated `email_receivers` entry is the placeholder
+`ops@example.org`; replace it before deploying.
+
+`monitoring.daily_data_cap_gb` is applied to the Log Analytics workspace. When
+the cap is reached, `backup_job_failures` sees no data and stops alerting until
+the cap resets. `monitoring.enable_application_insights` is deprecated and does
+nothing.
+
+The Azure budget covers Azure costs only. Spend on other LLM providers (for
+example Anthropic) is not covered yet.
 
 #### Azure AI Foundry models (optional)
 
