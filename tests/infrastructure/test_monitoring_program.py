@@ -93,9 +93,11 @@ def _run(
     # The backup job is stubbed for the same reason: the mock serializer cannot
     # round-trip its identity output. Only its Azure job name matters here.
     def fake_create_backup_job(**kwargs):
+        config = kwargs["config"]
+        job_name = f"{config.project.name}-backup-{config.project.environment}"
         return SimpleNamespace(
             id=pulumi.Output.from_input("backup-job-id"),
-            name=pulumi.Output.from_input("llmaven-backup-dev"),
+            name=pulumi.Output.from_input(job_name),
         )
 
     monkeypatch.setattr(resources_pkg, "create_backup_job", fake_create_backup_job)
@@ -297,6 +299,25 @@ def test_backup_failure_rule_targets_workspace(tmp_path, monkeypatch):
     assert rule.name == "alert-backup-job-failures"
     assert rule.inputs["scopes"] == ["log-analytics-id"]
     assert rule.inputs["actions"]["actionGroups"] == ["alerts-action-group-id"]
+
+
+def test_backup_failure_rule_query_and_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
+    resources, _, _ = _run(tmp_path, monkeypatch, FULL)
+    [rule] = _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+    assert rule.inputs["kind"] == "LogAlert"
+    assert rule.inputs["severity"] == 1
+    assert rule.inputs["evaluationFrequency"] == "PT1H"
+    assert rule.inputs["windowSize"] == "PT1H"
+    [condition] = rule.inputs["criteria"]["allOf"]
+    assert condition["timeAggregation"] == "Count"
+    assert condition["operator"] == "GreaterThan"
+    assert condition["threshold"] == 0
+    query = condition["query"]
+    assert "ContainerAppSystemLogs_CL" in query
+    assert 'JobName_s == "llmaven-backup-dev"' in query
+    assert 'Type_s == "Error"' in query
+    assert "{" not in query
 
 
 def test_backup_disabled_skips_rule_with_warning(tmp_path, monkeypatch):
