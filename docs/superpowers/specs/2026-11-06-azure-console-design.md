@@ -13,9 +13,9 @@
 
 For the next workshop, org leads control LiteLLM without logging in to the
 LiteLLM UI. They use an LLMoxie console instead, modeled on CloudBank's flow: a
-login page with one CILogon button, then CILogon's institution picker, then our
-own dashboard. LiteLLM becomes an internal service, so direct access to it is
-rare and can be monitored closely.
+login page with one sign-in button, then a hosted sign-in page, then our own
+dashboard. LiteLLM becomes an internal service, so direct access to it is rare
+and can be monitored closely.
 
 ## Non-goals
 
@@ -25,6 +25,8 @@ rare and can be monitored closely.
 - Reproducing the whole LiteLLM UI. The console has only the screens below.
 - LiteLLM Enterprise features.
 - Client-side agent telemetry. Only what crosses the proxy is logged.
+- Verified institution identity. CILogon is tabled as a future improvement for
+  when that's needed, and swapping providers mainly changes the login step.
 
 **This fails even if it technically works when:** an org lead can see or change
 another org's data, a participant can reach a management route from the
@@ -37,15 +39,15 @@ Calls marked "Proposed" are the author's and are open to change on review.
 | #   | Decision                                                                                        | Source   |
 | --- | ----------------------------------------------------------------------------------------------- | -------- |
 | 1   | Add services to the current Container Apps stack; no Nebari                                     | Don      |
-| 2   | Log in through CILogon; land on our own dashboard                                               | Don      |
+| 2   | Log in through Microsoft Entra External ID; land on our own dashboard                           | Don      |
 | 3   | Org leads create teams, add models, set budgets, add users, see analytics, archive teams        | Don      |
-| 4   | Participants get an invite link that registers them, then sign in through CILogon               | Don      |
+| 4   | Participants get an invite link that registers them, then sign in through External ID           | Don      |
 | 5   | Each user can create up to n API keys                                                           | Don      |
-| 6   | An invite works only if the CILogon email matches the invited address; leads approve exceptions | Don      |
+| 6   | An invite works only if the sign-in email matches the invited address; leads approve exceptions | Don      |
 | 7   | Forward only AI access paths to LiteLLM; no management paths                                    | Don      |
 | 8   | Orgs bring their own provider keys and pay their providers                                      | Hub spec |
 | 9   | Consent is captured before keys, with a separate research-use opt-out                           | Hub spec |
-| 10  | CILogon directly, with no Keycloak. The roster lives in the console database                    | Proposed |
+| 10  | No Keycloak. The roster lives in the console database                                           | Proposed |
 | 11  | LiteLLM's ingress becomes internal, behind a new public gateway app                             | Proposed |
 | 12  | Split the console into a public `console-web` and an internal `console-broker`                  | Proposed |
 | 13  | Provider keys belong to the org; each team picks from the org's models                          | Proposed |
@@ -54,6 +56,9 @@ Calls marked "Proposed" are the author's and are open to change on review.
 | 16  | A compromised `console-web` can't act as an arbitrary user: the broker verifies the user itself | Proposed |
 | 17  | Leads see per-person spend and usage, but never prompt or response content in the console       | Proposed |
 | 18  | One shared LiteLLM for the first workshop, accepting risk O6                                    | Proposed |
+| 19  | Email one-time passcode is the only sign-in method in the first version                         | Proposed |
+| 20  | Self-service sign-up stays on in External ID; the console decides access                        | Proposed |
+| 21  | Org leads and SSEC admins must pass MFA for their screens; participants don't                   | Proposed |
 
 ## Architecture
 
@@ -61,7 +66,7 @@ Calls marked "Proposed" are the author's and are open to change on review.
  Browsers (SSEC admins, org leads, participants)     Participant tools (API keys)
               |                                                 |
               v external ingress                                v external ingress
-        console-web  -----> CILogon                          gateway (Traefik)
+        console-web  -----> External ID                         gateway (Traefik)
               |                                                 | exact AI paths only
               | internal, authenticated                         |
               v                                                 v
@@ -117,15 +122,31 @@ using a custom domain, so it needs notice to existing users.
 
 ## Identity and sign-in
 
-**CILogon client:** confidential, scopes `openid`, `email`, `profile` and
-`org.cilogon.userinfo`, callback on `console-web`'s final hostname. Callback
-changes require emailing CILogon, so register after the hostname is fixed.
+**Entra External ID setup:** a separate external tenant, an app registration for
+`console-web` as a confidential client, and a sign-up and sign-in user flow.
+External tenants are created in the Microsoft Entra admin center by someone with
+the Tenant Creator role, and the tenant's location can't be changed later. This
+setup is outside the Pulumi stack in the first version, and the console's config
+holds only the tenant ID, client ID and a secret reference. The core offer is
+[free for the first 50,000 monthly users](https://learn.microsoft.com/entra/external-id/customers/faq-customers#external-id-pricing),
+counted across tenants linked to a subscription. SMS and client-credentials
+calls are
+[paid add-ons](https://learn.microsoft.com/entra/external-id/external-identities-pricing),
+so the design uses neither.
 
-- A person's identity is `iss` + `sub`, per CILogon's docs. Email is only used
-  to match invites.
+- **Sign-in method:** email one-time passcode only. A code sent to the invited
+  address proves control of it, and any partner can use it. Google, Microsoft
+  accounts or other providers can be added once we've confirmed their email
+  claim can be trusted for invite matching.
+- **Sign-up stays on,** since a first sign-in is a sign-up. Accounts with no
+  console membership get nothing. Disabling it would need the console to create
+  accounts through Microsoft Graph, which adds another privileged credential.
+- A person's identity is the tenant ID and object ID from the token. Email is
+  only used to match invites, and the plan must confirm how the email claim is
+  issued.
 - Each person gets a console-generated `participant_id`, which becomes LiteLLM's
-  `user_id`. Logs carry that ID, never the email or CILogon `sub`. Prompts can
-  still contain identifying text.
+  `user_id`. Logs carry that ID, never the email or the External ID object ID.
+  Prompts can still contain identifying text.
 - Signing in grants nothing by itself. Without a membership, a login gets a "not
   invited" page.
 - Sessions follow the backend-for-frontend pattern recommended by
@@ -135,9 +156,12 @@ changes require emailing CILogon, so register after the hostname is fixed.
   library.
 - Re-authentication (`prompt=login`) is required for provider key changes and
   org-level actions.
-- `acr` is stored at each login. MFA is only known when it equals
-  `https://refeds.org/profile/mfa`, and social logins may never send it. See
-  open items.
+- **MFA:** org leads and SSEC admins complete MFA through a Conditional Access
+  [authentication context](https://learn.microsoft.com/entra/external-id/customers/concept-multifactor-authentication-customers#step-up-mfa-with-conditional-access-authentication-context)
+  before reaching their screens. With email passcode as the first factor, the
+  second factor is an authenticator app (TOTP), since Microsoft doesn't offer
+  passkeys for those users and SMS costs extra. The console checks the token's
+  claim rather than trusting the redirect. Participants aren't asked for MFA.
 - Dormant accounts lose access automatically, and memberships are reviewed.
 - First SSEC admins come from deployment config, by identity.
 
@@ -179,9 +203,9 @@ check.
 1. The invite link opens a page. It's single-use and expiring, the token is
    stored hashed, and pages use `no-store` and `no-referrer`. Only a POST
    consumes it, so email scanners can't.
-2. The person signs in through CILogon.
-3. If the CILogon email matches the invite, the identity is bound and the invite
-   consumed. If it doesn't match, or CILogon sends no email, the request goes to
+2. The person signs in through External ID with a code sent to their email.
+3. If the sign-in email matches the invite, the identity is bound and the invite
+   consumed. If it doesn't match, or the token has no email, the request goes to
    the lead to approve, and no access is granted until then.
 4. The person accepts the workshop terms and separately chooses research use. No
    consent means no key. Consent records are append-only.
@@ -215,7 +239,7 @@ may use them.
   `AccessPolicy`, per `bugs/key-vault-access-policy-replace`.
 - **New console vault, with new identities:** the broker's identity can read the
   LiteLLM admin key, and `console-web`'s identity can read only its session key
-  and CILogon secret. Neither uses the shared identity.
+  and External ID client secret. Neither uses the shared identity.
 - **The broker's admin key** is a `proxy_admin` user's key, not the master key,
   so it can be revoked without touching the master key. Treat it as full admin.
   How it's first created is left to the plan, but it must not pass through
@@ -297,31 +321,32 @@ Extend `resources/monitoring.py` and `enabled_alerts` from #222.
 1. **Prerequisites:** credential removal from logs, #200, Redis on, monitoring
    alerts configured.
 2. **Gateway:** new app, LiteLLM internal, verified on staging.
-3. **Console skeleton:** threat model, CILogon login, org model, SSEC admin
+3. **Console skeleton:** threat model, External ID login, org model, SSEC admin
    screens, broker, denial test harness, audit log.
 4. **Teams:** provider keys, models, budgets, usage.
 5. **Participants:** invites, exceptions, consent, keys.
 6. **Archive, alerts, pen test, dry run.**
-7. **Later:** exports, retention jobs, analytics screens.
+7. **Later:** exports, retention jobs, analytics screens, and CILogon if we need
+   a verified institution.
 
 ## Open items
 
-| #   | Item                      | Why it matters                                                                                                             |
-| --- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| O1  | CILogon eligibility       | The free tier is for "academic research projects". Non-academic partners are unconfirmed. Paid tiers cost $16,547+/yr      |
-| O2  | MFA for leads and admins  | CILogon only passes along what the institution reports. Confirm UW and partners send it, then decide whether to require it |
-| O3  | CILogon outage            | Console login stops, but existing keys keep working. Needs a break-glass path that doesn't use CILogon                     |
-| O4  | Operator access           | How SSEC reaches LiteLLM directly once it's internal, and how that's logged                                                |
-| O5  | Outbound restrictions     | A fixed outbound IP lets orgs lock provider keys to us, but it needs added infrastructure and cost. Not verified           |
-| O6  | Shared LiteLLM database   | It holds every org's provider keys. Capped, IP-restricted keys reduce the risk; a LiteLLM per org would contain it         |
-| O7  | Email delivery            | Invites need a sender and a service                                                                                        |
-| O8  | Hiding the org prefix     | Team aliases returned 200 in testing, but routing wasn't confirmed and the docs mark them deprecated                       |
-| O9  | Analytics interface       | `llmoxie-analysis` has no results format yet, and its results must apply consent                                           |
-| O10 | LiteLLM licensing         | Images include the `litellm-enterprise` package. Confirm with BerriAI what that means for production use                   |
-| O11 | Existing users            | Moving current keys, spend history and client URLs is a separate plan before turning the gateway on in production          |
-| O12 | Trace data classification | Ask UW's security office and the IRB what they require                                                                     |
-| O13 | Workshop date and gates   | No date is set. It decides which security items and open items block the workshop, and when to book a pen test             |
-| O14 | Which deployment          | The workshop runs on the existing stack (needs O11 first) or on a new deployment (needs new environments and cost)         |
+| #   | Item                      | Why it matters                                                                                                              |
+| --- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| O1  | External tenant ownership | Who creates and owns the tenant, and whether UW IT must approve it. Needs the Tenant Creator role and a linked subscription |
+| O2  | MFA licensing and setup   | Pricing docs don't list Conditional Access as an add-on, but this needs confirming, and the step-up flow needs a real test  |
+| O3  | External ID outage        | Console login stops, but existing keys keep working. Needs a break-glass path that doesn't use External ID                  |
+| O4  | Operator access           | How SSEC reaches LiteLLM directly once it's internal, and how that's logged                                                 |
+| O5  | Outbound restrictions     | A fixed outbound IP lets orgs lock provider keys to us, but it needs added infrastructure and cost. Not verified            |
+| O6  | Shared LiteLLM database   | It holds every org's provider keys. Capped, IP-restricted keys reduce the risk; a LiteLLM per org would contain it          |
+| O7  | Email delivery            | Invites need a sender and a service                                                                                         |
+| O8  | Hiding the org prefix     | Team aliases returned 200 in testing, but routing wasn't confirmed and the docs mark them deprecated                        |
+| O9  | Analytics interface       | `llmoxie-analysis` has no results format yet, and its results must apply consent                                            |
+| O10 | LiteLLM licensing         | Images include the `litellm-enterprise` package. Confirm with BerriAI what that means for production use                    |
+| O11 | Existing users            | Moving current keys, spend history and client URLs is a separate plan before turning the gateway on in production           |
+| O12 | Trace data classification | Ask UW's security office and the IRB what they require                                                                      |
+| O13 | Workshop date and gates   | No date is set. It decides which security items and open items block the workshop, and when to book a pen test              |
+| O14 | Which deployment          | The workshop runs on the existing stack (needs O11 first) or on a new deployment (needs new environments and cost)          |
 
 ## Left to the builder
 
