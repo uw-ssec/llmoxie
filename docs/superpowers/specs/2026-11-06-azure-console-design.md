@@ -122,12 +122,13 @@ using a custom domain, so it needs notice to existing users.
 
 ## Identity and sign-in
 
-**Entra External ID setup:** a separate external tenant, an app registration for
-`console-web` as a confidential client, and a sign-up and sign-in user flow.
-External tenants are created in the Microsoft Entra admin center by someone with
-the Tenant Creator role, and the tenant's location can't be changed later. This
-setup is outside the Pulumi stack in the first version, and the console's config
-holds only the tenant ID, client ID and a secret reference. The core offer is
+**Entra External ID setup:** a separate external tenant owned by UW SSEC, an app
+registration for `console-web` as a confidential client, and a sign-up and
+sign-in user flow. External tenants are created in the Microsoft Entra admin
+center by someone with the Tenant Creator role, and the tenant's location can't
+be changed later. This setup is outside the Pulumi stack in the first version,
+and the console's config holds only the tenant ID, client ID and a secret
+reference. The core offer is
 [free for the first 50,000 monthly users](https://learn.microsoft.com/entra/external-id/customers/faq-customers#external-id-pricing),
 counted across tenants linked to a subscription. SMS and client-credentials
 calls are
@@ -331,22 +332,22 @@ Extend `resources/monitoring.py` and `enabled_alerts` from #222.
 
 ## Open items
 
-| #   | Item                      | Why it matters                                                                                                              |
-| --- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| O1  | External tenant ownership | Who creates and owns the tenant, and whether UW IT must approve it. Needs the Tenant Creator role and a linked subscription |
-| O2  | MFA licensing and setup   | Pricing docs don't list Conditional Access as an add-on, but this needs confirming, and the step-up flow needs a real test  |
-| O3  | External ID outage        | Console login stops, but existing keys keep working. Needs a break-glass path that doesn't use External ID                  |
-| O4  | Operator access           | How SSEC reaches LiteLLM directly once it's internal, and how that's logged                                                 |
-| O5  | Outbound restrictions     | A fixed outbound IP lets orgs lock provider keys to us, but it needs added infrastructure and cost. Not verified            |
-| O6  | Shared LiteLLM database   | It holds every org's provider keys. Capped, IP-restricted keys reduce the risk; a LiteLLM per org would contain it          |
-| O7  | Email delivery            | Invites need a sender and a service                                                                                         |
-| O8  | Hiding the org prefix     | Team aliases returned 200 in testing, but routing wasn't confirmed and the docs mark them deprecated                        |
-| O9  | Analytics interface       | `llmoxie-analysis` has no results format yet, and its results must apply consent                                            |
-| O10 | LiteLLM licensing         | Images include the `litellm-enterprise` package. Confirm with BerriAI what that means for production use                    |
-| O11 | Existing users            | Moving current keys, spend history and client URLs is a separate plan before turning the gateway on in production           |
-| O12 | Trace data classification | Ask UW's security office and the IRB what they require                                                                      |
-| O13 | Workshop date and gates   | No date is set. It decides which security items and open items block the workshop, and when to book a pen test              |
-| O14 | Which deployment          | The workshop runs on the existing stack (needs O11 first) or on a new deployment (needs new environments and cost)          |
+| #   | Item                      | Why it matters                                                                                                               |
+| --- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| O1  | External tenant creation  | UW SSEC owns the tenant. Someone at SSEC needs the Tenant Creator role on the subscription, and UW IT may need to approve it |
+| O2  | MFA licensing and setup   | Pricing docs don't list Conditional Access as an add-on, but this needs confirming, and the step-up flow needs a real test   |
+| O3  | External ID outage        | Console login stops, but existing keys keep working. Needs a break-glass path that doesn't use External ID                   |
+| O4  | Operator access           | How SSEC reaches LiteLLM directly once it's internal, and how that's logged                                                  |
+| O5  | Outbound restrictions     | A fixed outbound IP lets orgs lock provider keys to us, but it needs added infrastructure and cost. Not verified             |
+| O6  | Shared LiteLLM database   | It holds every org's provider keys. Capped, IP-restricted keys reduce the risk; a LiteLLM per org would contain it           |
+| O7  | Email delivery            | Invites need a sender and a service                                                                                          |
+| O8  | Hiding the org prefix     | Team aliases returned 200 in testing, but routing wasn't confirmed and the docs mark them deprecated                         |
+| O9  | Analytics interface       | `llmoxie-analysis` has no results format yet, and its results must apply consent                                             |
+| O10 | LiteLLM licensing         | Images include the `litellm-enterprise` package. Confirm with BerriAI what that means for production use                     |
+| O11 | Existing users            | Moving current keys, spend history and client URLs is a separate plan before turning the gateway on in production            |
+| O12 | Trace data classification | Ask UW's security office and the IRB what they require                                                                       |
+| O13 | Workshop date and gates   | No date is set. It decides which security items and open items block the workshop, and when to book a pen test               |
+| O14 | Which deployment          | The workshop runs on the existing stack (needs O11 first) or on a new deployment (needs new environments and cost)           |
 
 ## Left to the builder
 
