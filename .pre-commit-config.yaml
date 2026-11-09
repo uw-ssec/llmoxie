@@ -27,7 +27,7 @@ repos:
         exclude: ^knowledge/ # okf owns this format; prettier folds frontmatter
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.17.3"
+    rev: "v0.17.4"
     hooks:
       - id: ruff-check
         args: ["--fix", "--show-fixes"]
