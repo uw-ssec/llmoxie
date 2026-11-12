@@ -58,6 +58,20 @@ ContainerAppSystemLogs_CL
 | where Failed > 0 and Completed == 0
 """
 
+# The spend logger prints one ``LLMOXIE_SPEND {json}`` line per request to the
+# LiteLLM console. The query sums ``spend`` over the rule's window. Without a
+# ``by`` clause ``summarize`` always returns one row, with 0 on empty input, so
+# an idle gateway doesn't fire a threshold above 0. 14 is the length of the
+# ``LLMOXIE_SPEND `` prefix; tests check it against ``spend_logger``.
+LLM_SPEND_FREQUENCY = "PT1H"
+LLM_SPEND_WINDOWS = {"hourly": "PT1H", "daily": "P1D"}
+LLM_SPEND_QUERY = (
+    'ContainerAppConsoleLogs_CL | where ContainerAppName_s == "{app}" '
+    'and Log_s startswith "LLMOXIE_SPEND " '
+    "| extend r = parse_json(substring(Log_s, 14)) "
+    "| summarize spend = sum(todouble(r.spend))"
+)
+
 # Window sizes of 60 minutes and above use hour notation in ISO 8601.
 _HOUR_WINDOWS = {60: "PT1H", 360: "PT6H", 720: "PT12H", 1440: "PT24H"}
 # Windows of LONG_WINDOW_MINUTES and above, in the ISO 8601 form Azure uses.
@@ -324,6 +338,57 @@ def _backup_job_failures(ctx: _Context) -> dict[str, pulumi.CustomResource]:
     }
 
 
+def _llm_spend(ctx: _Context) -> dict[str, pulumi.CustomResource]:
+    if ctx.litellm_app is None:
+        _warn_skipped("llm_spend", "litellm app")
+        return {}
+    if ctx.log_analytics_workspace is None:
+        _warn_skipped("llm_spend", "log analytics workspace")
+        return {}
+    litellm_app = ctx.litellm_app
+    query = litellm_app.name.apply(
+        lambda app_name: LLM_SPEND_QUERY.format(app=app_name)
+    )
+    alerts: dict[str, pulumi.CustomResource] = {}
+    # The windows overlap the hourly frequency on purpose: a daily breach
+    # re-evaluates every hour and stays fired until it auto-mitigates. The
+    # spend lines are best effort (console logs can be dropped or delayed), so
+    # this alert can under-report.
+    for window, usd in ctx.alerts_config.llm_spend.thresholds().items():
+        name = f"alert-llm-spend-{window}"
+        alerts[name] = azure_native.monitor.ScheduledQueryRule(
+            name,
+            resource_group_name=ctx.resource_group_name,
+            location=ctx.location,
+            kind="LogAlert",
+            enabled=True,
+            scopes=[ctx.log_analytics_workspace.id],
+            severity=2,
+            evaluation_frequency=LLM_SPEND_FREQUENCY,
+            window_size=LLM_SPEND_WINDOWS[window],
+            auto_mitigate=True,
+            # The console log table may not exist on a fresh workspace, and
+            # Azure validates the query at create time.
+            skip_query_validation=True,
+            criteria=azure_native.monitor.ScheduledQueryRuleCriteriaArgs(
+                all_of=[
+                    azure_native.monitor.ConditionArgs(
+                        query=query,
+                        time_aggregation="Total",
+                        metric_measure_column="spend",
+                        operator="GreaterThan",
+                        threshold=usd,
+                    )
+                ]
+            ),
+            actions=azure_native.monitor.ActionsArgs(
+                action_groups=[ctx.action_group.id]
+            ),
+            tags=ctx.tags,
+        )
+    return alerts
+
+
 def _cloud_budget(ctx: _Context) -> dict[str, pulumi.CustomResource]:
     """Create the monthly budget. Its scope is the whole resource group.
 
@@ -387,6 +452,7 @@ _BUILDERS: dict[str, Callable[[_Context], dict[str, pulumi.CustomResource]]] = {
     "db_storage": _db_storage,
     "db_cpu": _db_cpu,
     "backup_job_failures": _backup_job_failures,
+    "llm_spend": _llm_spend,
     "cloud_budget": _cloud_budget,
 }
 
