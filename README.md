@@ -279,6 +279,7 @@ when any alert is enabled. An alert whose target isn't deployed (for example
 | `db_storage`          | PostgreSQL storage used                                       | above 80%                              |
 | `db_cpu`              | PostgreSQL CPU                                                | above 85% over 30 minutes              |
 | `backup_job_failures` | Failed backup job executions (Log Analytics query)            | any failure                            |
+| `llm_spend`           | Model-provider spend logged by LiteLLM (Log Analytics)        | more than $50 per day                  |
 | `cloud_budget`        | Azure cost for the resource group, actual monthly spend       | notifies at 80% and 100% of the budget |
 
 Thresholds are absolute values, not baselines. Override them under
@@ -306,18 +307,35 @@ compared against the combined spend of all of them. Set a distinct
 you want per-environment budgets.
 
 Per-environment defaults: dev enables no alerts (`[]`); staging and prod enable
-all seven. The generated `email_receivers` entry is the placeholder
+all eight. The generated `email_receivers` entry is the placeholder
 `ops@example.org`; replace it before deploying. `llmaven infra validate` warns
 (and fails under `--strict`) if a receiver still uses a placeholder domain.
 
 `monitoring.daily_data_cap_gb` is applied to the Log Analytics workspace. Once
 the daily cap is reached the workspace stops ingesting, so the log-based
-`backup_job_failures` alert may not see new failures until the cap resets at the
-start of the next daily cycle. `monitoring.enable_application_insights` is
+`backup_job_failures` and `llm_spend` alerts go blind until the cap resets at
+the start of the next daily cycle. `monitoring.enable_application_insights` is
 deprecated and does nothing.
 
-The Azure budget covers Azure costs only. Spend on other LLM providers (for
-example Anthropic) is not covered yet.
+The Azure budget covers Azure charges only. `llm_spend` covers model-provider
+spend (for example Anthropic) recorded by LiteLLM. Both are best effort:
+`llm_spend` reads console log lines that can be dropped or delayed, so it can
+under-report. The Postgres spend logs are the source of truth.
+
+`llm_spend` is set under `monitoring.alerts.llm_spend`: `max_usd_per_hour`
+(default `null`) and `max_usd_per_day` (default `50`). Set at least one; both
+`null` is invalid. Each threshold creates its own rule (`alert-llm-spend-hourly`
+and `alert-llm-spend-daily`), evaluated hourly over a one-hour or one-day
+window. The alert needs the LiteLLM app and is skipped with a warning when
+LiteLLM is disabled. It reads a `LLMOXIE_SPEND` line that the LiteLLM callback
+`spend_logger.proxy_handler_instance` prints for each successful request.
+`llmaven infra validate` and the deploy warn, but don't fail, when `llm_spend`
+is enabled and the LiteLLM config has no `spend_logger.` callback.
+
+Rolling out the spend logger: running gateways only pick it up on a new
+revision. If you pin `litellm.refresh_trigger`, change it; if you set
+`litellm.revision_suffix`, change that. Otherwise the deploy timestamp already
+forces a new revision.
 
 #### Azure AI Foundry models (optional)
 
