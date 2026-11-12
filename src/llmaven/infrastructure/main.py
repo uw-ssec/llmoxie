@@ -125,6 +125,11 @@ def create_pulumi_program(config_path: Path):
             if model_errors:
                 raise ValueError("; ".join(model_errors))
 
+        from llmaven.infrastructure.config.litellm_models import missing_spend_logger
+
+        for message in missing_spend_logger(config, config_path):
+            pulumi.log.warn(message)
+
         container_apps_subnet = azure_native.network.Subnet(
             "container-apps-subnet",
             resource_group_name=resource_group,
