@@ -5,7 +5,9 @@ import io
 import importlib.util
 import json
 import sys
+import time
 import types
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -131,6 +133,12 @@ def test_no_standard_logging_object_prints_nothing(spend_logger, capsys):
     assert capsys.readouterr().out == ""
 
 
+@pytest.mark.parametrize("kwargs", [None, "not-a-dict", ["list"]])
+def test_non_dict_kwargs_do_not_raise_or_print(spend_logger, capsys, kwargs):
+    _emit(spend_logger, kwargs)
+    assert capsys.readouterr().out == ""
+
+
 def test_exception_is_logged_not_raised(spend_logger, capsys, monkeypatch):
     def boom(_payload):
         raise RuntimeError("boom")
@@ -141,3 +149,34 @@ def test_exception_is_logged_not_raised(spend_logger, capsys, monkeypatch):
     _emit(spend_logger, {"standard_logging_object": _payload()})
     assert capsys.readouterr().out == ""
     assert "boom" in err.getvalue()
+
+
+def test_exception_log_keeps_traceback(spend_logger, capsys, monkeypatch):
+    def boom(_payload):
+        raise RuntimeError("boom")
+
+    err = io.StringIO()
+    monkeypatch.setattr(spend_logger._handler, "stream", err)
+    monkeypatch.setattr(spend_logger, "spend_record", boom)
+    _emit(spend_logger, {"standard_logging_object": _payload()})
+    assert "Traceback" in err.getvalue()
+
+
+def test_ts_is_utc_regardless_of_local_timezone(spend_logger, capsys, monkeypatch):
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        _emit(spend_logger, {"standard_logging_object": _payload()})
+        record = _only_line(capsys.readouterr().out)
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()
+    assert datetime.fromisoformat(record["ts"]).utcoffset() == timedelta(0)
+
+
+def test_line_is_compact_json(spend_logger, capsys):
+    _emit(spend_logger, {"standard_logging_object": _payload()})
+    line = capsys.readouterr().out.splitlines()[0]
+    body = line[len(spend_logger.SPEND_LINE_PREFIX) :]
+    assert ", " not in body
+    assert ": " not in body

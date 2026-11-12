@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from litellm.integrations.custom_logger import CustomLogger
@@ -36,7 +36,7 @@ def spend_record(payload: dict) -> dict:
     """Build the spend record for one standard logging payload."""
     metadata = payload.get("metadata") or {}
     return {
-        "ts": datetime.now().astimezone().isoformat(),
+        "ts": datetime.now(timezone.utc).isoformat(),
         "request_id": payload.get("id"),
         "key_alias": metadata.get("user_api_key_alias"),
         "key_hash": _key_hash(metadata.get("user_api_key_hash")),
@@ -56,15 +56,16 @@ class SpendLogger(CustomLogger):
         start_time: datetime,
         end_time: datetime,
     ) -> None:
-        payload = kwargs.get("standard_logging_object")
-        if not payload:
-            return
         try:
+            payload = kwargs.get("standard_logging_object")
+            if not payload:
+                return
             record = spend_record(payload)
-            sys.stdout.write(SPEND_LINE_PREFIX + json.dumps(record) + "\n")
+            line = json.dumps(record, separators=(",", ":"))
+            sys.stdout.write(SPEND_LINE_PREFIX + line + "\n")
             sys.stdout.flush()
-        except Exception as exc:  # never fail the request over logging
-            logger.error("failed to write spend record: %s", exc)
+        except Exception:  # never fail the request over logging
+            logger.exception("failed to write spend record")
 
 
 proxy_handler_instance = SpendLogger()
