@@ -639,6 +639,68 @@ base image's patched `cryptography`.
 Pre-installs MLflow for logging integration and copies the LiteLLM configuration
 file into the image.
 
+#### LiteLLM with the ceil-dlp guardrail (optional)
+
+The same Dockerfile has a second build target, `litellm-dlp`, which adds the
+[ceil-dlp](https://github.com/uw-ssec/ceil-dlp) data-loss-prevention guardrail.
+The guardrail blocks or masks sensitive data in prompts before they reach a
+model provider. With `whistledown`, it swaps values such as names for consistent
+tokens (`PERSON_1`) and restores them in the reply. The default target is still
+the plain image. CI publishes the variant as
+`ghcr.io/uw-ssec/llmoxie-litellm-dlp:<version>`.
+
+```bash
+docker build --target litellm-dlp -f dockerfiles/litellm.dockerfile -t llmoxie-litellm-dlp .
+```
+
+What to know before using it:
+
+- The image is about 3.4 GB (1.4 GB without the guardrail). ceil-dlp loads its
+  OCR detectors at import time, which pulls in CPU-only PyTorch, transformers,
+  GLiNER and docTR. The guardrail itself scans text only.
+- ceil-dlp is pinned to a commit of the uw-ssec fork, because guardrail mode is
+  not in the PyPI release. The spaCy model `en_core_web_lg` is baked in.
+- The policy must set `ner_strength: 1`. ceil-dlp defaults to 3, which downloads
+  a BERT model and GLiNER on the first request and uses about 4 GB of memory. At
+  level 1 a replica used about 2 GB in testing, and the guardrail added about 15
+  ms per request.
+- The Dockerfile comments explain the version pins: base packages held at their
+  versions, CPU torch/torchvision, headless OpenCV, and `sentencepiece`.
+
+To turn it on for an Azure deployment, point `litellm.image` at the
+`llmoxie-litellm-dlp` image and add a `dlp` block:
+
+```yaml
+litellm:
+  image: ghcr.io/uw-ssec/llmoxie-litellm-dlp:<version>
+  dlp:
+    enabled: true
+    policy_file: ceil-dlp.yaml # relative to llmaven-config.yaml
+    default_on: true # false: callers opt in with "guardrails": ["ceil-dlp"]
+```
+
+and a policy file next to the config:
+
+```yaml
+# ceil-dlp.yaml
+mode: enforce # or observe: log detections without changing requests
+ner_strength: 1 # required: only this level works in the image
+policies:
+  credit_card: { action: block, enabled: true }
+  ssn: { action: block, enabled: true }
+  api_key: { action: mask, enabled: true }
+  aws_credential: { action: mask, enabled: true }
+  email: { action: mask, enabled: true }
+  person: { action: whistledown, enabled: true }
+```
+
+At deploy time, the guardrail module and the policy file are mounted next to the
+LiteLLM config. The guardrail is registered in that config with
+`mode: [pre_call, post_call]`, and the container gets `CEIL_DLP_CONFIG_PATH` and
+runs Hugging Face offline. A deploy fails if the policy doesn't set
+`ner_strength: 1`, or if the LiteLLM config already registers a guardrail named
+`ceil-dlp`. See `config.example.yaml` in ceil-dlp for every policy type.
+
 **Building the Images**: The images are automatically built when you run
 `docker-compose up` or `pixi run -e llmaven up`. To rebuild after changes:
 

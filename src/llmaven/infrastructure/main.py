@@ -71,6 +71,11 @@ def create_pulumi_program(config_path: Path):
             create_storage_account,
             create_virtual_network,
         )
+        from llmaven.infrastructure.resources.dlp import (
+            DLP_GUARDRAIL_MODULE,
+            dlp_env_vars,
+            validate_dlp_policy,
+        )
 
         # Load configuration
         try:
@@ -464,6 +469,38 @@ def create_pulumi_program(config_path: Path):
                 litellm_env_vars.update(REDIS_ENV_VARS)
                 litellm_secret_refs.update(REDIS_KEY_VAULT_SECRET_REFS)
 
+            # ceil-dlp guardrail: mount its module and policy next to the
+            # LiteLLM config, which helpers registers the guardrail in.
+            litellm_extra_modules = [adl_logger_path]
+            dlp_default_on = None
+            if config.litellm.dlp.enabled:
+                if config_file_path is None:
+                    raise ValueError(
+                        "litellm.dlp.enabled requires litellm.config_file: the "
+                        "guardrail is registered in the LiteLLM config"
+                    )
+                policy_path = Path(config.litellm.dlp.policy_file)
+                if not policy_path.is_absolute():
+                    policy_path = (config_path.parent / policy_path).resolve()
+                validate_dlp_policy(policy_path.read_text(), str(policy_path))
+                mounted_names = [
+                    p.name for p in (*litellm_extra_modules, config_file_path)
+                ]
+                for path in (DLP_GUARDRAIL_MODULE, policy_path):
+                    if path.name in mounted_names:
+                        raise ValueError(
+                            f"litellm.dlp: {path.name} clashes with another file "
+                            "mounted in /app/config; rename the policy file"
+                        )
+                    mounted_names.append(path.name)
+                litellm_extra_modules += [DLP_GUARDRAIL_MODULE, policy_path]
+                litellm_env_vars.update(dlp_env_vars(policy_path))
+                dlp_default_on = config.litellm.dlp.default_on
+                pulumi.log.info(
+                    f"ceil-dlp guardrail enabled with policy {policy_path}; "
+                    f"LiteLLM image {config.litellm.image} must be a litellm-dlp build"
+                )
+
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
                 resource_group_name=resource_group,
@@ -490,7 +527,7 @@ def create_pulumi_program(config_path: Path):
                         *redis_dependencies,
                     ]
                 ),
-                extra_modules=[adl_logger_path],
+                extra_modules=litellm_extra_modules,
                 revision_suffix=config.litellm.revision_suffix,
                 refresh_trigger=config.litellm.refresh_trigger,
                 custom_domains=config.litellm.custom_domains,
@@ -498,6 +535,7 @@ def create_pulumi_program(config_path: Path):
                 redis_clustering_policy=config.redis.clustering_policy,
                 proxy=config.litellm.proxy,
                 ip_security_restrictions=config.litellm.ip_security_restrictions,
+                dlp_default_on=dlp_default_on,
             )
 
             # Export LiteLLM URL
