@@ -32,6 +32,12 @@ jobs:
           - name: litellm
             dockerfile: litellm.dockerfile
             context: ./docker
+          # LiteLLM with the ceil-dlp guardrail (about 3.4 GB; opt in with
+          # litellm.dlp in the deployment config).
+          - name: litellm-dlp
+            dockerfile: litellm.dockerfile
+            context: ./docker
+            target: litellm-dlp
           - name: backup
             dockerfile: backup.dockerfile
             context: .
@@ -43,7 +49,10 @@ jobs:
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
-          cache-key: ./docker/dockerfiles/${{ matrix.service.dockerfile }}
+          cache-key:
+            ./docker/dockerfiles/${{ matrix.service.dockerfile }}${{
+            matrix.service.target && format('#{0}', matrix.service.target) || ''
+            }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -74,6 +83,7 @@ jobs:
         with:
           context: ${{ matrix.service.context }}
           file: ./docker/dockerfiles/${{ matrix.service.dockerfile }}
+          target: ${{ matrix.service.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

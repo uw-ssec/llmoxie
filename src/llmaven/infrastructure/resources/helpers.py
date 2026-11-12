@@ -12,6 +12,7 @@ from ..config.schema import (
     LiteLLMProxyConfig,
 )
 from .container_apps import create_container_app_with_key_vault_secrets
+from .dlp import apply_dlp_guardrail
 from .redis import apply_redis_router_settings
 from .traefik import (
     TRAEFIK_DYNAMIC_SECRET,
@@ -317,6 +318,7 @@ def create_litellm_app(
     redis_clustering_policy: str = "EnterpriseCluster",
     proxy: LiteLLMProxyConfig | None = None,
     ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
+    dlp_default_on: bool | None = None,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -349,6 +351,9 @@ def create_litellm_app(
             LiteLLM listens on 127.0.0.1 only, and LiteLLM's probes go through
             Traefik's health route.
         ip_security_restrictions: Ingress IP rules for the whole app
+        dlp_default_on: When set, register the ceil-dlp guardrail in the
+            mounted LiteLLM config with this ``default_on`` value. The
+            guardrail module and policy file go in ``extra_modules``.
 
     Returns:
         ContainerApp resource
@@ -416,6 +421,8 @@ def create_litellm_app(
                 content = apply_redis_router_settings(
                     content, clustering_policy=redis_clustering_policy
                 )
+            if dlp_default_on is not None and file_path == Path(config_file):
+                content = apply_dlp_guardrail(content, default_on=dlp_default_on)
             inline_secrets[secret_name] = content
             secret_volume_items.append(
                 azure_native.app.SecretVolumeItemArgs(

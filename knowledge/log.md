@@ -1,3 +1,7 @@
+## 2026-11-12
+* **Update**: Linked `decisions/ceil-dlp-guardrail-opt-in-image.md` to `decisions/litellm-image-digest-pin-and-one-way-upgrade.md` (Extends the pinned LiteLLM image with a second build target).
+* **Creation**: Documented concept `decisions/ceil-dlp-guardrail-opt-in-image.md` (ceil-dlp runs as an opt-in LiteLLM guardrail in a separate litellm-dlp image).
+
 ## 2026-11-06
 * **Update**: Updated concept `decisions/monitoring-alerts-config.md`.
 * **Update**: Updated concept `facts/production-readiness-gaps.md`.

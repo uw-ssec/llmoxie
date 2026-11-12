@@ -536,6 +536,32 @@ DEFAULT_PUBLIC_PATHS = [
 DEFAULT_HEALTH_PATHS = ["/health/liveliness", "/health/liveness"]
 
 
+class LiteLLMDLPConfig(BaseModel):
+    """ceil-dlp guardrail (https://github.com/uw-ssec/ceil-dlp).
+
+    Needs the ``litellm-dlp`` image (``litellm.dockerfile`` target
+    ``litellm-dlp``); the default LiteLLM image cannot load the guardrail.
+    """
+
+    enabled: bool = Field(default=False, description="Register the guardrail")
+    policy_file: str | None = Field(
+        default=None,
+        description="ceil-dlp policy YAML, relative to this config file. "
+        "It must set ner_strength: 1",
+    )
+    default_on: bool = Field(
+        default=True,
+        description="Apply to every request. False makes callers opt in by "
+        "sending guardrails: [ceil-dlp]",
+    )
+
+    @model_validator(mode="after")
+    def require_policy_file(self) -> "LiteLLMDLPConfig":
+        if self.enabled and not self.policy_file:
+            raise ValueError("litellm.dlp.enabled requires litellm.dlp.policy_file")
+        return self
+
+
 class LiteLLMProxyConfig(BaseModel):
     """Optional Traefik sidecar in front of LiteLLM.
 
@@ -663,6 +689,10 @@ class LiteLLMConfig(ContainerAppConfig):
     proxy: LiteLLMProxyConfig = Field(
         default_factory=LiteLLMProxyConfig,
         description="Optional Traefik sidecar for path-level access control",
+    )
+    dlp: LiteLLMDLPConfig = Field(
+        default_factory=LiteLLMDLPConfig,
+        description="Optional ceil-dlp guardrail; needs the litellm-dlp image",
     )
 
 
