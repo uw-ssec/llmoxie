@@ -551,7 +551,7 @@ model_list:
 litellm_settings:
   success_callback: ["mlflow"]
   failure_callback: ["mlflow"]
-  callbacks: adl_logger.proxy_handler_instance
+  callbacks: [adl_logger.proxy_handler_instance, spend_logger.proxy_handler_instance]
 
 # General settings
 general_settings:
@@ -590,12 +590,33 @@ container at `/app/adl_logger.py`):
 
 ```yaml
 litellm_settings:
-  callbacks: adl_logger.proxy_handler_instance
+  callbacks: [adl_logger.proxy_handler_instance, spend_logger.proxy_handler_instance]
 ```
 
 It writes one JSON file per request to the `ADLS_CONTAINER` blob container
 (default `litellm-logs`) using `AZURE_STORAGE_CONNECTION_STRING`, which points
 at Azurite locally.
+
+#### Spend lines
+
+The second callback, `spend_logger`
+(`src/llmaven/infrastructure/resources/spend_logger.py`, mounted at
+`/app/spend_logger.py`), writes one line to stdout for every successful request:
+
+```text
+LLMOXIE_SPEND {"ts":"...","request_id":"...","key_alias":"...","key_hash":"...","user_id":"...","team_alias":"...","model":"...","spend":0.0012,"total_tokens":345}
+```
+
+The line is the `LLMOXIE_SPEND ` prefix followed by compact JSON with the
+fields `ts` (UTC ISO 8601), `request_id`, `key_alias`, `key_hash` (SHA-256 hex
+digest only, otherwise `null`), `user_id`, `team_alias`, `model`, `spend`
+(response cost in USD) and `total_tokens`. Prompts, responses and raw API keys
+are never written.
+
+In Azure, Container Apps forwards stdout to `ContainerAppConsoleLogs_CL`, and the
+`llm_spend` alert reads these lines from there. Locally the lines only appear in
+the LiteLLM container logs. Postgres (the LiteLLM spend logs) stays the source of
+truth for spend; the lines exist only to feed the alert.
 
 ### Custom Docker Images
 
