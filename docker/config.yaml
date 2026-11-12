@@ -18,7 +18,8 @@ litellm_settings:
   # CustomLogger instances must go in `callbacks` so LiteLLM invokes
   # async_log_success_event / async_log_failure_event on them.
   # spend_logger writes one LLMOXIE_SPEND line per request for the spend alert.
-  callbacks: [adl_logger.proxy_handler_instance, spend_logger.proxy_handler_instance]
+  callbacks:
+    [adl_logger.proxy_handler_instance, spend_logger.proxy_handler_instance]
 
 # General settings
 general_settings:
