@@ -208,7 +208,7 @@ Once all services are healthy:
 
 **Image**: Custom build from `dockerfiles/litellm.dockerfile`
 
-- Base image: `ghcr.io/berriai/litellm:v1.106.6` (pinned by digest)
+- Base image: `ghcr.io/berriai/litellm:v1.108.6` (pinned by digest)
 - Pre-installed packages: `mlflow-skinny==3.6.0`
 
 **Ports**:
@@ -623,15 +623,15 @@ file overrides it to run `ensure_blob_container.py` first.
 Located at `dockerfiles/litellm.dockerfile`:
 
 ```dockerfile
-FROM ghcr.io/berriai/litellm:v1.106.6@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
+FROM ghcr.io/berriai/litellm:v1.108.6@sha256:c64fe10f82a1f77906f88574f954317c50f67c617e0c97b70ac8fc61b74d3ec3
 
 RUN python -m ensurepip \
  && python -m pip install --no-cache-dir \
-      "litellm==1.106.6" "mlflow-skinny==3.6.0" "azure-storage-blob>=12.0.0,<13" "azure-identity>=1.0.0,<2"
+      "litellm==1.108.6" "mlflow-skinny==3.6.0" "azure-storage-blob>=12.0.0,<13" "azure-identity>=1.0.0,<2"
 ```
 
 The base image has no `pip` executable, so the build bootstraps it with the
-bundled `ensurepip`. Pinning `litellm==1.106.6` again makes the build fail if
+bundled `ensurepip`. Pinning `litellm==1.108.6` again makes the build fail if
 the add-on packages would replace it. The image uses `mlflow-skinny` because the
 full `mlflow==3.6.0` package caps `cryptography<47`, which would downgrade the
 base image's patched `cryptography`.
