@@ -1,0 +1,70 @@
+"""LiteLLM callback that writes one spend line per successful request.
+
+Each line is ``LLMOXIE_SPEND {json}`` on stdout, which Azure Container Apps
+forwards to ``ContainerAppConsoleLogs_CL``. Prompts, responses, and raw API
+keys are never written.
+"""
+
+import json
+import logging
+import re
+import sys
+from datetime import datetime
+from typing import Any
+
+from litellm.integrations.custom_logger import CustomLogger
+
+SPEND_LINE_PREFIX = "LLMOXIE_SPEND "
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+logger = logging.getLogger("SpendLogger")
+_handler = logging.StreamHandler(sys.stderr)
+_handler.setFormatter(logging.Formatter("[SpendLogger] %(levelname)s - %(message)s"))
+logger.addHandler(_handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+
+def _key_hash(value: Any) -> str | None:
+    """Return the hash only when it is a SHA-256 hex digest, else None."""
+    if isinstance(value, str) and _SHA256_HEX.fullmatch(value):
+        return value
+    return None
+
+
+def spend_record(payload: dict) -> dict:
+    """Build the spend record for one standard logging payload."""
+    metadata = payload.get("metadata") or {}
+    return {
+        "ts": datetime.now().astimezone().isoformat(),
+        "request_id": payload.get("id"),
+        "key_alias": metadata.get("user_api_key_alias"),
+        "key_hash": _key_hash(metadata.get("user_api_key_hash")),
+        "user_id": metadata.get("user_api_key_user_id"),
+        "team_alias": metadata.get("user_api_key_team_alias"),
+        "model": payload.get("model"),
+        "spend": float(payload.get("response_cost") or 0.0),
+        "total_tokens": int(payload.get("total_tokens") or 0),
+    }
+
+
+class SpendLogger(CustomLogger):
+    async def async_log_success_event(
+        self,
+        kwargs: dict,
+        response_obj: Any,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> None:
+        payload = kwargs.get("standard_logging_object")
+        if not payload:
+            return
+        try:
+            record = spend_record(payload)
+            sys.stdout.write(SPEND_LINE_PREFIX + json.dumps(record) + "\n")
+            sys.stdout.flush()
+        except Exception as exc:  # never fail the request over logging
+            logger.error("failed to write spend record: %s", exc)
+
+
+proxy_handler_instance = SpendLogger()
