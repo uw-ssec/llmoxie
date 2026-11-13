@@ -33,7 +33,8 @@ Read it before any task.
 - Cookies, the `Origin` check, token refresh, the policy check before every
   broker call, `/healthz` and `/api/v1/*` do not change.
 - A response under `/web-api/` carries only the fields named in Task 1. Never
-  `participant_id`, never `team_orgs`, never `mcp_server_id`, never raw Markdown.
+  `participant_id`, never `team_orgs`, never `mcp_server_id`, never raw
+  Markdown.
 - An API key lives in React state only. Never `localStorage`, `sessionStorage`,
   router history state, or the session row.
 - No request to any other origin: fonts and all assets are bundled.
@@ -67,9 +68,8 @@ Read it before any task.
    blank page. Pinned in Task 6.
 4. **A crafted `next` value** such as `//evil.example` or `https:evil`.
    Expected: sign-in lands on `/`. Pinned in Task 5.
-5. **A double click on a slow action** (create key, send invitations).
-   Expected: one request; the button is disabled while it runs. Pinned in
-   Task 6.
+5. **A double click on a slow action** (create key, send invitations). Expected:
+   one request; the button is disabled while it runs. Pinned in Task 6.
 
 ---
 
@@ -121,9 +121,9 @@ services/console/
 - [ ] **Step 2:** Start the stack: in `~/Agent-Workspace/litellm-keycloak`, run
       its documented `docker-compose up -d --wait`. Confirm every service is
       healthy.
-- [ ] **Step 3:** Compare the live `console_db` with `db/console-db.sql`
-      (`\dt` and `\d <table>` through the stack's Postgres container). Expected:
-      the same tables plus `agent`. Anything else: stop and ask the owner.
+- [ ] **Step 3:** Compare the live `console_db` with `db/console-db.sql` (`\dt`
+      and `\d <table>` through the stack's Postgres container). Expected: the
+      same tables plus `agent`. Anything else: stop and ask the owner.
 - [ ] **Step 4:** Write `override.yml` so `console-init`, `console-broker` and
       `console-web` build from this repository
       (`build.context: <abs path>/services/console`, `target: app`) under a
@@ -133,8 +133,8 @@ services/console/
       in the stack's `console-tests` service. Run
       `pixi run test <stack network>`.
 - [ ] **Step 6:** Record which tests pass and fail in the task notes. This is
-      the baseline; a test that fails here is not this plan's regression. If
-      the suite cannot run at all, stop and report.
+      the baseline; a test that fails here is not this plan's regression. If the
+      suite cannot run at all, stop and report.
 
 ---
 
@@ -166,28 +166,31 @@ def key(created: dict) -> dict
 
 Fields each returns, and nothing else:
 
-| Function      | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session`     | `signed_in: true`, `csrf`, `me: {email, is_admin, lead_orgs: [{id, name, status}], teams: [{id, name, org_name, status}]}`, `config: {gateway_url, litellm_admin_url}`                                                                                                                                                                                                                                                                  |
-| `admin_orgs`  | `orgs: [{id, name, slug, budget_ceiling, leads, teams, status}]`                                                                                                                                                                                                                                                                                                                                                                        |
-| `audit`       | `events: [{at, actor_email, actor_role, action, result, org_name, team_name}]`                                                                                                                                                                                                                                                                                                                                                          |
-| `dlp`         | `enabled`, `read`, `shown`, `actions`, `totals: [{kind, action, count}]`, `events: [{at, kinds, blocked, action, source, mode, count, email, user_id, request}]` where `request` is the first 8 characters of `request_id`. When `enabled` is false, only `enabled`.                                                                                                                                                                     |
-| `org`         | `org: {id, name, slug, status, budget_ceiling}`, `is_lead`, `is_admin`, `leads: [{email}]` plus `id` only when `is_admin`, `lead_invites: [{id, email, status, signin_email}]` (empty list unless `is_admin`), `models: [{id, public_name, provider}]`, `providers`, `teams: [{id, name, members, team_budget, status}]`                                                                                                                |
-| `knowledge`   | `org: {id, name}`, `tools`, `edge_count`, `concepts: [{id, title, type, description, tags, links, written_at}]`, `concept: null \| {id, title, type, status, written_at, tags, description, html, links_out: [{id, title, note}], links_in: [{id, title, note}]}`, `graph` (as `graph.picture` returns it), `log_html` (empty string when there is no log)                                                                              |
+| Function      | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`     | `signed_in: true`, `csrf`, `me: {email, is_admin, lead_orgs: [{id, name, status}], teams: [{id, name, org_name, status}]}`, `config: {gateway_url, litellm_admin_url}`                                                                                                                                                                                                                                                                                                            |
+| `admin_orgs`  | `orgs: [{id, name, slug, budget_ceiling, leads, teams, status}]`                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `audit`       | `events: [{at, actor_email, actor_role, action, result, org_name, team_name}]`                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `dlp`         | `enabled`, `read`, `shown`, `actions`, `totals: [{kind, action, count}]`, `events: [{at, kinds, blocked, action, source, mode, count, email, user_id, request}]` where `request` is the first 8 characters of `request_id`. When `enabled` is false, only `enabled`.                                                                                                                                                                                                              |
+| `org`         | `org: {id, name, slug, status, budget_ceiling}`, `is_lead`, `is_admin`, `leads: [{email}]` plus `id` only when `is_admin`, `lead_invites: [{id, email, status, signin_email}]` (empty list unless `is_admin`), `models: [{id, public_name, provider}]`, `providers`, `teams: [{id, name, members, team_budget, status}]`                                                                                                                                                          |
+| `knowledge`   | `org: {id, name}`, `tools`, `edge_count`, `concepts: [{id, title, type, description, tags, links, written_at}]`, `concept: null \| {id, title, type, status, written_at, tags, description, html, links_out: [{id, title, note}], links_in: [{id, title, note}]}`, `graph` (as `graph.picture` returns it), `log_html` (empty string when there is no log)                                                                                                                        |
 | `team_manage` | `team: {id, name, status, org_id, org_name, org_status, org_budget_ceiling, team_budget, key_limit, key_budget, key_expiry_days}`, `is_lead`, `models: [{id, public_name, allowed}]`, `members: [{id, email, terms_accepted, keys}]`, `invites: [{id, email, status, signin_email}]`, `keys: [{id, email, name, waiting, hint, created_at, expires, last_used, spend}]`, `usage: [{email, requests, failed, tokens, spend}]`, `integrations: [{id, name, client_id, can_enroll}]` |
-| `my_team`     | `team: {id, name, status, org_name, org_status, consent_text, key_limit, key_budget, key_expiry_days}`, `consent: null \| {terms_accepted, research_use}`, `keys: [{id, name, waiting, created_at}]`, `models: [str]`, `knowledge_tools`, `usage: {requests, tokens, spend}`                                                                                                                                                              |
-| `invite`      | `valid`, and when valid `kind`, `org_name`, `team_name`                                                                                                                                                                                                                                                                                                                                                                                 |
-| `key`         | `name`, `key`                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `my_team`     | `team: {id, name, status, org_name, org_status, consent_text, key_limit, key_budget, key_expiry_days}`, `consent: null \| {terms_accepted, research_use}`, `keys: [{id, name, waiting, created_at}]`, `models: [str]`, `knowledge_tools`, `usage: {requests, tokens, spend}`                                                                                                                                                                                                      |
+| `invite`      | `valid`, and when valid `kind`, `org_name`, `team_name`                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `key`         | `name`, `key`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_shapes.py`. Feed each
-      function a broker-style reply that holds extra fields, and assert the exact
-      key set at every level. Required cases:
+      function a broker-style reply that holds extra fields, and assert the
+      exact key set at every level. Required cases:
 
 ```python
 def test_session_drops_identifiers():
     out = shapes.session(ME, "tok", "http://g", "")
     assert set(out["me"]) == {"email", "is_admin", "lead_orgs", "teams"}
-    assert "participant_id" not in json.dumps(out) and "team_orgs" not in json.dumps(out)
+    assert "participant_id" not in json.dumps(out) and "team_orgs" not in json.dumps(
+        out
+    )
+
 
 def test_team_manage_never_carries_participant_id():
     out = shapes.team_manage(TEAM_VIEW, USAGE, is_lead=True)
@@ -195,28 +198,43 @@ def test_team_manage_never_carries_participant_id():
     assert set(out["members"][0]) == {"id", "email", "terms_accepted", "keys"}
     assert set(out["usage"][0]) == {"email", "requests", "failed", "tokens", "spend"}
 
+
 def test_org_hides_lead_ids_and_invites_from_a_lead():
     out = shapes.org(ORG_VIEW, is_lead=True, is_admin=False)
     assert set(out["leads"][0]) == {"email"} and out["lead_invites"] == []
     assert "mcp_server_id" not in json.dumps(out)
 
+
 def test_org_gives_an_admin_what_the_remove_buttons_need():
     out = shapes.org(ORG_VIEW, is_lead=False, is_admin=True)
     assert set(out["leads"][0]) == {"id", "email"} and out["lead_invites"]
 
+
 def test_knowledge_carries_no_raw_markdown():
-    out = shapes.knowledge(KNOWLEDGE_VIEW, concept=None, body_html="", links_out=[],
-                           links_in=[], graph=GRAPH, log_html="")
+    out = shapes.knowledge(
+        KNOWLEDGE_VIEW,
+        concept=None,
+        body_html="",
+        links_out=[],
+        links_in=[],
+        graph=GRAPH,
+        log_html="",
+    )
     assert out["concept"] is None and "body" not in json.dumps(out) and "log" not in out
 
+
 def test_dlp_shortens_the_request_id():
-    assert shapes.dlp(DLP_VIEW, {})["events"][0]["request"] == DLP_VIEW["events"][0]["request_id"][:8]
+    assert (
+        shapes.dlp(DLP_VIEW, {})["events"][0]["request"]
+        == DLP_VIEW["events"][0]["request_id"][:8]
+    )
 ```
 
       Add one exact-key-set test for each remaining function.
 
-- [ ] **Step 2:** Run `pixi run -e llmaven pytest services/console/tests/test_shapes.py -q`
-      from the repository root. Expected: import error, `shapes` missing.
+- [ ] **Step 2:** Run
+      `pixi run -e llmaven pytest services/console/tests/test_shapes.py -q` from
+      the repository root. Expected: import error, `shapes` missing.
 - [ ] **Step 3:** Implement `shapes.py`. One private helper
       `_pick(row: dict, *fields: str) -> dict`; every function builds its result
       from `_pick` calls, so a new broker field never leaks by default. Values
@@ -251,10 +269,10 @@ class Visit:  # same constructor and methods as today
 With `api=True`: no session raises `ApiError(401, "You are signed out.")`; the
 broker's 401, 403, 404 and 502 raise `ApiError` with today's wording; a 409 or
 422 raises `ApiError(status, detail)` whether or not `back` is given.
-`check_csrf(token)` raises `ApiError(403, "This form has expired. Go back,
-reload the page and try again.")`. With `api=False` behaviour is exactly today's.
-`app.py` registers a handler that turns `ApiError` into the global error shape
-with `Cache-Control: no-store`.
+`check_csrf(token)` raises
+`ApiError(403, "This form has expired. Go back, reload the page and try again.")`.
+With `api=False` behaviour is exactly today's. `app.py` registers a handler that
+turns `ApiError` into the global error shape with `Cache-Control: no-store`.
 
 ```python
 # helpers.py additions
@@ -267,17 +285,17 @@ sign_in(...)  # unchanged walk; afterwards sets browser.csrf from /web-api/sessi
 Routes added in `api.py` (each: `Visit(request, api=True)`, `visit.require(...)`
 with the same action name as today's HTML route, broker call, shape):
 
-| Route                                       | Policy action   | Shape                |
-| ------------------------------------------- | --------------- | -------------------- |
-| `GET /web-api/session`                      | none            | `{"signed_in": false}` or `shapes.session` |
-| `GET /web-api/admin/orgs`                   | `org.list`      | `shapes.admin_orgs`  |
-| `GET /web-api/admin/audit`                  | `audit.read`    | `shapes.audit`       |
-| `GET /web-api/admin/dlp`                    | `dlp.read`      | `shapes.dlp`         |
-| `GET /web-api/orgs/{org_id}`                | `org.view`      | `shapes.org`         |
-| `GET /web-api/orgs/{org_id}/knowledge`      | `org.knowledge` | `shapes.knowledge`; query `concept` |
-| `GET /web-api/teams/{team_id}/manage`       | `team.view`     | `shapes.team_manage` (calls broker `/manage` and `/usage`) |
-| `GET /web-api/teams/{team_id}`              | `my.team`       | `shapes.my_team`     |
-| `GET /web-api/invites/{token}`              | none, no session | `shapes.invite`; token length rule as today (20 to 200) |
+| Route                                  | Policy action    | Shape                                                      |
+| -------------------------------------- | ---------------- | ---------------------------------------------------------- |
+| `GET /web-api/session`                 | none             | `{"signed_in": false}` or `shapes.session`                 |
+| `GET /web-api/admin/orgs`              | `org.list`       | `shapes.admin_orgs`                                        |
+| `GET /web-api/admin/audit`             | `audit.read`     | `shapes.audit`                                             |
+| `GET /web-api/admin/dlp`               | `dlp.read`       | `shapes.dlp`                                               |
+| `GET /web-api/orgs/{org_id}`           | `org.view`       | `shapes.org`                                               |
+| `GET /web-api/orgs/{org_id}/knowledge` | `org.knowledge`  | `shapes.knowledge`; query `concept`                        |
+| `GET /web-api/teams/{team_id}/manage`  | `team.view`      | `shapes.team_manage` (calls broker `/manage` and `/usage`) |
+| `GET /web-api/teams/{team_id}`         | `my.team`        | `shapes.my_team`                                           |
+| `GET /web-api/invites/{token}`         | none, no session | `shapes.invite`; token length rule as today (20 to 200)    |
 
 `GET /web-api/session` never raises: no session, or a session that cannot be
 refreshed, answers `{"signed_in": false}`.
@@ -290,29 +308,37 @@ def test_session_reports_signed_out_without_a_cookie():
     assert r.status_code == 200 and r.json() == {"signed_in": False}
     assert r.headers["cache-control"] == "no-store"
 
+
 def test_page_data_needs_a_session_and_says_so_as_json():
     r = Browser().api_get("/admin/orgs")
-    assert r.status_code == 401 and r.json() == {"error": {"status": 401, "message": "You are signed out."}}
+    assert r.status_code == 401 and r.json() == {
+        "error": {"status": 401, "message": "You are signed out."}
+    }
+
 
 def test_admin_session_carries_no_identifiers():
     alice = sign_in("alice", "alice123")
     body = alice.api_get("/session").json()
     assert body["signed_in"] and body["me"]["is_admin"] and len(body["csrf"]) >= 24
-    assert "participant_id" not in json.dumps(body) and "team_orgs" not in json.dumps(body)
+    assert "participant_id" not in json.dumps(body) and "team_orgs" not in json.dumps(
+        body
+    )
+
 
 def test_unknown_org_is_a_json_404():
     alice = sign_in("alice", "alice123")
     r = alice.api_get(f"/orgs/{uuid.uuid4()}")
     assert r.status_code == 404 and r.json()["error"]["status"] == 404
 
+
 def test_invitation_lookup_needs_no_session():
     r = Browser().api_get("/invites/" + "x" * 30)
     assert r.status_code == 200 and r.json() == {"valid": False}
 ```
 
-- [ ] **Step 2:** Rebuild and restart `console-web` and `console-broker` with the
-      override, run `pixi run test <network> -- tests/test_web_api.py` (pass the
-      file the way the task accepts extra pytest arguments; if it does not,
+- [ ] **Step 2:** Rebuild and restart `console-web` and `console-broker` with
+      the override, run `pixi run test <network> -- tests/test_web_api.py` (pass
+      the file the way the task accepts extra pytest arguments; if it does not,
       run the test image's `pytest` by hand). Expected: 404s, tests fail.
 - [ ] **Step 3:** Move `Stop`, `Visit` and the error helpers into `visit.py`
       with the `api` flag. Write `api.py` with the routes above. The knowledge
@@ -339,34 +365,34 @@ def test_invitation_lookup_needs_no_session():
   returning `{"message": <today's flash text>}` plus the extras shown. Bodies
   are JSON with today's field names and the same trimming.
 
-| Route                                                        | Body                                                        | Extras                              |
-| ------------------------------------------------------------ | ----------------------------------------------------------- | ----------------------------------- |
-| `/admin/orgs`                                                | `name, slug, budget_ceiling`                                | `goto: /orgs/{id}`                  |
-| `/admin/orgs/{org_id}/suspend`, `/resume`                    | none                                                        |                                     |
-| `/admin/orgs/{org_id}/ceiling`                               | `budget_ceiling`                                            |                                     |
-| `/admin/orgs/{org_id}/remove`                                | `confirm_slug`                                              | `goto: /admin`                      |
-| `/admin/orgs/{org_id}/leads`                                 | `email`                                                     |                                     |
-| `/admin/orgs/{org_id}/lead-requests/{invite_id}`             | `approve: bool`                                             |                                     |
-| `/admin/orgs/{org_id}/leads/{person_id}/remove`              | none                                                        |                                     |
-| `/admin/orgs/{org_id}/lead-invites/{invite_id}/revoke`       | none                                                        |                                     |
-| `/admin/teams/{team_id}/remove`                              | `confirm_name`                                              | `goto: /orgs/{org_id}`              |
-| `/admin/teams/{team_id}/integrations`                        | `client_id, name, can_enroll: bool`                         |                                     |
-| `/admin/integrations/{integration_id}/remove`                | none                                                        | `goto: /teams/{team_id}/manage`     |
-| `/orgs/{org_id}/models`                                      | `provider, model, api_key, api_base, api_version`           |                                     |
-| `/orgs/{org_id}/models/{model_id}/remove`                    | none                                                        |                                     |
-| `/orgs/{org_id}/teams`                                       | `name, key_limit, key_budget, key_expiry_days, team_budget, consent_text` | `goto: /teams/{id}/manage` |
-| `/teams/{team_id}/invites`                                   | **multipart**: `emails`, `csv_file`                         |                                     |
-| `/teams/{team_id}/budget`                                    | `team_budget`                                               |                                     |
-| `/teams/{team_id}/models`                                    | `model_ids: [str]`                                          |                                     |
-| `/teams/{team_id}/archive`                                   | none                                                        |                                     |
-| `/teams/{team_id}/invites/{invite_id}/revoke`                | none                                                        |                                     |
-| `/teams/{team_id}/requests/{invite_id}`                      | `approve: bool`                                             |                                     |
-| `/teams/{team_id}/keys/{key_id}/revoke`, `/rotate`           | none                                                        |                                     |
-| `/teams/{team_id}/members/{person_id}/remove`                | none                                                        |                                     |
-| `/teams/{team_id}/my/consent`                                | `terms_accepted: bool, research_use: bool`                  |                                     |
-| `/teams/{team_id}/my/keys`                                   | `name`                                                      | `key: shapes.key(...)`, `rotated: false`, no `message` |
-| `/teams/{team_id}/my/keys/{key_id}/rotate`                   | none                                                        | `key: shapes.key(...)`, `rotated: true`, no `message`  |
-| `/teams/{team_id}/my/keys/{key_id}/delete`                   | none                                                        |                                     |
+| Route                                                  | Body                                                                      | Extras                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `/admin/orgs`                                          | `name, slug, budget_ceiling`                                              | `goto: /orgs/{id}`                                     |
+| `/admin/orgs/{org_id}/suspend`, `/resume`              | none                                                                      |                                                        |
+| `/admin/orgs/{org_id}/ceiling`                         | `budget_ceiling`                                                          |                                                        |
+| `/admin/orgs/{org_id}/remove`                          | `confirm_slug`                                                            | `goto: /admin`                                         |
+| `/admin/orgs/{org_id}/leads`                           | `email`                                                                   |                                                        |
+| `/admin/orgs/{org_id}/lead-requests/{invite_id}`       | `approve: bool`                                                           |                                                        |
+| `/admin/orgs/{org_id}/leads/{person_id}/remove`        | none                                                                      |                                                        |
+| `/admin/orgs/{org_id}/lead-invites/{invite_id}/revoke` | none                                                                      |                                                        |
+| `/admin/teams/{team_id}/remove`                        | `confirm_name`                                                            | `goto: /orgs/{org_id}`                                 |
+| `/admin/teams/{team_id}/integrations`                  | `client_id, name, can_enroll: bool`                                       |                                                        |
+| `/admin/integrations/{integration_id}/remove`          | none                                                                      | `goto: /teams/{team_id}/manage`                        |
+| `/orgs/{org_id}/models`                                | `provider, model, api_key, api_base, api_version`                         |                                                        |
+| `/orgs/{org_id}/models/{model_id}/remove`              | none                                                                      |                                                        |
+| `/orgs/{org_id}/teams`                                 | `name, key_limit, key_budget, key_expiry_days, team_budget, consent_text` | `goto: /teams/{id}/manage`                             |
+| `/teams/{team_id}/invites`                             | **multipart**: `emails`, `csv_file`                                       |                                                        |
+| `/teams/{team_id}/budget`                              | `team_budget`                                                             |                                                        |
+| `/teams/{team_id}/models`                              | `model_ids: [str]`                                                        |                                                        |
+| `/teams/{team_id}/archive`                             | none                                                                      |                                                        |
+| `/teams/{team_id}/invites/{invite_id}/revoke`          | none                                                                      |                                                        |
+| `/teams/{team_id}/requests/{invite_id}`                | `approve: bool`                                                           |                                                        |
+| `/teams/{team_id}/keys/{key_id}/revoke`, `/rotate`     | none                                                                      |                                                        |
+| `/teams/{team_id}/members/{person_id}/remove`          | none                                                                      |                                                        |
+| `/teams/{team_id}/my/consent`                          | `terms_accepted: bool, research_use: bool`                                |                                                        |
+| `/teams/{team_id}/my/keys`                             | `name`                                                                    | `key: shapes.key(...)`, `rotated: false`, no `message` |
+| `/teams/{team_id}/my/keys/{key_id}/rotate`             | none                                                                      | `key: shapes.key(...)`, `rotated: true`, no `message`  |
+| `/teams/{team_id}/my/keys/{key_id}/delete`             | none                                                                      |                                                        |
 
 Declare `/teams/{team_id}/invites` before any broader team route. The invite
 route keeps today's two refusals as `ApiError(422, ...)`: "That file is too
@@ -378,22 +404,36 @@ fail validation answer 422 with message "Some of those values are not valid.".
 ```python
 def test_posts_without_the_csrf_header_are_refused():
     alice = sign_in("alice", "alice123")
-    r = alice.api_post("/admin/orgs", {"name": "N", "slug": "n-x", "budget_ceiling": 1}, csrf=None)
+    r = alice.api_post(
+        "/admin/orgs", {"name": "N", "slug": "n-x", "budget_ceiling": 1}, csrf=None
+    )
     assert r.status_code == 403 and "expired" in r.json()["error"]["message"]
+
 
 def test_cross_site_posts_are_refused_before_anything_else():
     alice = sign_in("alice", "alice123")
-    r = alice.request("POST", CONSOLE + "/web-api/admin/orgs", headers={"Origin": "http://evil.example"})
+    r = alice.request(
+        "POST",
+        CONSOLE + "/web-api/admin/orgs",
+        headers={"Origin": "http://evil.example"},
+    )
     assert r.status_code == 403
+
 
 def test_a_bad_value_comes_back_as_a_message_not_a_stack_trace():
     alice = sign_in("alice", "alice123")
-    r = alice.api_post("/admin/orgs", {"name": "N", "slug": "Not A Slug", "budget_ceiling": 1})
+    r = alice.api_post(
+        "/admin/orgs", {"name": "N", "slug": "Not A Slug", "budget_ceiling": 1}
+    )
     assert r.status_code == 422 and isinstance(r.json()["error"]["message"], str)
+
 
 def test_creating_an_org_answers_with_a_message_and_where_to_go():
     alice = sign_in("alice", "alice123")
-    r = alice.api_post("/admin/orgs", {"name": f"Web API {RUN}", "slug": f"wa-{RUN}", "budget_ceiling": 5})
+    r = alice.api_post(
+        "/admin/orgs",
+        {"name": f"Web API {RUN}", "slug": f"wa-{RUN}", "budget_ceiling": 5},
+    )
     body = r.json()
     assert r.status_code == 200 and body["message"] == f"Created Web API {RUN}."
     assert body["goto"].startswith("/orgs/") and set(body) == {"message", "goto"}
@@ -411,8 +451,9 @@ def test_creating_an_org_answers_with_a_message_and_where_to_go():
 
 **Files:**
 
-- Modify: `tests/helpers.py`, `tests/test_console.py`, `tests/test_knowledge.py`,
-  `tests/test_dlp.py`, `tests/test_integration.py`, `tests/test_operator.py`
+- Modify: `tests/helpers.py`, `tests/test_console.py`,
+  `tests/test_knowledge.py`, `tests/test_dlp.py`, `tests/test_integration.py`,
+  `tests/test_operator.py`
 
 **Interfaces:**
 
@@ -438,17 +479,18 @@ Rules for the port:
 - `test_forms_refuse_cross_site_and_tokenless_posts` targets `/web-api/` posts
   and `POST /logout`.
 - `test_console_web_enforces_the_same_rules` targets `/web-api/` routes.
-- Knowledge: add an assertion that with no `concept` query the response holds
-  no concept text, and that with one it holds that concept's HTML only. The
+- Knowledge: add an assertion that with no `concept` query the response holds no
+  concept text, and that with one it holds that concept's HTML only. The
   untrusted-Markdown test asserts on `concept.html`.
 
 - [ ] **Step 1:** Port `helpers.py` and `test_console.py`. Rebuild is not
       needed; run the suite. Expected: `test_console.py` at the baseline.
-- [ ] **Step 2:** Port the other four files. Run the whole suite. Expected:
-      the baseline, with no test reading console HTML
+- [ ] **Step 2:** Port the other four files. Run the whole suite. Expected: the
+      baseline, with no test reading console HTML
       (`grep -n "\.text" tests/test_*.py` shows only Keycloak, Mailpit and
       gateway responses).
-- [ ] **Step 3:** Commit: `test(console): drive the suite through the browser API`.
+- [ ] **Step 3:** Commit:
+      `test(console): drive the suite through the browser API`.
 
 ---
 
@@ -459,8 +501,8 @@ application. The suite stays green because it no longer reads pages.
 
 **Files:**
 
-- Create: `frontend/` scaffold (see File Structure), `frontend/src/styles/ssec-tokens.css`,
-  `frontend/src/styles/app.css`
+- Create: `frontend/` scaffold (see File Structure),
+  `frontend/src/styles/ssec-tokens.css`, `frontend/src/styles/app.css`
 - Modify: `console_app/web/app.py`, `Dockerfile`, `pixi.toml`, `pixi.lock`,
   `.gitignore`, `.dockerignore`, `requirements.txt`
 - Delete: `console_app/web/templates/`, `console_app/web/static/`
@@ -478,8 +520,8 @@ application. The suite stays green because it no longer reads pages.
   - `app.py`: `/assets` served from `dist/assets`; any other `GET` not under
     `web-api/`, `api/` or `assets/` returns `dist/index.html`; those three
     prefixes answer 404 for unknown paths (JSON error shape under `web-api/`).
-    If `dist/index.html` is missing, 503 with plain text
-    "The console's front end has not been built.".
+    If `dist/index.html` is missing, 503 with plain text "The console's front
+    end has not been built.".
   - `GET /auth/callback` success: the "Signed in" page, built in Python with
     `html.escape`, still carrying
     `<meta http-equiv="refresh" content="0; url=<target>">` and a "Continue"
@@ -488,19 +530,26 @@ application. The suite stays green because it no longer reads pages.
     today's status codes.
   - CSP header: the exact string in Global Constraints.
   - Theme: Tailwind `@theme` in `app.css` maps shadcn variables to the vendored
-    tokens: `--primary: purple-700`, hover `purple-900`, `--destructive: #c62828`,
-    `--border: #d5d8de`, `--ring: #6b4fa6`, `--radius: 8px`, with the button
-    component overridden to radius 0, uppercase, `--font-compressed`, focus ring
+    tokens: `--primary: purple-700`, hover `purple-900`,
+    `--destructive: #c62828`, `--border: #d5d8de`, `--ring: #6b4fa6`,
+    `--radius: 8px`, with the button component overridden to radius 0,
+    uppercase, `--font-compressed`, focus ring
     `0 0 0 0.2rem rgba(75, 46, 131, 0.5)`. Fonts imported from self-hosted
     packages: Encode Sans, Encode Sans Compressed, Open Sans, JetBrains Mono.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_web_api.py`):
 
 ```python
-CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
-       "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' ")
+CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+    "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' "
+)
 
-@pytest.mark.parametrize("path", ["/", "/admin", "/orgs/abc", "/teams/abc/manage", "/invite/" + "x" * 30, "/nope"])
+
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/admin", "/orgs/abc", "/teams/abc/manage", "/invite/" + "x" * 30, "/nope"],
+)
 def test_every_page_url_serves_the_shell(path):
     r = Browser().get(path)
     assert r.status_code == 200 and '<div id="root">' in r.text
@@ -508,20 +557,26 @@ def test_every_page_url_serves_the_shell(path):
     assert "unsafe" not in r.headers["content-security-policy"]
     assert r.headers["cache-control"] == "no-store"
 
+
 def test_the_shell_loads_only_its_own_files():
     html = Browser().get("/").text
     urls = re.findall(r'(?:src|href)="([^"]+)"', html)
     assert urls and all(u.startswith("/assets/") for u in urls)
     assert "<script>" not in html and "style=" not in html
 
+
 def test_unknown_api_paths_are_not_the_shell():
     assert Browser().api_get("/nope").status_code == 404
     assert Browser().get("/api/v1/nope").status_code in (404, 405)
 
-@pytest.mark.parametrize("next_value", ["//evil.example", "https:evil.example", "/\\evil", "/" + "a" * 300])
+
+@pytest.mark.parametrize(
+    "next_value", ["//evil.example", "https:evil.example", "/\\evil", "/" + "a" * 300]
+)
 def test_a_crafted_next_lands_on_home(next_value):
     b = sign_in("alice", "alice123", start=("/login", {"next": next_value}))
     assert b.landed_path == "/"
+
 
 def test_a_failed_sign_in_returns_to_the_sign_in_screen():
     r = Browser().get("/auth/callback?code=x&state=y", follow=False)
@@ -532,10 +587,10 @@ def test_a_failed_sign_in_returns_to_the_sign_in_screen():
       "LLMoxie console".
 
 - [ ] **Step 2:** Run the Python tests. Expected: fail (pages are still Jinja).
-- [ ] **Step 3:** Vendor the tokens: fetch
-      `design-system/01-tokens.css` from `uw-ssec/uw-ssec.github.io` at commit
-      `d3f017b` into `frontend/src/styles/ssec-tokens.css`, with a header comment
-      giving the repository, path, commit and date (2026-09-11).
+- [ ] **Step 3:** Vendor the tokens: fetch `design-system/01-tokens.css` from
+      `uw-ssec/uw-ssec.github.io` at commit `d3f017b` into
+      `frontend/src/styles/ssec-tokens.css`, with a header comment giving the
+      repository, path, commit and date (2026-09-11).
 - [ ] **Step 4:** Scaffold the front end. Follow the current shadcn "Vite"
       installation guide (read it; the CLI changes between releases). Add
       `nodejs` (current active LTS) to the console `pixi.toml` and regenerate
@@ -558,7 +613,8 @@ def test_a_failed_sign_in_returns_to_the_sign_in_screen():
 - [ ] **Step 8:** Open `http://console.localhost:8000` in a browser. Expected:
       the placeholder renders in Encode Sans on a white page, and the browser
       console shows no content-security-policy violation.
-- [ ] **Step 9:** Commit: `feat(console)!: serve a React shell in place of the Jinja pages`.
+- [ ] **Step 9:** Commit:
+      `feat(console)!: serve a React shell in place of the Jinja pages`.
 
 ---
 
@@ -605,8 +661,8 @@ export function minute(iso: string): string                          // "2026-11
 
 Behaviour:
 
-- `get`/`post` send `credentials: "same-origin"`; `post` adds `X-CSRF-Token`.
-  A non-2xx answer with the error shape throws `ApiError(status, message)`. A
+- `get`/`post` send `credentials: "same-origin"`; `post` adds `X-CSRF-Token`. A
+  non-2xx answer with the error shape throws `ApiError(status, message)`. A
   reply that is not JSON throws
   `ApiError(502, "The console could not complete that. Nothing was changed.")`.
 - A 401 from any call other than `loadSession` sets
@@ -620,17 +676,17 @@ Behaviour:
 - Router: root loader calls `loadSession`. Signed out: the sign-in screen
   (`<form method="post" action="/login">` with a hidden `next` taken from the
   `next` query), plus the notice "That sign-in could not be completed. Please
-  start again." when `?signin=failed`. Signed in with no roles: Not invited.
-  A participant with exactly one team and no other role: redirect to
-  `/teams/{id}`. Otherwise Home. `/invite/:token` and
-  `/invite-result/:outcome` render without a session.
+  start again." when `?signin=failed`. Signed in with no roles: Not invited. A
+  participant with exactly one team and no other role: redirect to
+  `/teams/{id}`. Otherwise Home. `/invite/:token` and `/invite-result/:outcome`
+  render without a session.
 - Shell: navigation bar per the design system (purple-900, gold-200 links, 2px
   teal underline on the active link). Admin links: Organizations, Audit log,
   Data protection, and "LiteLLM UI" (external, `rel="noopener"`) when
   `config.litellm_admin_url` is set. The email, and Sign out as
   `<form method="post" action="/logout">` with a hidden `csrf` field.
-- Route error boundary: shows `ApiError.message` (403 "You do not have access
-  to that.", 404 "That does not exist.", others as given) and "Back to the
+- Route error boundary: shows `ApiError.message` (403 "You do not have access to
+  that.", 404 "That does not exist.", others as given) and "Back to the
   console".
 - Copy for every screen is today's template text, word for word.
 
@@ -660,7 +716,8 @@ it("keeps the confirm button disabled until the text matches exactly", ...)
 - [ ] **Step 4:** `pixi run ui-check`. Expected: pass. In the browser against
       the stack: sign in as alice, see Home, sign out; open an invitation link
       from Mailpit signed out.
-- [ ] **Step 5:** Commit: `feat(console): add the application shell and sign-in screens`.
+- [ ] **Step 5:** Commit:
+      `feat(console): add the application shell and sign-in screens`.
 
 ---
 
@@ -754,8 +811,9 @@ it("clears the provider key field after adding a model", ...)
 - Consumes: `GET /web-api/teams/{id}/manage` and the team actions from Task 3;
   `postForm` for invitations.
 
-Port `team_manage.html`. `live = is_lead && team.status === "active" &&
-team.org_status === "active"`. Rules from the template:
+Port `team_manage.html`.
+`live = is_lead && team.status === "active" && team.org_status === "active"`.
+Rules from the template:
 
 - Not a lead: the note "You are viewing this team as an SSEC admin. You can
   remove people from it; everything else here is for the organization's lead."
@@ -802,14 +860,15 @@ it("never renders a key value, only its hint", ...)
 - Consumes: `GET /web-api/teams/{id}`, the three `my/keys` actions and
   `my/consent`; `CodeBlock`; `currentSession().config.gateway_url`.
 
-Port `my_team.html`. `live = team.status === "active" && team.org_status ===
-"active"`; `agreed = consent?.terms_accepted`. Keys, "How to connect" and usage
-show only when `agreed`. "Create key" shows when `live` and the key count is
-under `team.key_limit`. A created or rotated key is kept in component state and
-shown at the top in a `CodeBlock` with a copy button and the text "Copy it now.
-It will not be shown again." (plus "The key it replaces no longer works." after
-a rotation). The create and rotate calls use `post` directly, not a router
-action, so the key never enters router or history state.
+Port `my_team.html`.
+`live = team.status === "active" && team.org_status === "active"`;
+`agreed = consent?.terms_accepted`. Keys, "How to connect" and usage show only
+when `agreed`. "Create key" shows when `live` and the key count is under
+`team.key_limit`. A created or rotated key is kept in component state and shown
+at the top in a `CodeBlock` with a copy button and the text "Copy it now. It
+will not be shown again." (plus "The key it replaces no longer works." after a
+rotation). The create and rotate calls use `post` directly, not a router action,
+so the key never enters router or history state.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -842,17 +901,17 @@ it("hides Create key at the key limit and on a closed team", ...)
 
 - Consumes: `GET /web-api/orgs/{id}/knowledge?concept=<id>`.
 
-Port `knowledge.html`. The selected concept is the `concept` query parameter,
-so links and reloads keep working. `concept.html` and `log_html` are inserted
-with `dangerouslySetInnerHTML` inside a container styled for prose; they are
-already sanitized by `web/markdown.py`. Clicks on links inside that container
-whose `href` starts with `?concept=` are intercepted and handled by the router,
-so they do not reload the page. `KnowledgeGraph` draws the SVG from
-`graph.nodes`, `graph.lines` and `graph.legend` exactly as the template did
-(viewBox from `graph.width` and `graph.height`, radius 8, label 22 below,
-arrow marker, `selected` and `faded` states); the six type colours `t0` to `t5`
-come from the token palette, in a stylesheet, not inline styles. Each node is a
-router link to `?concept=<id>`.
+Port `knowledge.html`. The selected concept is the `concept` query parameter, so
+links and reloads keep working. `concept.html` and `log_html` are inserted with
+`dangerouslySetInnerHTML` inside a container styled for prose; they are already
+sanitized by `web/markdown.py`. Clicks on links inside that container whose
+`href` starts with `?concept=` are intercepted and handled by the router, so
+they do not reload the page. `KnowledgeGraph` draws the SVG from `graph.nodes`,
+`graph.lines` and `graph.legend` exactly as the template did (viewBox from
+`graph.width` and `graph.height`, radius 8, label 22 below, arrow marker,
+`selected` and `faded` states); the six type colours `t0` to `t5` come from the
+token palette, in a stylesheet, not inline styles. Each node is a router link to
+`?concept=<id>`.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -885,8 +944,8 @@ it("explains how to add knowledge when there are no concepts", ...)
       mount of `dist`), so what is tested is what the `Dockerfile` builds.
 - [ ] **Step 2:** In a browser against the stack, with the developer console
       open, walk each role's main flow from the stack README's "Trying the
-      console" (admin, lead, participant), plus: an admin viewing a team they
-      do not lead, removing a team and an organization, a mismatched-email
+      console" (admin, lead, participant), plus: an admin viewing a team they do
+      not lead, removing a team and an organization, a mismatched-email
       invitation, and sign-out. Record any content-security-policy violation or
       failed request. Fix what is found, each fix with a test.
 - [ ] **Step 3:** Check against `DESIGN.md`: button corners, the three font
@@ -895,11 +954,10 @@ it("explains how to add knowledge when there are no concepts", ...)
 - [ ] **Step 4:** Run the whole end-to-end suite and `pixi run ui-check`.
       Expected: the Task 0 baseline plus every test this plan added.
 - [ ] **Step 5:** Update `README.md`: the service table ("Public pages" now a
-      React application served by `console-web`), the design point about
-      scripts (now: only the console's own script runs, under the policy in
-      this plan; a key is held in memory only), Getting started (the `ui-*`
-      tasks), and the Tests section (front-end tests; the suite drives
-      `/web-api/`).
+      React application served by `console-web`), the design point about scripts
+      (now: only the console's own script runs, under the policy in this plan; a
+      key is held in memory only), Getting started (the `ui-*` tasks), and the
+      Tests section (front-end tests; the suite drives `/web-api/`).
 - [ ] **Step 6:** Record in project memory with the `okf-memory` skill: the
       console's pages are a React application; the content security policy and
       why nothing may be added to it; `/web-api/` responses are built field by

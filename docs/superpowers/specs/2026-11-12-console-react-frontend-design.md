@@ -120,17 +120,17 @@ broker client.
 Four routes stay as plain browser navigations, not `fetch` calls, because each
 ends in a redirect to Keycloak on another origin:
 
-| Route                 | Stays as                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| `POST /login`         | A form post from the sign-in screen, carrying `next`                                        |
-| `GET /auth/callback`  | Sets the session cookie and returns the small "Signed in" page that forwards to the target  |
-| `POST /logout`        | A form post carrying the CSRF token                                                         |
-| `POST /invite/{token}`| A form post from the invitation screen; signs in first when there is no session            |
+| Route                  | Stays as                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| `POST /login`          | A form post from the sign-in screen, carrying `next`                                       |
+| `GET /auth/callback`   | Sets the session cookie and returns the small "Signed in" page that forwards to the target |
+| `POST /logout`         | A form post carrying the CSRF token                                                        |
+| `POST /invite/{token}` | A form post from the invitation screen; signs in first when there is no session            |
 
 The "Signed in" page stays a server-built page with a `meta refresh`, for the
 reason the code already gives: the Strict session cookie is only sent once a
-navigation starts from this site. It is the only HTML the server still writes.
-A failed sign-in redirects to `/?signin=failed` and the application shows the
+navigation starts from this site. It is the only HTML the server still writes. A
+failed sign-in redirects to `/?signin=failed` and the application shows the
 message.
 
 ### The browser API
@@ -157,16 +157,16 @@ the sign-in screen and the rest:
 
 Page data, one GET per screen:
 
-| Call                                           | Screen                    |
-| ---------------------------------------------- | ------------------------- |
-| `GET /web-api/admin/orgs`                      | Organizations             |
-| `GET /web-api/admin/audit`                     | Audit log                 |
-| `GET /web-api/admin/dlp`                       | Data protection           |
-| `GET /web-api/orgs/{org_id}`                   | Organization              |
-| `GET /web-api/orgs/{org_id}/knowledge`         | Knowledge                 |
-| `GET /web-api/teams/{team_id}/manage`          | Team, as lead or admin (includes usage) |
-| `GET /web-api/teams/{team_id}`                 | Team, as participant      |
-| `GET /web-api/invites/{token}`                 | Invitation (no session needed) |
+| Call                                   | Screen                                  |
+| -------------------------------------- | --------------------------------------- |
+| `GET /web-api/admin/orgs`              | Organizations                           |
+| `GET /web-api/admin/audit`             | Audit log                               |
+| `GET /web-api/admin/dlp`               | Data protection                         |
+| `GET /web-api/orgs/{org_id}`           | Organization                            |
+| `GET /web-api/orgs/{org_id}/knowledge` | Knowledge                               |
+| `GET /web-api/teams/{team_id}/manage`  | Team, as lead or admin (includes usage) |
+| `GET /web-api/teams/{team_id}`         | Team, as participant                    |
+| `GET /web-api/invites/{token}`         | Invitation (no session needed)          |
 
 **Each response carries only the fields its page shows today.** The broker's
 replies hold more than the templates render, and passing them through would send
@@ -209,13 +209,13 @@ Errors share one shape and keep today's status codes and wording:
 { "error": { "status": 409, "message": "That short name is taken." } }
 ```
 
-| Status      | Meaning today                                       | What the application does            |
-| ----------- | --------------------------------------------------- | ------------------------------------ |
-| 401         | No session, or it could not be refreshed            | Goes to `/` with `next` set          |
-| 403         | Policy or CSRF refusal                              | Shows the message                    |
-| 404         | Not found                                           | Shows the not-found screen           |
-| 409, 422    | A refusal the user can fix; the broker's `detail`   | Shows the message next to the form   |
-| 502         | The broker failed                                   | Shows "Nothing was changed."         |
+| Status   | Meaning today                                     | What the application does          |
+| -------- | ------------------------------------------------- | ---------------------------------- |
+| 401      | No session, or it could not be refreshed          | Goes to `/` with `next` set        |
+| 403      | Policy or CSRF refusal                            | Shows the message                  |
+| 404      | Not found                                         | Shows the not-found screen         |
+| 409, 422 | A refusal the user can fix; the broker's `detail` | Shows the message next to the form |
+| 502      | The broker failed                                 | Shows "Nothing was changed."       |
 
 Server-side flash storage in the session goes away, since messages now come back
 in the response.
@@ -242,8 +242,8 @@ exactly one team goes straight to it; everyone else sees the home screen.
 - **Keys:** a created or rotated key is held in React state for the screen that
   shows it and nowhere else. Navigating away or reloading loses it. Responses
   keep `Cache-Control: no-store`.
-- **Knowledge page:** Python still sanitizes the Markdown and returns HTML, which
-  the page inserts as is. The graph endpoint returns the node and line
+- **Knowledge page:** Python still sanitizes the Markdown and returns HTML,
+  which the page inserts as is. The graph endpoint returns the node and line
   coordinates `graph.py` computes, and React draws the SVG. The policy above is
   the second line of defence if sanitizing ever fails.
 - **Fonts:** bundled with the application. The SSEC site loads them from Google
@@ -257,8 +257,8 @@ exactly one team goes straight to it; everyone else sees the home screen.
 
 ### Front end
 
-Location: `services/console/frontend/`. Stack: Vite, React 19, TypeScript,
-React Router 7 and Tailwind 4, matching the SSEC site, with shadcn/ui components
+Location: `services/console/frontend/`. Stack: Vite, React 19, TypeScript, React
+Router 7 and Tailwind 4, matching the SSEC site, with shadcn/ui components
 copied into the source tree as shadcn intends.
 
 Design system mapping:
@@ -286,26 +286,26 @@ Design system mapping:
 
 Screens, each a port of one template:
 
-| Screen                  | Today's template     | Notable parts                                                                 |
-| ----------------------- | -------------------- | ----------------------------------------------------------------------------- |
-| Sign in                 | `login.html`         | One button; a plain form post                                                 |
-| Home                    | `home.html`          | Organizations you lead, your teams, admin links                               |
-| Not invited             | `not_invited.html`   | Message only                                                                  |
-| Invitation              | `invite.html`        | Public; one button; a plain form post                                         |
-| Invitation result       | `invite_result.html` | Waiting for approval, or cannot be used                                       |
-| Organizations (admin)   | `admin.html`         | Table, new organization form                                                  |
-| Audit log (admin)       | `audit.html`         | Table                                                                         |
-| Data protection (admin) | `dlp.html`           | Totals table, latest events table                                             |
-| Organization            | `org.html`           | Admin controls, leads, models, teams, add-model and new-team forms            |
-| Knowledge               | `knowledge.html`     | Concept text, graph, concept table, change log                                |
+| Screen                  | Today's template     | Notable parts                                                                                       |
+| ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------- |
+| Sign in                 | `login.html`         | One button; a plain form post                                                                       |
+| Home                    | `home.html`          | Organizations you lead, your teams, admin links                                                     |
+| Not invited             | `not_invited.html`   | Message only                                                                                        |
+| Invitation              | `invite.html`        | Public; one button; a plain form post                                                               |
+| Invitation result       | `invite_result.html` | Waiting for approval, or cannot be used                                                             |
+| Organizations (admin)   | `admin.html`         | Table, new organization form                                                                        |
+| Audit log (admin)       | `audit.html`         | Table                                                                                               |
+| Data protection (admin) | `dlp.html`           | Totals table, latest events table                                                                   |
+| Organization            | `org.html`           | Admin controls, leads, models, teams, add-model and new-team forms                                  |
+| Knowledge               | `knowledge.html`     | Concept text, graph, concept table, change log                                                      |
 | Team (lead or admin)    | `team_manage.html`   | Budget, models, people, invitations with CSV, keys, usage, archive, connected services, remove team |
-| Team (participant)      | `my_team.html`       | Terms and consent, keys, how to connect, usage                                |
-| Error and not found     | `error.html`         | Message and a way back                                                        |
+| Team (participant)      | `my_team.html`       | Terms and consent, keys, how to connect, usage                                                      |
+| Error and not found     | `error.html`         | Message and a way back                                                                              |
 
 Behaviour that changes shape:
 
-- Flash messages become toasts, or an inline alert next to the form for a 409 or
-  422.
+- Flash messages become toasts, or an inline alert next to the form for a 409
+  or 422.
 - After an action succeeds, the screen reloads its data, which is what the
   redirect did.
 - Removing an organization or a team keeps its type-the-name confirmation, now
@@ -370,8 +370,8 @@ Using the local stack:
 - `services/console/README.md`: the service table, the design point about pages
   running no script, the getting-started steps, and the tests section.
 - Root `knowledge/`: record through `okf` that the console's pages are now a
-  React application, what the content security policy allows, and why the key
-  is held in memory only.
+  React application, what the content security policy allows, and why the key is
+  held in memory only.
 
 ## Left to the builder
 
