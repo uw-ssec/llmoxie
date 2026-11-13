@@ -612,8 +612,11 @@ class LiteLLMProxyConfig(BaseModel):
     )
     trusted_proxy_ips: list[str] | None = Field(
         default=None,
-        description="Peers whose X-Forwarded-For Traefik keeps. Defaults to "
-        "networking.container_apps_subnet, where the Container Apps Envoy runs",
+        description="Peers whose X-Forwarded-For Traefik keeps. Required when the "
+        "edge is on, with no default: set it to the range the environment's "
+        "Envoy peers connect from (100.100.0.0/17 in the workload-profile "
+        "environment of #229). Never include the replica range "
+        "(100.100.192.0/19 there); see the infrastructure rule",
     )
     rate_limit_average: int = Field(
         default=50,
@@ -1187,8 +1190,16 @@ class LLMavenConfig(BaseModel):
                 f"edge.revision_suffix {edge.revision_suffix!r} is too long to "
                 "carry the policy digest: keep it at 54 characters or fewer"
             )
-        if edge.trusted_proxy_ips is None:
-            edge.trusted_proxy_ips = [self.networking.container_apps_subnet]
+        if not edge.trusted_proxy_ips:
+            raise ValueError(
+                "edge.trusted_proxy_ips is required when the edge is on: set it "
+                "to the range the environment's Envoy peers connect from. In the "
+                "workload-profile environment observed in #229 that is "
+                "100.100.0.0/17. Do not include the replica range (100.100.192.0/19 "
+                "observed there): replicas must stay untrusted, or one workload "
+                "could forge an allowlisted X-Forwarded-For. See issue #229 and "
+                ".agents/rules/infrastructure.md."
+            )
 
 
 def _memory_gi(value: str) -> float:

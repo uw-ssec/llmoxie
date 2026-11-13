@@ -21,6 +21,7 @@ EXISTING_STACK = {
     },
 }
 
+TRUSTED = ["100.100.0.0/17"]
 LITELLM_HOST = "ai.example.org"
 MLFLOW_HOST = "mlflow.example.org"
 
@@ -35,6 +36,7 @@ def _data(edge: dict | None = None, litellm: dict | None = None, mlflow=None) ->
         "edge": {
             "enabled": True,
             "custom_domains": _domains(LITELLM_HOST, MLFLOW_HOST),
+            "trusted_proxy_ips": TRUSTED,
             **(edge or {}),
         },
         "litellm": {
@@ -58,8 +60,35 @@ def test_edge_is_off_by_default():
     assert config.mlflow.hostname is None
 
 
-def test_trusted_proxy_ips_default_to_container_apps_subnet():
-    assert _config().edge.trusted_proxy_ips == ["172.16.0.0/23"]
+def test_trusted_proxy_ips_are_required_when_the_edge_is_on():
+    data = _data()
+    del data["edge"]["trusted_proxy_ips"]
+    with pytest.raises(ValueError, match=r"edge\.trusted_proxy_ips.*#229"):
+        LLMavenConfig.model_validate(data)
+
+
+def test_trusted_proxy_ips_error_names_the_ranges():
+    data = _data(edge={"trusted_proxy_ips": None})
+    with pytest.raises(ValueError) as error:
+        LLMavenConfig.model_validate(data)
+    message = str(error.value)
+    assert "100.100.0.0/17" in message
+    assert "100.100.192.0/19" in message
+
+
+def test_empty_trusted_proxy_ips_are_rejected():
+    with pytest.raises(ValueError, match=r"edge\.trusted_proxy_ips"):
+        _config(edge={"trusted_proxy_ips": []})
+
+
+def test_explicit_trusted_proxy_ips_are_kept():
+    config = _config(edge={"trusted_proxy_ips": ["10.0.0.0/24", "100.100.0.0/17"]})
+    assert config.edge.trusted_proxy_ips == ["10.0.0.0/24", "100.100.0.0/17"]
+
+
+def test_edge_off_needs_no_trusted_proxy_ips():
+    config = LLMavenConfig.model_validate({"edge": {"enabled": False}})
+    assert config.edge.trusted_proxy_ips is None
 
 
 def test_edge_needs_a_hostname_per_enabled_backend():

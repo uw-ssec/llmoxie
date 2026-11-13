@@ -84,6 +84,7 @@ def _config(**edge) -> LLMavenConfig:
             },
             "edge": {
                 "enabled": True,
+                "trusted_proxy_ips": ["100.100.0.0/17"],
                 "custom_domains": [
                     {"name": LITELLM_HOST, "certificate_name": "cert-0"},
                     {"name": MLFLOW_HOST, "certificate_name": "cert-1"},

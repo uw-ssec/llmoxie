@@ -116,7 +116,7 @@ def test_client_ip_comes_from_rightmost_forwarded_entry():
 def test_static_args_trust_only_configured_peers_and_ping_is_separate():
     args = build_edge_static_args(_cfg().edge)
     assert "--entryPoints.web.address=:8080" in args
-    assert "--entryPoints.web.forwardedHeaders.trustedIPs=172.16.0.0/23" in args
+    assert "--entryPoints.web.forwardedHeaders.trustedIPs=100.100.0.0/17" in args
     assert "--entryPoints.web.transport.respondingTimeouts.readTimeout=300s" in args
     assert f"--entryPoints.{EDGE_PING_ENTRYPOINT}.address=:8082" in args
     assert "--ping=true" in args

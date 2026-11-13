@@ -336,6 +336,7 @@ def _edge_config(**litellm):
         **ALL_ON,
         "edge": {
             "enabled": True,
+            "trusted_proxy_ips": ["100.100.0.0/17"],
             "custom_domains": [
                 {"name": "ai.example.org", "certificate_name": "cert-0"},
                 {"name": "mlflow.example.org", "certificate_name": "cert-1"},
