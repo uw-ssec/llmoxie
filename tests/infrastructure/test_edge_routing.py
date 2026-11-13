@@ -52,7 +52,9 @@ def test_litellm_catch_all_is_admin_only():
     admin = http["routers"]["litellm-admin"]
     assert admin["rule"] == f"Host(`{LITELLM_HOST}`)"
     assert admin["middlewares"] == ["litellm-admin-ip-allowlist", "client-rate-limit"]
-    assert admin["priority"] == min(r["priority"] for r in _litellm_routers(http).values())
+    assert admin["priority"] == min(
+        r["priority"] for r in _litellm_routers(http).values()
+    )
     allow = http["middlewares"]["litellm-admin-ip-allowlist"]["ipAllowList"]
     assert allow["sourceRange"] == ["203.0.113.0/24"]
 
