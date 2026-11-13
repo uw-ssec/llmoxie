@@ -3,11 +3,13 @@ FROM quay.io/keycloak/keycloak:26.5.5@sha256:a7b0cb7a43a1235a61872883414d3f1d9a3
 
 # Build-time options are baked in so the container can run `start --optimized`.
 ENV KC_DB=postgres \
+    KC_CACHE=local \
     KC_HEALTH_ENABLED=true \
     KC_METRICS_ENABLED=true
 
 RUN /opt/keycloak/bin/kc.sh build \
     --db=postgres \
+    --cache=local \
     --health-enabled=true \
     --metrics-enabled=true
 

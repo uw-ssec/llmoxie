@@ -14,9 +14,7 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-services.yml"
 
 def test_keycloak_base_is_pinned_by_digest():
     first_from = next(
-        line
-        for line in DOCKERFILE.read_text().splitlines()
-        if line.startswith("FROM ")
+        line for line in DOCKERFILE.read_text().splitlines() if line.startswith("FROM ")
     )
     assert re.search(
         r"quay\.io/keycloak/keycloak:26\.\d+\.\d+@sha256:[0-9a-f]{64}", first_from
@@ -28,6 +26,7 @@ def test_keycloak_is_built_for_postgres_with_health():
     for needle in (
         "kc.sh build",
         "--db=postgres",
+        "--cache=local",
         "--health-enabled=true",
         "--metrics-enabled=true",
     ):

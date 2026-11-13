@@ -96,6 +96,7 @@ jobs:
           echo "- 🐳 MLflow: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-mlflow\`" >> $GITHUB_STEP_SUMMARY
           echo "- 🐳 LiteLLM: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-litellm\`" >> $GITHUB_STEP_SUMMARY
           echo "- 🐳 Backup: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backup\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Keycloak: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-keycloak\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Registry" >> $GITHUB_STEP_SUMMARY
           echo "Images are available at: [\`${{ env.REGISTRY }}/${{ github.repository }}\`](https://${{ env.REGISTRY }}/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
@@ -105,4 +106,5 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-mlflow:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-litellm:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backup:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-keycloak:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
