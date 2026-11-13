@@ -35,7 +35,7 @@ class Browser:
         self.http = httpx.Client(follow_redirects=False, timeout=60)
         self.set_cookie_headers: list[str] = []
 
-    def request(self, method, url, *, data=None, files=None, headers=None, follow=True):
+    def request(self, method, url, *, data=None, files=None, json=None, headers=None, follow=True):
         for _ in range(12):
             host = urlsplit(url).netloc
             sent = dict(headers or {})
@@ -43,7 +43,7 @@ class Browser:
                 sent["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.cookies[host].items())
             if method == "POST" and url.startswith(CONSOLE):
                 sent.setdefault("Origin", CONSOLE)
-            response = self.http.request(method, url, data=data, files=files, headers=sent)
+            response = self.http.request(method, url, data=data, files=files, json=json, headers=sent)
             for header in response.headers.get_list("set-cookie"):
                 self.set_cookie_headers.append(header)
                 name, _, rest = header.partition("=")
@@ -56,7 +56,7 @@ class Browser:
             if follow and response.status_code in (301, 302, 303, 307):
                 url = urljoin(url, response.headers["location"])
                 if response.status_code != 307:
-                    method, data, files = "GET", None, None
+                    method, data, files, json = "GET", None, None, None
                 continue
             return response
         raise AssertionError("too many redirects")
@@ -80,6 +80,17 @@ class Browser:
     def page(self, path):
         return self.remember_csrf(self.get(path))
 
+    def api_get(self, path, **kwargs):
+        """Ask console-web's browser API for a page's data, the way the application does."""
+        return self.request("GET", CONSOLE + "/web-api" + path, **kwargs)
+
+    def api_post(self, path, json=None, *, files=None, data=None, csrf=...):
+        """Post an action to the browser API, sending the session's CSRF token the way the application does.
+        `csrf=None` leaves the token out; any other value is sent in its place."""
+        token = getattr(self, "csrf", None) if csrf is ... else csrf
+        headers = {"X-CSRF-Token": token} if token else {}
+        return self.request("POST", CONSOLE + "/web-api" + path, json=json, data=data, files=files, headers=headers)
+
 
 def _submit_keycloak_login(browser: Browser, response, email, password, follow=True):
     action = re.search(r'id="kc-form-login"[^>]*action="([^"]+)"', response.text)
@@ -98,6 +109,9 @@ def sign_in(email: str, password: str, start=None) -> Browser:
     target = re.search(r'http-equiv="refresh" content="0; url=([^"]+)"', response.text).group(1)
     browser.landed = browser.page(target)
     browser.landed_path = target
+    session = browser.api_get("/session")
+    if session.status_code == 200 and session.json().get("signed_in"):
+        browser.csrf = session.json()["csrf"]
     return browser
 
 

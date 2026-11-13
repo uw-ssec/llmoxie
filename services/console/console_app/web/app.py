@@ -10,22 +10,23 @@ import hmac
 import io
 import os
 import secrets
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import policy
-from . import graph, markdown, oidc, sessions
+from . import api, oidc, sessions
+from .api import DLP_ACTIONS
+from .visit import BROKER_URL, CALLER_SECRET, NOT_VALID, ApiError, Stop, see_other
+from .visit import Visit as BaseVisit
+from .visit import broker_plain as _broker_plain
 
-BROKER_URL = os.environ["CONSOLE_BROKER_URL"]
-CALLER_SECRET = os.environ["CONSOLE_BROKER_CALLER_SECRET"]
 PUBLIC_URL = os.environ["CONSOLE_PUBLIC_URL"]
 GATEWAY_URL = os.environ["GATEWAY_PUBLIC_URL"]
 LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", "")
@@ -65,16 +66,24 @@ async def harden(request: Request, call_next):
 
 # ── Plumbing ────────────────────────────────────────────────────────────────
 
-class Stop(Exception):
-    """Ends the request with a ready response (a redirect or an error page)."""
-
-    def __init__(self, response: Response):
-        self.response = response
-
-
 @app.exception_handler(Stop)
 def stop(_, exc: Stop):
     return exc.response
+
+
+@app.exception_handler(ApiError)
+def api_error(_, exc: ApiError):
+    return JSONResponse({"error": {"status": exc.status, "message": exc.message}}, status_code=exc.status)
+
+
+@app.exception_handler(RequestValidationError)
+def not_valid(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/web-api/"):
+        return JSONResponse({"error": {"status": 422, "message": NOT_VALID}}, status_code=422)
+    return JSONResponse({"detail": "Not valid"}, status_code=422)
+
+
+app.include_router(api.router)
 
 
 def page(request: Request, name: str, status: int = 200, **context) -> HTMLResponse:
@@ -85,64 +94,15 @@ def error(request: Request, status: int, message: str) -> Stop:
     return Stop(page(request, "error.html", status, message=message, me=None))
 
 
-def see_other(path: str) -> RedirectResponse:
-    return RedirectResponse(path, status_code=303)
+class Visit(BaseVisit):
+    """A signed-in request for an HTML page: refusals are error pages, and messages wait in the session."""
 
+    def refuse(self, status: int, message: str) -> Exception:
+        return error(self.request, status, message)
 
-class Visit:
-    """One signed-in request: the session, the user's roles, and a way to call the broker as them."""
-
-    def __init__(self, request: Request):
-        self.request = request
-        self.sid = request.cookies.get(sessions.SESSION_COOKIE)
-        self.data = sessions.load(self.sid)
-        if not self.data:
-            # Signed out: go to the sign-in page, and come back here afterwards if this was a page view.
-            back = f"/?next={quote(request.url.path, safe='')}" if request.method == "GET" else "/"
-            raise Stop(see_other(back))
-        if self.data["expires_at"] - time.time() < 30:  # access tokens live a few minutes
-            try:
-                self.data.update(oidc.refresh(self.data["refresh_token"]))
-                sessions.save(self.sid, self.data)
-            except Exception:
-                sessions.delete(self.sid)
-                raise Stop(see_other("/")) from None
-        self.me = self.broker("GET", "/me")
-        self.actor = policy.Actor(
-            person_id=self.me["person_id"], is_admin=self.me["is_admin"],
-            lead_orgs=frozenset(o["id"] for o in self.me["lead_orgs"]),
-            member_teams={t["id"]: t["org_id"] for t in self.me["teams"]})
-
-    def broker(self, method: str, path: str, json: dict | None = None, back: str | None = None):
-        """Call a broker operation. With `back`, a refusal the user can fix returns them there with the reason."""
-        headers = {"X-Console-Caller": CALLER_SECRET, "Authorization": f"Bearer {self.data['access_token']}"}
-        with httpx.Client(base_url=BROKER_URL, timeout=40) as client:
-            response = client.request(method, path, json=json, headers=headers)
-        if response.status_code < 300:
-            return response.json()
-        if response.status_code == 401:
-            sessions.delete(self.sid)
-            raise Stop(see_other("/"))
-        if response.status_code == 403:
-            raise error(self.request, 403, "You do not have access to that.")
-        if response.status_code == 404:
-            raise error(self.request, 404, "That does not exist.")
-        if response.status_code in (409, 422) and back:
-            detail = response.json().get("detail")
-            self.flash(detail if isinstance(detail, str) else "Some of those values are not valid.", "bad")
-            raise Stop(see_other(back))
-        raise error(self.request, 502, "The console could not complete that. Nothing was changed.")
-
-    def require(self, action: str, *, org_id: str | None = None, team_id: str | None = None) -> None:
-        """The same policy the broker applies, checked here first. The org always comes from /me, not the URL."""
-        if team_id is not None:
-            org_id = self.me["team_orgs"].get(team_id)
-        if not policy.allowed(self.actor, action, org_id=org_id, team_id=team_id):
-            raise error(self.request, 403, "You do not have access to that.")
-
-    def check_csrf(self, token: str) -> None:
-        if not hmac.compare_digest(token.encode(), self.data["csrf"].encode()):
-            raise error(self.request, 403, "This form has expired. Go back, reload the page and try again.")
+    def fixable(self, status: int, message: str, back: str | None) -> Exception:
+        self.flash(message, "bad")
+        return Stop(see_other(back))
 
     def flash(self, message: str, kind: str = "good") -> None:
         self.data["flash"] = {"message": message, "kind": kind}
@@ -230,15 +190,6 @@ def logout(request: Request, csrf: str = Form()):
 
 
 # ── Invites ─────────────────────────────────────────────────────────────────
-
-def _broker_plain(path: str, json: dict, access_token: str | None = None) -> dict:
-    headers = {"X-Console-Caller": CALLER_SECRET}
-    if access_token:
-        headers["Authorization"] = f"Bearer {access_token}"
-    with httpx.Client(base_url=BROKER_URL, timeout=20) as client:
-        response = client.post(path, json=json, headers=headers)
-    return response.json() if response.status_code < 300 else {"valid": False, "outcome": "invalid"}
-
 
 def accept_invite(request: Request, data: dict, token: str) -> str:
     """Use the invite as the signed-in user and return where to send them."""
@@ -393,10 +344,6 @@ def admin_audit(request: Request):
     return visit.render("audit.html", events=visit.broker("GET", "/admin/audit"))
 
 
-DLP_ACTIONS = {"block": "refused", "blocked": "refused", "mask": "hidden from the model",
-               "whistledown": "swapped for a stand-in", "observe": "only noted"}
-
-
 @app.get("/admin/dlp")
 def admin_dlp(request: Request):
     visit = Visit(request)
@@ -419,16 +366,10 @@ def org_knowledge(request: Request, org_id: str, concept: str = ""):
     visit = Visit(request)
     visit.require("org.knowledge", org_id=org_id)
     view = visit.broker("GET", f"/orgs/{quote(org_id)}/knowledge")
-    by_id = {c["id"]: c for c in view["concepts"]}
-    chosen = by_id.get(concept)
-    for c in view["concepts"]:
-        c["links"] = sum(c["id"] in (e["source"], e["target"]) for e in view["edges"])
-    links_out = [{**by_id[e["target"]], "note": e["note"]} for e in view["edges"] if chosen and e["source"] == chosen["id"]]
-    links_in = [{**by_id[e["source"]], "note": e["note"]} for e in view["edges"] if chosen and e["target"] == chosen["id"]]
-    return visit.render("knowledge.html", concept=chosen, links_out=links_out, links_in=links_in,
-                        body=markdown.render(chosen["body"], chosen["id"], set(by_id)) if chosen else "",
-                        log_text=markdown.render(view["log"]),
-                        graph=graph.picture(view["concepts"], view["edges"], chosen["id"] if chosen else None), **view)
+    parts = api.knowledge_parts(view, concept)
+    return visit.render("knowledge.html", concept=parts["concept"], links_out=parts["links_out"],
+                        links_in=parts["links_in"], body=parts["body_html"], log_text=parts["log_html"],
+                        graph=parts["graph"], **view)
 
 
 @app.post("/orgs/{org_id}/models")
