@@ -485,6 +485,21 @@ class ContainerAppConfig(BaseModel):
     )
 
 
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    r"(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
+)
+
+
+def _check_hostname(v: str | None) -> str | None:
+    if v is not None and not _HOSTNAME_RE.match(v):
+        raise ValueError(
+            f"Invalid hostname {v!r}: use a lower-case DNS name with no scheme, "
+            "port, path or backtick"
+        )
+    return v
+
+
 class MLflowConfig(ContainerAppConfig):
     """MLflow-specific configuration."""
 
@@ -506,6 +521,13 @@ class MLflowConfig(ContainerAppConfig):
         },
         description="MLflow Key Vault secret references",
     )
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to MLflow; must be one of "
+        "edge.custom_domains",
+    )
+
+    check_hostname = field_validator("hostname")(_check_hostname)
 
 
 # LiteLLM v1.106.6 inference routes that stay public behind the proxy, with
@@ -534,6 +556,19 @@ DEFAULT_PUBLIC_PATHS = [
 # because the platform probes reach LiteLLM through the proxy. Other /health/*
 # routes expose configuration and admin actions, so they stay allowlisted.
 DEFAULT_HEALTH_PATHS = ["/health/liveliness", "/health/liveness"]
+
+
+def _check_cidrs(v: list[str] | None) -> list[str] | None:
+    for cidr in v or []:
+        ipaddress.ip_network(cidr, strict=False)
+    return v
+
+
+def _check_paths(v: list[str]) -> list[str]:
+    for path in v:
+        if not path.startswith("/") or "`" in path:
+            raise ValueError(f"Invalid path {path!r}: must start with '/'")
+    return v
 
 
 class LiteLLMProxyConfig(BaseModel):
@@ -597,17 +632,12 @@ class LiteLLMProxyConfig(BaseModel):
     @field_validator("admin_allowed_ips", "trusted_proxy_ips")
     @classmethod
     def validate_cidrs(cls, v: list[str] | None) -> list[str] | None:
-        for cidr in v or []:
-            ipaddress.ip_network(cidr, strict=False)
-        return v
+        return _check_cidrs(v)
 
     @field_validator("public_paths", "health_paths")
     @classmethod
     def validate_paths(cls, v: list[str]) -> list[str]:
-        for path in v:
-            if not path.startswith("/") or "`" in path:
-                raise ValueError(f"Invalid path {path!r}: must start with '/'")
-        return v
+        return _check_paths(v)
 
 
 class LiteLLMConfig(ContainerAppConfig):
@@ -664,6 +694,67 @@ class LiteLLMConfig(ContainerAppConfig):
         default_factory=LiteLLMProxyConfig,
         description="Optional Traefik sidecar for path-level access control",
     )
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to LiteLLM; must be one of "
+        "edge.custom_domains",
+    )
+    admin_allowed_ips: list[str] = Field(
+        default_factory=list,
+        description="Client CIDRs the edge lets reach non-public paths. Empty "
+        "blocks the admin surface for everyone",
+    )
+    public_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_PUBLIC_PATHS),
+        description="Exact paths the edge serves to any IP",
+    )
+    health_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_HEALTH_PATHS),
+        description="Exact unauthenticated health paths the edge serves to any IP",
+    )
+
+    check_hostname = field_validator("hostname")(_check_hostname)
+    # Same checks as LiteLLMProxyConfig, reused rather than copied.
+    validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
+    validate_paths = field_validator("public_paths", "health_paths")(_check_paths)
+
+
+class EdgeConfig(ContainerAppConfig):
+    """Standalone Traefik edge: the only public entry point of the stack.
+
+    Routes by hostname to LiteLLM and MLflow, which then take internal ingress.
+    """
+
+    enabled: bool = Field(default=False, description="Run the Traefik edge")
+    image: str = Field(
+        default=LiteLLMProxyConfig.model_fields["image"].default,
+        description="Traefik image, pinned by digest",
+    )
+    port: int = Field(default=8080, ge=1, le=65535, description="Traefik port")
+    ping_port: int = Field(
+        default=8082, ge=1, le=65535, description="Traefik ping (health) port"
+    )
+    max_replicas: int = Field(default=3, description="Maximum replicas", ge=1)
+    trusted_proxy_ips: list[str] | None = Field(
+        default=None,
+        description="Peers whose X-Forwarded-For Traefik keeps. Defaults to "
+        "networking.container_apps_subnet, where the Container Apps Envoy runs",
+    )
+    rate_limit_average: int = Field(
+        default=50,
+        ge=1,
+        description="Requests per second per client IP, per replica",
+    )
+    rate_limit_burst: int = Field(
+        default=100, ge=1, description="Burst size per client IP, per replica"
+    )
+    log_forwarded_for: bool = Field(
+        default=False,
+        description="Temporary staging diagnostic: JSON access logs with the raw "
+        "peer (ClientAddr) and X-Forwarded-For; other headers stay dropped",
+    )
+
+    validate_cidrs = field_validator("trusted_proxy_ips")(_check_cidrs)
 
 
 class LLMavenAPIConfig(ContainerAppConfig):
@@ -908,6 +999,10 @@ class LLMavenConfig(BaseModel):
     litellm: LiteLLMConfig = Field(
         default_factory=LiteLLMConfig, description="LiteLLM container app"
     )
+    edge: EdgeConfig = Field(
+        default_factory=EdgeConfig,
+        description="Standalone Traefik edge in front of LiteLLM and MLflow",
+    )
     llmaven_api: LLMavenAPIConfig = Field(
         default_factory=LLMavenAPIConfig, description="LLMaven API container app"
     )
@@ -1009,6 +1104,64 @@ class LLMavenConfig(BaseModel):
                 self.litellm.cpu + proxy.cpu,
                 _memory_gi(self.litellm.memory) + _memory_gi(proxy.memory),
             )
+
+        self._validate_edge()
+
+    def _validate_edge(self) -> None:
+        edge = self.edge
+        if not edge.enabled:
+            return
+        litellm, mlflow = self.litellm, self.mlflow
+        domains = {d.name for d in edge.custom_domains}
+
+        if litellm.proxy.enabled:
+            raise ValueError(
+                "edge.enabled and litellm.proxy.enabled are both true. The edge "
+                "replaces the sidecar: set litellm.proxy.enabled to false and move "
+                "its policy to litellm.hostname and litellm.admin_allowed_ips."
+            )
+        backends = []
+        if litellm.enabled:
+            backends.append(("litellm", litellm))
+        if mlflow.enabled:
+            backends.append(("mlflow", mlflow))
+        for name, app in backends:
+            if app.hostname is None:
+                raise ValueError(
+                    f"edge.enabled is true but {name}.hostname is not set: the "
+                    f"edge routes to {name} by hostname."
+                )
+            if app.hostname not in domains:
+                raise ValueError(
+                    f"{name}.hostname {app.hostname!r} is not listed in "
+                    "edge.custom_domains: add it there."
+                )
+        for name, app in (("litellm", litellm), ("mlflow", mlflow)):
+            if app.custom_domains:
+                raise ValueError(
+                    f"{name}.custom_domains must be empty when the edge is on: "
+                    f"move those hostnames to edge.custom_domains."
+                )
+        if litellm.enabled and mlflow.enabled and litellm.hostname == mlflow.hostname:
+            raise ValueError(
+                f"litellm.hostname and mlflow.hostname are both {litellm.hostname!r}: "
+                "they must differ"
+            )
+        if litellm.ip_security_restrictions:
+            raise ValueError(
+                "litellm.ip_security_restrictions must be empty when the edge is "
+                "on: LiteLLM ingress becomes internal, so use "
+                "litellm.admin_allowed_ips instead."
+            )
+        if litellm.enabled and not litellm.health_paths:
+            raise ValueError(
+                "litellm.health_paths must not be empty when the edge is on: the "
+                "platform probes reach LiteLLM through the first health path"
+            )
+        if edge.port == edge.ping_port:
+            raise ValueError("edge.port and edge.ping_port must differ")
+        if edge.trusted_proxy_ips is None:
+            edge.trusted_proxy_ips = [self.networking.container_apps_subnet]
 
 
 def _memory_gi(value: str) -> float:

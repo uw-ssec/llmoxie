@@ -658,6 +658,13 @@ def validate_config(
             )
             print("   ⚠️  Geo-redundant backup not enabled")
 
+        if config.edge.enabled and config.edge.min_replicas < 2:
+            warnings.append(
+                "Production environment should run the edge with edge.min_replicas "
+                "of at least 2: it is the single entry point"
+            )
+            print("   ⚠️  edge.min_replicas is below 2")
+
         print()
 
     # Summary
