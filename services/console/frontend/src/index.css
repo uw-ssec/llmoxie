@@ -140,3 +140,90 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Text the server made from a concept's Markdown (pages/knowledge.tsx). Plain elements, styled here. */
+@layer components {
+  .doc {
+    @apply max-w-[75ch] text-base leading-relaxed;
+  }
+  .doc > * + * {
+    @apply mt-4;
+  }
+  .doc :is(h1, h2, h3, h4, h5, h6) {
+    @apply mt-6 font-heading text-lg leading-snug font-semibold text-foreground;
+  }
+  .doc :is(ul, ol) {
+    @apply pl-6;
+  }
+  .doc ul {
+    @apply list-disc;
+  }
+  .doc ol {
+    @apply list-decimal;
+  }
+  .doc a {
+    @apply underline;
+  }
+  .doc a:not([href]) {
+    @apply text-muted-foreground no-underline; /* a link the server removed the address from */
+  }
+  .doc pre {
+    @apply overflow-x-auto rounded-md bg-terminal p-4 text-terminal-foreground;
+  }
+  .doc pre code {
+    @apply font-normal;
+  }
+  .doc blockquote {
+    @apply border-l-4 border-border pl-4 text-muted-foreground;
+  }
+  .doc :is(th, td) {
+    @apply border border-border px-3 py-1.5 text-left;
+  }
+
+  /* The knowledge graph (components/knowledge-graph.tsx). Six colours for concept types, from the
+     design system's palette; teal marks what is selected, as it marks the page you are on. */
+  .knowledge-graph {
+    @apply block h-auto w-full min-w-140;
+  }
+  .knowledge-graph line {
+    stroke: var(--color-neutral-400);
+    stroke-width: 1;
+  }
+  .knowledge-graph line.on {
+    stroke: var(--color-teal-600);
+    stroke-width: 2;
+  }
+  .knowledge-graph marker path {
+    fill: var(--color-neutral-500);
+  }
+  .knowledge-graph text {
+    font-size: 11px;
+    fill: var(--text-primary);
+    paint-order: stroke;
+    stroke: var(--surface-primary);
+    stroke-width: 3px;
+  }
+  .knowledge-graph a {
+    @apply cursor-pointer no-underline;
+  }
+  .knowledge-graph a.faded {
+    opacity: 0.35;
+  }
+  .knowledge-graph circle {
+    stroke: var(--surface-primary);
+    stroke-width: 2;
+  }
+  .knowledge-graph a.on circle {
+    stroke: var(--color-teal-600);
+    stroke-width: 3;
+  }
+  .knowledge-graph a:is(:hover, :focus-visible) circle {
+    stroke: var(--color-purple-900);
+  }
+  :is(.knowledge-graph, .knowledge-graph-key) circle.t0 { fill: var(--color-purple-700); }
+  :is(.knowledge-graph, .knowledge-graph-key) circle.t1 { fill: var(--color-gold-700); }
+  :is(.knowledge-graph, .knowledge-graph-key) circle.t2 { fill: var(--color-teal-600); }
+  :is(.knowledge-graph, .knowledge-graph-key) circle.t3 { fill: var(--color-pink-600); }
+  :is(.knowledge-graph, .knowledge-graph-key) circle.t4 { fill: var(--color-green-600); }
+  :is(.knowledge-graph, .knowledge-graph-key) circle.t5 { fill: var(--color-neutral-600); }
+}

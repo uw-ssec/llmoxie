@@ -4,6 +4,7 @@ import { AdminOrgsPage } from '@/pages/admin-orgs'
 import { AuditPage } from '@/pages/audit'
 import { DataProtectionPage } from '@/pages/dlp'
 import { Frame, Landing } from '@/pages/frame'
+import { KnowledgePageView } from '@/pages/knowledge'
 import { ErrorScreen, InvitationPage, InvitationResult } from '@/pages/messages'
 import { MyTeamPageView } from '@/pages/my-team'
 import { OrgPageView } from '@/pages/org'
@@ -43,6 +44,15 @@ export const routes: RouteObject[] = [
           { path: 'admin/audit', loader: page(() => '/admin/audit'), element: <AuditPage /> },
           { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <DataProtectionPage /> },
           { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <OrgPageView /> },
+          {
+            path: 'orgs/:orgId/knowledge',
+            // Which concept is open is part of the address, so a link to it and a reload both work.
+            loader: page(({ params, request }) => {
+              const concept = new URL(request.url).searchParams.get('concept')
+              return `/orgs/${params.orgId}/knowledge` + (concept ? `?concept=${encodeURIComponent(concept)}` : '')
+            }),
+            element: <KnowledgePageView />,
+          },
           { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <MyTeamPageView /> },
           { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <TeamManagePageView /> },
           {
