@@ -120,6 +120,7 @@ def test_edge_needs_health_paths():
         "ai.example.org/v1",
         "a`b.example.org",
         "AI.example.org",
+        "ai.example.org\n",
     ],
 )
 def test_invalid_hostname_is_rejected(hostname):
@@ -127,6 +128,13 @@ def test_invalid_hostname_is_rejected(hostname):
         LLMavenConfig.model_validate({"litellm": {"hostname": hostname}})
     with pytest.raises(PydanticValidationError):
         LLMavenConfig.model_validate({"mlflow": {"hostname": hostname}})
+
+
+def test_duplicate_edge_custom_domains_are_rejected():
+    with pytest.raises(ValueError, match=LITELLM_HOST):
+        _config(
+            edge={"custom_domains": _domains(LITELLM_HOST, MLFLOW_HOST, LITELLM_HOST)}
+        )
 
 
 def test_existing_sidecar_config_still_validates():

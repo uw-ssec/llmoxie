@@ -492,7 +492,7 @@ _HOSTNAME_RE = re.compile(
 
 
 def _check_hostname(v: str | None) -> str | None:
-    if v is not None and not _HOSTNAME_RE.match(v):
+    if v is not None and not _HOSTNAME_RE.fullmatch(v):
         raise ValueError(
             f"Invalid hostname {v!r}: use a lower-case DNS name with no scheme, "
             "port, path or backtick"
@@ -1112,7 +1112,14 @@ class LLMavenConfig(BaseModel):
         if not edge.enabled:
             return
         litellm, mlflow = self.litellm, self.mlflow
-        domains = {d.name for d in edge.custom_domains}
+        names = [d.name for d in edge.custom_domains]
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        if duplicates:
+            raise ValueError(
+                f"edge.custom_domains lists {duplicates} more than once: each "
+                "hostname must appear once."
+            )
+        domains = set(names)
 
         if litellm.proxy.enabled:
             raise ValueError(
