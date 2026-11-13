@@ -16,6 +16,13 @@ MAX_REVISION_NAME_LENGTH = 54
 # A pinned edge suffix gets "-p<POLICY_SUFFIX_LENGTH hex>" (the policy digest).
 POLICY_SUFFIX_LENGTH = 8
 EDGE_APP_SUFFIX = "traefik"
+KEYCLOAK_APP_SUFFIX = "keycloak"
+MLFLOW_LOGIN_APP_SUFFIX = "ml-auth"
+LITELLM_LOGIN_APP_SUFFIX = "llm-auth"
+# Azure caps a Container App or Job name at 32 characters.
+CONTAINER_APP_NAME_MAX = 32
+# Clients the stack's realm import defines; realm.overrides cannot redefine them.
+STACK_CLIENT_IDS = ("mlflow-gate", "litellm-gate", "litellm", "llmaven-cli")
 _APP_ENVIRONMENTS = ("dev", "staging", "prod", "test")
 
 
@@ -36,10 +43,20 @@ def edge_app_base_name(project_name: str, environment: str) -> str:
     return f"{project_name}-{environment}-{EDGE_APP_SUFFIX}"
 
 
+def container_app_name(project_name: str, environment: str, suffix: str) -> str:
+    """A stack Container App's real name, as Azure sees it."""
+    base = f"{project_name}-{environment}-{suffix}"
+    return f"{base}-{container_app_environment(base)}"
+
+
 def edge_app_name(project_name: str, environment: str) -> str:
     """The edge Container App's real name, as Azure sees it."""
-    base = edge_app_base_name(project_name, environment)
-    return f"{base}-{container_app_environment(base)}"
+    return container_app_name(project_name, environment, EDGE_APP_SUFFIX)
+
+
+def realm_job_name(project_name: str, environment: str) -> str:
+    """The Keycloak realm-import Container Apps Job's name."""
+    return f"{project_name}-realm-{environment}"
 
 
 class ProjectConfig(BaseModel):
@@ -568,6 +585,26 @@ def _check_hostname(v: str | None) -> str | None:
     return v
 
 
+class LoginConfig(BaseModel):
+    """Keycloak sign-in in front of an app, through an oauth2-proxy app."""
+
+    enabled: bool = Field(
+        default=False, description="Require a Keycloak login for this app"
+    )
+    role: str = Field(description="Realm role a user needs to be let in")
+
+
+def _login_with_default_role(role: str):
+    """Before-validator: a `login:` block that omits `role` gets the app's."""
+
+    def fill(v: Any) -> Any:
+        if isinstance(v, dict) and "role" not in v:
+            return {**v, "role": role}
+        return v
+
+    return field_validator("login", mode="before")(staticmethod(fill))
+
+
 class MLflowConfig(ContainerAppConfig):
     """MLflow-specific configuration."""
 
@@ -595,7 +632,13 @@ class MLflowConfig(ContainerAppConfig):
         "edge.custom_domains",
     )
 
+    login: LoginConfig = Field(
+        default_factory=lambda: LoginConfig(role="mlflow-user"),
+        description="Keycloak login for the MLflow UI",
+    )
+
     check_hostname = field_validator("hostname")(_check_hostname)
+    default_login_role = _login_with_default_role("mlflow-user")
 
 
 # LiteLLM v1.106.6 inference routes that stay public behind the proxy, with
@@ -781,6 +824,12 @@ class LiteLLMConfig(ContainerAppConfig):
         description="Exact unauthenticated health paths the edge serves to any IP",
     )
 
+    login: LoginConfig = Field(
+        default_factory=lambda: LoginConfig(role="litellm-admin"),
+        description="Keycloak login for the LiteLLM UI",
+    )
+
+    default_login_role = _login_with_default_role("litellm-admin")
     check_hostname = field_validator("hostname")(_check_hostname)
     # Same checks as LiteLLMProxyConfig, reused rather than copied.
     validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
@@ -826,6 +875,98 @@ class EdgeConfig(ContainerAppConfig):
     )
 
     validate_cidrs = field_validator("trusted_proxy_ips")(_check_cidrs)
+
+
+class KeycloakRealmConfig(BaseModel):
+    """The realm the stack imports into Keycloak."""
+
+    name: str = Field(
+        default="llmoxie",
+        pattern=r"^[a-z][a-z0-9-]{1,30}$",
+        description="Realm name",
+    )
+    display_name: str = Field(default="LLMoxie", description="Realm display name")
+    secret_refs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Realm-import env var name to Key Vault secret name",
+    )
+    overrides: dict = Field(
+        default_factory=dict,
+        description="Realm JSON merged over the stack's realm. It cannot "
+        f"redefine the stack's clients ({', '.join(STACK_CLIENT_IDS)})",
+    )
+
+    @field_validator("overrides")
+    @classmethod
+    def validate_overrides(cls, v: dict) -> dict:
+        for client in v.get("clients") or []:
+            client_id = client.get("clientId") if isinstance(client, dict) else None
+            if client_id in STACK_CLIENT_IDS:
+                raise ValueError(
+                    f"realm.overrides.clients redefines the stack's client "
+                    f"{client_id!r}; the stack owns {', '.join(STACK_CLIENT_IDS)}. "
+                    "Add clients under a new clientId instead."
+                )
+        return v
+
+
+def _check_digest(v: str) -> str:
+    if "@sha256:" not in v:
+        raise ValueError(
+            f"Image {v!r} must be pinned by digest (name@sha256:...): this stack "
+            "runs it with credentials, so a moving tag is not accepted"
+        )
+    return v
+
+
+class KeycloakConfig(BaseModel):
+    """Keycloak behind the edge, plus the realm import and the login proxies."""
+
+    enabled: bool = Field(default=False, description="Run Keycloak behind the edge")
+    image: str = Field(
+        default="ghcr.io/uw-ssec/llmoxie-keycloak:latest",
+        description="Keycloak image",
+    )
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to Keycloak; must be one of "
+        "edge.custom_domains",
+    )
+    admin_allowed_ips: list[str] = Field(
+        default_factory=list,
+        description="Client CIDRs the edge lets reach the Keycloak admin console. "
+        "Empty closes it to everyone",
+    )
+    # keycloak-config-cli 6.5.1-26.5.5: the newest tag built for Keycloak 26.x
+    # (adorsys/keycloak-config-cli, published 2026-05-22), by its multi-arch
+    # index digest.
+    config_cli_image: str = Field(
+        default="docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5"
+        "@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274",
+        description="keycloak-config-cli image, pinned by digest",
+    )
+    # oauth2-proxy v7.15.6, by its multi-arch index digest; the version the
+    # local prototype uses and the newest v7.15.x.
+    oauth2_proxy_image: str = Field(
+        default="quay.io/oauth2-proxy/oauth2-proxy:v7.15.6"
+        "@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048",
+        description="oauth2-proxy image, pinned by digest",
+    )
+    cpu: float = Field(default=1.0, description="Keycloak CPU cores", ge=0.25)
+    memory: str = Field(default="2Gi", description="Keycloak memory")
+    realm: KeycloakRealmConfig = Field(default_factory=KeycloakRealmConfig)
+    revision_suffix: str | None = Field(
+        default=None, description="Keycloak revision name suffix"
+    )
+    refresh_trigger: str | None = Field(
+        default=None, description="Fixed REFRESH_TRIGGER value for Keycloak"
+    )
+
+    check_hostname = field_validator("hostname")(_check_hostname)
+    validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
+    check_digests = field_validator("config_cli_image", "oauth2_proxy_image")(
+        _check_digest
+    )
 
 
 class LLMavenAPIConfig(ContainerAppConfig):
@@ -1074,6 +1215,10 @@ class LLMavenConfig(BaseModel):
         default_factory=EdgeConfig,
         description="Standalone Traefik edge in front of LiteLLM and MLflow",
     )
+    keycloak: KeycloakConfig = Field(
+        default_factory=KeycloakConfig,
+        description="Keycloak sign-in behind the edge",
+    )
     llmaven_api: LLMavenAPIConfig = Field(
         default_factory=LLMavenAPIConfig, description="LLMaven API container app"
     )
@@ -1177,6 +1322,82 @@ class LLMavenConfig(BaseModel):
             )
 
         self._validate_edge()
+        self._validate_keycloak()
+        self._validate_app_names()
+
+    def _validate_keycloak(self) -> None:
+        keycloak, edge = self.keycloak, self.edge
+        for name, app in (("mlflow", self.mlflow), ("litellm", self.litellm)):
+            if app.login.enabled and not keycloak.enabled:
+                raise ValueError(
+                    f"{name}.login.enabled is true but keycloak.enabled is false: "
+                    "the login signs users in through Keycloak."
+                )
+        if not keycloak.enabled:
+            return
+        if not edge.enabled:
+            raise ValueError(
+                "keycloak.enabled needs edge.enabled: Keycloak is reached only "
+                "through the edge."
+            )
+        if keycloak.hostname is None:
+            raise ValueError(
+                "keycloak.enabled is true but keycloak.hostname is not set: the "
+                "edge routes to Keycloak by hostname."
+            )
+        if keycloak.hostname not in {d.name for d in edge.custom_domains}:
+            raise ValueError(
+                f"keycloak.hostname {keycloak.hostname!r} is not listed in "
+                "edge.custom_domains: add it there."
+            )
+        for name, app in (("litellm", self.litellm), ("mlflow", self.mlflow)):
+            if app.hostname == keycloak.hostname:
+                raise ValueError(
+                    f"keycloak.hostname and {name}.hostname are both "
+                    f"{keycloak.hostname!r}: they must differ"
+                )
+        if "keycloak_db" not in self.database.databases:
+            self.database.databases.append("keycloak_db")
+
+    def _validate_app_names(self) -> None:
+        """Azure caps Container App and Job names; check those that will exist."""
+        project, env = self.project.name, self.project.environment
+        names: list[tuple[str, str]] = []
+        if self.edge.enabled:
+            names.append(("edge app", edge_app_name(project, env)))
+        if self.keycloak.enabled:
+            names.append(("realm job", realm_job_name(project, env)))
+            names.append(
+                (
+                    "Keycloak app",
+                    container_app_name(project, env, KEYCLOAK_APP_SUFFIX),
+                )
+            )
+        if self.mlflow.login.enabled:
+            names.append(
+                (
+                    "MLflow login app",
+                    container_app_name(project, env, MLFLOW_LOGIN_APP_SUFFIX),
+                )
+            )
+        if self.litellm.login.enabled:
+            names.append(
+                (
+                    "LiteLLM login app",
+                    container_app_name(project, env, LITELLM_LOGIN_APP_SUFFIX),
+                )
+            )
+        too_long = [
+            f"{kind} {name!r} is {len(name)} characters"
+            for kind, name in names
+            if len(name) > CONTAINER_APP_NAME_MAX
+        ]
+        if too_long:
+            raise ValueError(
+                f"Azure caps these names at {CONTAINER_APP_NAME_MAX} characters: "
+                + "; ".join(too_long)
+                + ". Shorten project.name."
+            )
 
     def _validate_edge(self) -> None:
         edge = self.edge
