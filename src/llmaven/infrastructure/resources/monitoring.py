@@ -71,6 +71,14 @@ LLM_SPEND_QUERY = (
     "| extend r = parse_json(substring(Log_s, 14)) "
     "| summarize spend = sum(todouble(r.spend))"
 )
+# Azure carries an alert's custom properties only in webhook, Logic App, Azure
+# Function and Automation runbook payloads. They do not appear in the email,
+# SMS or push notifications, nor on the portal's alert details page, so this
+# hint reaches an operator only once such a receiver is added to the action
+# group.
+LLM_SPEND_INVESTIGATE = (
+    "llmaven ops spend-report --start <date> --end <date> -e <env file>"
+)
 
 # Window sizes of 60 minutes and above use hour notation in ISO 8601.
 _HOUR_WINDOWS = {60: "PT1H", 360: "PT6H", 720: "PT12H", 1440: "PT24H"}
@@ -382,7 +390,9 @@ def _llm_spend(ctx: _Context) -> dict[str, pulumi.CustomResource]:
                 ]
             ),
             actions=azure_native.monitor.ActionsArgs(
-                action_groups=[ctx.action_group.id]
+                action_groups=[ctx.action_group.id],
+                # Payload-only; see LLM_SPEND_INVESTIGATE.
+                custom_properties={"investigate": LLM_SPEND_INVESTIGATE},
             ),
             tags=ctx.tags,
         )

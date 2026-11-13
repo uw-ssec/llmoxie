@@ -184,6 +184,9 @@ llmaven infra status                      # View deployment status
 llmaven infra extract --from 2026-01-01 --to 2026-01-31  # Logs/traces to a JSONL zip
 llmaven infra destroy --yes               # Tear down resources
 
+# Operator reports
+llmaven ops spend-report --start 2026-01-01 --end 2026-01-07  # Spend by key/user/model/team vs prior window
+
 # Backup storage commands
 llmaven backup-infra deploy --yes         # Deploy the backup storage infrastructure
 llmaven backup-infra output --name <key>  # Print a backup stack output value
