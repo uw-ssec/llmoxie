@@ -1,4 +1,6 @@
 ## 2026-11-13
+* **Update**: Linked `decisions/console-design-direction.md` to `decisions/console-dashboard-layout.md` (The direction and review behind the dashboard layout that concept describes).
+* **Creation**: Documented concept `decisions/console-design-direction.md` (The console's design direction, what the design review settled, and what it left open).
 * **Update**: Updated concept `decisions/console-dashboard-layout.md`.
 * **Update**: Linked `decisions/console-dashboard-layout.md` to `decisions/console-react-front-end.md` (The dashboard layout is built on that React front end and keeps its rules: the strict content security policy, field-by-field responses, keys in memory only).
 * **Creation**: Documented concept `decisions/console-dashboard-layout.md` (The console is a sidebar dashboard that shows only figures the server sent, with no charts until analytics exist).
