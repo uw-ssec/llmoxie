@@ -171,10 +171,12 @@ def compare(
             continue
         prior = baseline.get(label, 0.0)
         ratio: float | None = spend / prior if prior > 0 else None
-        if ratio is None:
-            flag = "new" if spend > 0 else ""
+        if prior > 0:
+            # Compare against the product rather than the ratio: dividing
+            # first can round across the threshold in either direction.
+            flag = "spike" if spend >= threshold * prior else ""
         else:
-            flag = "spike" if ratio >= threshold else ""
+            flag = "new" if spend > 0 else ""
         rows.append(SpendRow(label, spend, prior, ratio, flag))
     rows.sort(key=lambda row: (-row.spend, row.label))
     return rows

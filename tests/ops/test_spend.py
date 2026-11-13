@@ -137,21 +137,43 @@ class TestCompare:
         current = {
             "spiker": 20.0,  # exactly threshold * prior
             "newcomer": 15.0,  # no baseline spend
+            "zeroed": 13.0,  # in the baseline, but with a prior of exactly 0.0
             "steady": 12.0,  # below threshold
             "quiet": 0.0,  # no spend, no prior: not "new"
         }
-        baseline = {"spiker": 10.0, "steady": 11.0, "gone": 50.0}
+        baseline = {"spiker": 10.0, "steady": 11.0, "zeroed": 0.0, "gone": 50.0}
 
         rows = compare(current, baseline, threshold=2.0)
 
         # Rows come only from current, sorted by spend descending.
-        assert [row.label for row in rows] == ["spiker", "newcomer", "steady", "quiet"]
-        assert [row.flag for row in rows] == ["spike", "new", "", ""]
-        assert [row.prior for row in rows] == [10.0, 0.0, 11.0, 0.0]
+        assert [row.label for row in rows] == [
+            "spiker",
+            "newcomer",
+            "zeroed",
+            "steady",
+            "quiet",
+        ]
+        assert [row.flag for row in rows] == ["spike", "new", "new", "", ""]
+        assert [row.prior for row in rows] == [10.0, 0.0, 0.0, 11.0, 0.0]
         assert rows[0].ratio == 2.0
         assert rows[1].ratio is None  # prior == 0, so no ratio
-        assert rows[2].ratio == pytest.approx(12.0 / 11.0)
-        assert rows[3].ratio is None
+        assert rows[2].ratio is None  # prior of exactly 0.0 is still no ratio
+        assert rows[3].ratio == pytest.approx(12.0 / 11.0)
+        assert rows[4].ratio is None
+
+    def test_compare_spike_at_decimal_boundary(self):
+        # 134.01 == 3.0 * 44.67 exactly in binary floating point, but the
+        # ratio rounds down to 2.9999999999999996, so comparing the ratio
+        # against the threshold would miss this spike.
+        rows = compare({"spiker": 134.01}, {"spiker": 44.67}, threshold=3.0)
+        assert rows[0].flag == "spike"
+        assert rows[0].ratio == pytest.approx(3.0)
+
+    def test_compare_no_spike_just_under_decimal_boundary(self):
+        # The reverse: the ratio rounds up to exactly 1.5 while the spend is
+        # below 1.5 * 4.7, so comparing the ratio would flag a false spike.
+        rows = compare({"creeper": 7.05}, {"creeper": 4.7}, threshold=1.5)
+        assert rows[0].flag == ""
 
     def test_compare_sorts_ties_by_label(self):
         current = {"beta": 5.0, "alpha": 5.0, "gamma": 9.0}
