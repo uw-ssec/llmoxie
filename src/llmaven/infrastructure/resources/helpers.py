@@ -226,6 +226,7 @@ def create_mlflow_app(
     tags: dict[str, str] | None = None,
     opts: pulumi.ResourceOptions | None = None,
     custom_domains: list[CustomDomainConfig] | None = None,
+    ingress_external: bool = True,
 ) -> azure_native.app.ContainerApp:
     """Create MLflow Container App.
 
@@ -292,7 +293,7 @@ def create_mlflow_app(
         environment=environment,
         tags=tags,
         enable_ingress=True,
-        ingress_external=True,
+        ingress_external=ingress_external,
         custom_domains=custom_domains,
         opts=opts,
     )
@@ -325,6 +326,7 @@ def create_litellm_app(
     redis_clustering_policy: str = "EnterpriseCluster",
     proxy: LiteLLMProxyConfig | None = None,
     ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
+    ingress_external: bool = True,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -491,7 +493,7 @@ def create_litellm_app(
         environment=environment,
         tags=tags,
         enable_ingress=True,
-        ingress_external=True,
+        ingress_external=ingress_external,
         revision_suffix=revision_suffix,
         refresh_trigger=refresh_trigger,
         custom_domains=custom_domains,

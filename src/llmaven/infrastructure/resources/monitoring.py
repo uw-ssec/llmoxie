@@ -105,6 +105,7 @@ class _Context:
     subscription_id: str
     project_name: str
     environment: str
+    edge_app: azure_native.app.ContainerApp | None = None
 
 
 def _metric_alert(
@@ -215,7 +216,10 @@ def _replica_restarts(ctx: _Context) -> dict[str, pulumi.CustomResource]:
     """
     cfg = ctx.alerts_config.replica_restarts
     created: dict[str, pulumi.CustomResource] = {}
-    for label, app in (("litellm", ctx.litellm_app), ("mlflow", ctx.mlflow_app)):
+    apps = [("litellm", ctx.litellm_app), ("mlflow", ctx.mlflow_app)]
+    if ctx.edge_app is not None:
+        apps.append(("edge", ctx.edge_app))
+    for label, app in apps:
         if app is None:
             _warn_skipped("replica_restarts", f"{label} app")
             continue
@@ -402,6 +406,7 @@ def create_monitoring(
     postgres_server: azure_native.dbforpostgresql.Server | None,
     backup_job: azure_native.app.Job | None,
     tags: dict[str, str],
+    edge_app: azure_native.app.ContainerApp | None = None,
 ) -> MonitoringResources | None:
     """Create the email action group and the enabled alerts.
 
@@ -436,6 +441,7 @@ def create_monitoring(
         action_group=action_group,
         litellm_app=litellm_app,
         mlflow_app=mlflow_app,
+        edge_app=edge_app,
         postgres_server=postgres_server,
         tags=tags,
         location=location,

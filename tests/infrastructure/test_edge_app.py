@@ -41,7 +41,7 @@ def _runtime_state() -> dict:
 
 
 @contextlib.contextmanager
-def _isolated_mocks():
+def _isolated_mocks(mocks=None):
     """Run under Pulumi mocks, then put back the runtime settings and root.
 
     set_mocks overwrites the attributes of the global SETTINGS object in place,
@@ -49,7 +49,9 @@ def _isolated_mocks():
     """
     settings = pulumi.runtime.settings
     saved = _runtime_state()
-    pulumi.runtime.set_mocks(_Mocks(), project="llmaven", stack="dev", preview=False)
+    pulumi.runtime.set_mocks(
+        mocks or _Mocks(), project="llmaven", stack="dev", preview=False
+    )
     try:
         yield
     finally:
