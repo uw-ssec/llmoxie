@@ -901,7 +901,13 @@ class KeycloakRealmConfig(BaseModel):
     def validate_overrides(cls, v: dict) -> dict:
         for client in v.get("clients") or []:
             client_id = client.get("clientId") if isinstance(client, dict) else None
-            if client_id in STACK_CLIENT_IDS:
+            if isinstance(client_id, str) and "$(" in client_id:
+                raise ValueError(
+                    f"realm.overrides.clients has clientId {client_id!r} with a "
+                    "$( substitution: it could resolve to one of the stack's "
+                    "clients. Use a literal clientId."
+                )
+            if isinstance(client_id, str) and client_id.lower() in STACK_CLIENT_IDS:
                 raise ValueError(
                     f"realm.overrides.clients redefines the stack's client "
                     f"{client_id!r}; the stack owns {', '.join(STACK_CLIENT_IDS)}. "
@@ -910,11 +916,14 @@ class KeycloakRealmConfig(BaseModel):
         return v
 
 
+_PINNED_IMAGE_RE = re.compile(r"^[^@\s]*[^@\s/]:[^@\s/:]+@sha256:[0-9a-f]{64}$")
+
+
 def _check_digest(v: str) -> str:
-    if "@sha256:" not in v:
+    if not _PINNED_IMAGE_RE.fullmatch(v):
         raise ValueError(
-            f"Image {v!r} must be pinned by digest (name@sha256:...): this stack "
-            "runs it with credentials, so a moving tag is not accepted"
+            f"Image {v!r} must be pinned as <name>:<tag>@sha256:<64 hex digits>: "
+            "this stack runs it with credentials, so a moving tag is not accepted"
         )
     return v
 
@@ -964,9 +973,6 @@ class KeycloakConfig(BaseModel):
 
     check_hostname = field_validator("hostname")(_check_hostname)
     validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
-    check_digests = field_validator("config_cli_image", "oauth2_proxy_image")(
-        _check_digest
-    )
 
 
 class LLMavenAPIConfig(ContainerAppConfig):
@@ -1340,6 +1346,8 @@ class LLMavenConfig(BaseModel):
                 "keycloak.enabled needs edge.enabled: Keycloak is reached only "
                 "through the edge."
             )
+        _check_digest(keycloak.config_cli_image)
+        _check_digest(keycloak.oauth2_proxy_image)
         if keycloak.hostname is None:
             raise ValueError(
                 "keycloak.enabled is true but keycloak.hostname is not set: the "

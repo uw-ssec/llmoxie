@@ -42,7 +42,12 @@ def _data(keycloak=None, litellm=None, mlflow=None, project=None) -> dict:
             "custom_domains": _domains(LITELLM_HOST, MLFLOW_HOST, AUTH_HOST),
             "trusted_proxy_ips": ["100.100.0.0/17"],
         },
-        "litellm": {"cpu": 2, "memory": "4Gi", "hostname": LITELLM_HOST, **(litellm or {})},
+        "litellm": {
+            "cpu": 2,
+            "memory": "4Gi",
+            "hostname": LITELLM_HOST,
+            **(litellm or {}),
+        },
         "mlflow": {"hostname": MLFLOW_HOST, **(mlflow or {})},
         "keycloak": {"enabled": True, "hostname": AUTH_HOST, **(keycloak or {})},
     }
@@ -181,9 +186,7 @@ def test_logins_off_do_not_check_their_names():
     LLMavenConfig.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "project, env", [("llmaven-iss", "prod"), ("llmaven", "dev")]
-)
+@pytest.mark.parametrize("project, env", [("llmaven-iss", "prod"), ("llmaven", "dev")])
 def test_container_app_name_matches_edge_helper(project, env):
     assert container_app_name(project, env, "traefik") == edge_app_name(project, env)
 
@@ -216,3 +219,44 @@ def test_empty_keycloak_admin_ips_warns(tmp_path, capsys):
     ):
         validate_config(path, strict=False)
     assert "keycloak.admin_allowed_ips" in capsys.readouterr().out
+
+
+def test_unpinned_images_are_ignored_with_keycloak_off():
+    data = _data(keycloak={"config_cli_image": "x:latest"})
+    data["keycloak"]["enabled"] = False
+    LLMavenConfig.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "x@sha256:",
+        "x:1@sha256:" + "X" * 64,
+        "x:1@sha256:" + "a" * 63,
+        "x@sha256:" + "a" * 64,
+        "x:1@sha256:" + "a" * 64 + " ",
+    ],
+)
+def test_images_need_a_full_pinned_reference(image):
+    with pytest.raises(ValueError, match="sha256"):
+        _config(keycloak={"oauth2_proxy_image": image})
+
+
+def test_default_images_and_registry_ports_are_accepted():
+    _config()
+    _config(keycloak={"config_cli_image": "reg:5000/x:1@sha256:" + "a" * 64})
+
+
+@pytest.mark.parametrize("client_id", ["$(env:CLIENT_ID)", "a-$(x)"])
+def test_override_client_ids_cannot_use_substitution(client_id):
+    with pytest.raises(ValueError, match=r"\$\("):
+        _config(
+            keycloak={"realm": {"overrides": {"clients": [{"clientId": client_id}]}}}
+        )
+
+
+def test_override_client_ids_are_compared_case_insensitively():
+    with pytest.raises(ValueError, match="LiteLLM"):
+        _config(
+            keycloak={"realm": {"overrides": {"clients": [{"clientId": "LiteLLM"}]}}}
+        )
