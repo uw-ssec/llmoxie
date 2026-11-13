@@ -230,9 +230,9 @@ validation error otherwise; the hostnames now live on Traefik).
   now only Traefik reaches, so it must be empty; per-host IP rules are Traefik's
   job. Validation error otherwise.
 - The `mlflow-tracking-uri` secret is built from MLflow's ingress FQDN, which is
-  the internal one once its ingress is internal, so it changes with no code
-  change. Operators running `infra extract --source mlflow` set the public
-  MLflow hostname in their env file.
+  internal when the edge is on, so it changes with no code change. Operators
+  running `infra extract --source mlflow` set the public MLflow hostname in
+  their env file.
 - Monitoring alerts target the apps' own metrics, which still see every request;
   the builder checks that `monitoring.py` needs no change and adds Traefik's
   restarts to the replica-restart alert.
@@ -261,8 +261,10 @@ mlflow:
 
 Validation: every backend `hostname` is in `edge.custom_domains` and appears
 once; with `edge.enabled`, backends have no `custom_domains` and LiteLLM has no
-`ip_security_restrictions`; without `edge.enabled` the stack deploys exactly as
-it does today, so existing configs keep working until each environment is moved.
+`ip_security_restrictions`, and `edge.enabled` with
+`litellm.proxy.enabled: true` is an error (see 1.4); without `edge.enabled` the
+stack deploys exactly as it does today, so existing configs keep working until
+each environment is moved.
 
 ### 1.6 Stage 1 rollout
 
@@ -505,9 +507,10 @@ Per environment, staging first, with a recent `pg_dump` of `litellm_db`:
 - Unit tests (`tests/infrastructure/`):
   - stage 1: the edge renderer per host (no prefix route on LiteLLM, unknown
     paths 404, XFF from trusted peers only), backends get internal ingress,
-    hostname and migration validation (`litellm.proxy` refused with a pointer),
-    the tracking URI is internal, and a config without `edge` renders exactly
-    today's templates;
+    hostname and migration validation (`edge.enabled` together with
+    `litellm.proxy.enabled` refused with a pointer to the new fields), the
+    tracking URI is internal when the edge is on, and a config without `edge`
+    renders exactly today's templates;
   - stage 2: schema defaults and validation; realm rendering (clients, roles,
     mappers, variables, overrides merging by key, no secret values in the
     document); Keycloak's host rules (`/admin/` allowlisted); the job's digest
@@ -535,8 +538,9 @@ Per environment, staging first, with a recent `pg_dump` of `litellm_db`:
 - `knowledge/decisions/litellm-image-digest-pin-and-one-way-upgrade.md`: the
   pinned image is the fork's.
 - `knowledge/requirements/traefik-sidecar-allowlist-and-client-ip.md`: the
-  sidecar is replaced by a standalone Traefik with internal-only backends, and
-  the staging results.
+  standalone Traefik with internal-only backends replaces the sidecar on stacks
+  that enable it, the sidecar is removed once every stack has moved, and the
+  staging results.
 - New decision: Keycloak is the identity provider, realm in the config YAML
   applied by keycloak-config-cli, `keycloak_db` on point-in-time backups, and
   why (replaces the Entra plan).
