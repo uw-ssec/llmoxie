@@ -11,6 +11,37 @@ from typing import Any, Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# Azure caps a revision name, "<container app name>--<suffix>", at 54 characters.
+MAX_REVISION_NAME_LENGTH = 54
+# A pinned edge suffix gets "-p<POLICY_SUFFIX_LENGTH hex>" (the policy digest).
+POLICY_SUFFIX_LENGTH = 8
+EDGE_APP_SUFFIX = "traefik"
+_APP_ENVIRONMENTS = ("dev", "staging", "prod", "test")
+
+
+def container_app_environment(name: str) -> str:
+    """Environment suffix the Container App helper adds to an app's name.
+
+    The first of dev/staging/prod/test found among the name's dash-separated
+    parts, else "dev".
+    """
+    for part in name.split("-"):
+        if part in _APP_ENVIRONMENTS:
+            return part
+    return "dev"
+
+
+def edge_app_base_name(project_name: str, environment: str) -> str:
+    """Name the deploy passes for the edge, before the environment suffix."""
+    return f"{project_name}-{environment}-{EDGE_APP_SUFFIX}"
+
+
+def edge_app_name(project_name: str, environment: str) -> str:
+    """The edge Container App's real name, as Azure sees it."""
+    base = edge_app_base_name(project_name, environment)
+    return f"{base}-{container_app_environment(base)}"
+
+
 class ProjectConfig(BaseModel):
     """Project information configuration."""
 
@@ -1185,11 +1216,19 @@ class LLMavenConfig(BaseModel):
                 "edge.min_replicas must be at least 1: the edge is the front "
                 "door and must not scale to zero"
             )
-        if edge.revision_suffix and len(edge.revision_suffix) > 54:
-            raise ValueError(
-                f"edge.revision_suffix {edge.revision_suffix!r} is too long to "
-                "carry the policy digest: keep it at 54 characters or fewer"
-            )
+        if edge.revision_suffix:
+            app_name = edge_app_name(self.project.name, self.project.environment)
+            # "<app>--<suffix>-p<hex>"
+            overhead = len(app_name) + len("--") + len("-p") + POLICY_SUFFIX_LENGTH
+            budget = MAX_REVISION_NAME_LENGTH - overhead
+            if len(edge.revision_suffix) > budget:
+                raise ValueError(
+                    f"edge.revision_suffix {edge.revision_suffix!r} is too long: "
+                    f"Azure caps the revision name at {MAX_REVISION_NAME_LENGTH} "
+                    f"characters, and {app_name}--<suffix>-p"
+                    f"{'x' * POLICY_SUFFIX_LENGTH} leaves room for at most "
+                    f"{max(budget, 0)} characters of suffix (#228)."
+                )
         if not edge.trusted_proxy_ips:
             raise ValueError(
                 "edge.trusted_proxy_ips is required when the edge is on: set it "

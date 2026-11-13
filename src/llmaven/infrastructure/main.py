@@ -52,6 +52,7 @@ def create_pulumi_program(config_path: Path):
         import pulumi_azure_native as azure_native
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
+        from llmaven.infrastructure.config.schema import edge_app_base_name
         from llmaven.infrastructure.resources import (
             BACKUP_STORAGE_SECRET_NAME,
             REDIS_ENV_VARS,
@@ -547,7 +548,7 @@ def create_pulumi_program(config_path: Path):
                 if app is not None
             }
             edge_app = create_edge_app(
-                name=f"{stack_name}-traefik",
+                name=edge_app_base_name(project_name, environment),
                 resource_group_name=resource_group,
                 location=location,
                 container_env_id=container_env.id,

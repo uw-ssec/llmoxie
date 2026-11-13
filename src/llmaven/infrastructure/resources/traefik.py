@@ -29,7 +29,12 @@ import json
 import pulumi_azure_native as azure_native
 import yaml
 
-from ..config.schema import EdgeConfig, LiteLLMProxyConfig, LLMavenConfig
+from ..config.schema import (
+    POLICY_SUFFIX_LENGTH,
+    EdgeConfig,
+    LiteLLMProxyConfig,
+    LLMavenConfig,
+)
 
 TRAEFIK_CONTAINER_NAME = "traefik"
 TRAEFIK_VOLUME_NAME = "traefik-config-volume"
@@ -42,7 +47,6 @@ TRAEFIK_DYNAMIC_SECRET = "traefik-dynamic-yaml"
 # a policy change (such as revoking admin_allowed_ips) always rolls a new
 # revision, and a pinned revision suffix changes whenever the sidecar does.
 POLICY_DIGEST_ENV = "TRAEFIK_POLICY_SHA256"
-POLICY_SUFFIX_LENGTH = 8
 ENTRYPOINT = "web"
 EDGE_PING_PATH = "/ping"
 EDGE_PING_ENTRYPOINT = "ping"

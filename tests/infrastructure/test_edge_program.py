@@ -9,6 +9,7 @@ import pulumi
 import pytest
 import yaml
 
+from llmaven.infrastructure.config.schema import edge_app_base_name
 from llmaven.infrastructure.main import create_pulumi_program
 from llmaven.infrastructure.resources import helpers
 
@@ -146,6 +147,7 @@ def test_with_edge_backends_are_internal(with_edge):
 def test_with_edge_traefik_is_the_only_public_app(with_edge):
     public = [a for a in with_edge[2].values() if a["ingress_external"]]
     assert len(public) == 1
+    assert public[0]["app_name"] == edge_app_base_name("llmaven", "dev")
     assert public[0]["app_name"] == "llmaven-dev-traefik"
     assert {d.name for d in public[0]["custom_domains"]} == {LITELLM_HOST, MLFLOW_HOST}
 

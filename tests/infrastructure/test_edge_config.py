@@ -9,7 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from llmaven.deployment import validate as validate_mod
 from llmaven.deployment.validate import ValidationError, validate_config
-from llmaven.infrastructure.config.schema import LLMavenConfig
+from llmaven.infrastructure.config.schema import LLMavenConfig, edge_app_name
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -287,7 +287,6 @@ def test_edge_only_settings_with_the_edge_do_not_warn(tmp_path, capsys):
         {"env_vars": {"A": "b"}},
         {"key_vault_secret_refs": {"A": "b"}},
         {"min_replicas": 0},
-        {"revision_suffix": "x" * 55},
     ],
 )
 def test_edge_rejects_settings_it_ignores_or_cannot_honour(edge):
@@ -295,9 +294,59 @@ def test_edge_rejects_settings_it_ignores_or_cannot_honour(edge):
         _config(edge=edge)
 
 
-def test_edge_accepts_a_suffix_at_the_limit_and_one_replica():
-    config = _config(edge={"revision_suffix": "x" * 54, "min_replicas": 1})
+def test_edge_accepts_one_replica():
+    config = _config(edge={"min_replicas": 1})
     assert config.edge.min_replicas == 1
+
+
+# The default stack deploys the edge as "llmaven-dev-traefik-dev" (23 chars).
+# The revision name is "<app>--<suffix>-p<8 hex>", at most 54 characters, so
+# the suffix may use 54 - 23 - 2 - 10 = 19.
+APP_NAME = "llmaven-dev-traefik-dev"
+MAX_SUFFIX = 54 - len(APP_NAME) - len("--") - len("-p") - 8
+
+
+def test_edge_app_name_matches_the_deploy():
+    assert edge_app_name("llmaven", "dev") == APP_NAME
+    assert edge_app_name("llmaven-iss", "prod") == "llmaven-iss-prod-traefik-prod"
+    # create_edge_app finds the environment anywhere in the name, default "dev".
+    assert edge_app_name("prod-x", "staging") == "prod-x-staging-traefik-prod"
+    assert edge_app_name("a", "staging") == "a-staging-traefik-staging"
+
+
+def test_edge_accepts_a_suffix_at_the_full_name_limit():
+    suffix = "x" * MAX_SUFFIX
+    config = _config(edge={"revision_suffix": suffix})
+    assert config.edge.revision_suffix == suffix
+    assert len(f"{APP_NAME}--{suffix}-p" + "0" * 8) == 54
+
+
+def test_edge_rejects_a_suffix_that_fits_alone_but_overflows_the_name():
+    suffix = "x" * (MAX_SUFFIX + 1)
+    assert len(suffix) < 54
+    with pytest.raises(ValueError) as error:
+        _config(edge={"revision_suffix": suffix})
+    message = str(error.value)
+    assert "edge.revision_suffix" in message
+    assert f"at most {MAX_SUFFIX} characters" in message
+    assert APP_NAME in message
+
+
+def test_edge_suffix_budget_follows_the_project_name():
+    data = _data(edge={"revision_suffix": "x" * MAX_SUFFIX})
+    data["project"] = {"name": "llmaven-iss", "environment": "prod"}
+    # "llmaven-iss-prod-traefik-prod" is 29 chars, leaving 13.
+    with pytest.raises(ValueError, match="at most 13 characters"):
+        LLMavenConfig.model_validate(data)
+    data["edge"]["revision_suffix"] = "x" * 13
+    LLMavenConfig.model_validate(data)
+
+
+def test_edge_suffix_is_not_checked_without_the_edge():
+    config = LLMavenConfig.model_validate(
+        {"edge": {"enabled": False, "revision_suffix": "x" * 60}}
+    )
+    assert config.edge.enabled is False
 
 
 def test_disabled_edge_ignores_those_checks():

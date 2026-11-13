@@ -11,6 +11,7 @@ from ..config.schema import (
     IPSecurityRestrictionConfig,
     LiteLLMProxyConfig,
     LLMavenConfig,
+    container_app_environment,
 )
 from .container_apps import create_container_app_with_key_vault_secrets
 from .redis import apply_redis_router_settings
@@ -539,11 +540,7 @@ def create_edge_app(
     """
     edge = config.edge
 
-    environment = "dev"
-    for part in name.split("-"):
-        if part in ["dev", "staging", "prod", "test"]:
-            environment = part
-            break
+    environment = container_app_environment(name)
 
     def render(fqdns: dict[str, str]) -> dict[str, str]:
         dynamic_config = render_edge_dynamic_config(

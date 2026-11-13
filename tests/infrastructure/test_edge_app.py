@@ -9,7 +9,11 @@ import pytest
 import yaml
 from pulumi._utils import ContextProperty
 
-from llmaven.infrastructure.config.schema import LLMavenConfig
+from llmaven.infrastructure.config.schema import (
+    LLMavenConfig,
+    edge_app_base_name,
+    edge_app_name,
+)
 from llmaven.infrastructure.resources import container_apps, helpers, traefik
 
 LITELLM_HOST = "ai.example.org"
@@ -114,7 +118,7 @@ def _create(config: LLMavenConfig, backends: dict = BACKENDS) -> dict:
             patch.object(container_apps.pulumi, "export"),
         ):
             helpers.create_edge_app(
-                name="llmaven-dev-traefik",
+                name=edge_app_base_name("llmaven", "dev"),
                 resource_group_name="rg",
                 location="westus2",
                 container_env_id="env-id",
@@ -142,6 +146,11 @@ def test_edge_ingress_is_external_with_all_public_hostnames():
     assert [d.name for d in ingress.custom_domains] == [
         d.name for d in config.edge.custom_domains
     ]
+
+
+def test_edge_container_app_name_is_the_validated_name():
+    kwargs = _create(_config())["kwargs"]
+    assert kwargs["container_app_name"] == edge_app_name("llmaven", "dev")
 
 
 def test_edge_probes_use_ping():
