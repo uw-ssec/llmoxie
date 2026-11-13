@@ -74,11 +74,15 @@ stdlib `zipfile`/`json`/`csv`, and Pulumi `pulumi-azure-native` 3.29.0.
 
 1. **Day boundaries.** `/spend/logs/v2` compares `startTime` with `>=` against
    `start_date` and `<=` against `end_date`, and parses a bare `YYYY-MM-DD` as
-   midnight UTC (verified fact 6). A per-day request must therefore send
-   `end_date="<day> 23:59:59"`, or it returns only the records at exactly
-   `00:00:00Z`. Both bounds being inclusive also means neighbouring days can
-   overlap at the second boundary, so `fetch_spend_records` keeps only the
-   records whose `startTime` falls on the requested day. Test in Task 5.
+   midnight UTC (verified fact 6). A per-day request must therefore widen the
+   upper bound past midnight, or it returns only the records at exactly
+   `00:00:00Z`. `fetch_spend_records` sends the next day's midnight —
+   `end_date="<day + 1> 00:00:00"` — because `23:59:59` would lose anything
+   stamped inside the final second of the day. Both bounds being inclusive means
+   the request also picks up records at exactly the next day's midnight, so
+   `fetch_spend_records` keeps only the records whose `startTime` falls on the
+   requested day; those neighbours come back on that day's own request. Test in
+   Task 5.
 2. **`startTime` formats.** A trailing `Z`, a `+00:00` or other offset, and a
    naive timestamp must all land on the right UTC day. A missing or unparsable
    value is dropped and never crashes. Test in Task 2.
@@ -271,10 +275,11 @@ facts 3 and 6), so this uses `/spend/logs/v2`.
 For each day from `start` to `end`, page from `page = 1`:
 
 - Send
-  `params={"start_date": f"{day} 00:00:00", "end_date": f"{day} 23:59:59", "page": page, "page_size": PAGE_SIZE}`
+  `params={"start_date": f"{day} 00:00:00", "end_date": f"{day + timedelta(days=1)} 00:00:00", "page": page, "page_size": PAGE_SIZE}`
   with the header `Authorization: Bearer <api_key>`. Both date bounds are
   inclusive and a bare `YYYY-MM-DD` parses as midnight UTC, so the explicit
-  `23:59:59` is what makes the day whole (verified fact 6).
+  next-midnight upper bound is what makes the day whole (verified fact 6);
+  `23:59:59` would drop anything stamped inside the final second.
 - Read the page from `body["data"]`. Stop the day when `len(data) < PAGE_SIZE`,
   otherwise increment `page`. Do **not** use `total` or `total_pages`: both are
   capped at 10,000 records and under-report a busy day (Review Focus 6).
@@ -291,12 +296,12 @@ For each day from `start` to `end`, page from `page = 1`:
 When `client` is `None`, create `httpx.Client(timeout=30.0)` and close it
 afterwards.
 
-- [ ] **Step 1: Write failing tests** using
+- [x] **Step 1: Write failing tests** using
       `httpx.Client(transport=httpx.MockTransport(handler))` and
       `sleep=lambda s: None`.
   - `test_fetch_one_request_per_day`: a 3-day range whose days each fit in one
     page makes 3 requests, each with `page=1`, `page_size=1000`,
-    `start_date="<day> 00:00:00"`, `end_date="<day> 23:59:59"` and a bearer
+    `start_date="<day> 00:00:00"`, `end_date="<day + 1> 00:00:00"` and a bearer
     header.
   - `test_fetch_pages_until_short_page`: a day whose first page returns
     `PAGE_SIZE` records and whose second returns fewer makes two requests for
@@ -313,10 +318,10 @@ afterwards.
     `data` is not a list, each raise `SpendFetchError`, and `api_key` is not in
     `str(exc)`.
   - `test_fetch_4xx_raises_without_retry`: a 401 makes exactly one request.
-- [ ] **Step 2: Run them and confirm they fail.**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them and confirm they pass.**
-- [ ] **Step 5: Commit.** `feat(cli): fetch spend logs per day with retry`
+- [x] **Step 2: Run them and confirm they fail.**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them and confirm they pass.**
+- [x] **Step 5: Commit.** `feat(cli): fetch spend logs per day with retry`
 
 ---
 

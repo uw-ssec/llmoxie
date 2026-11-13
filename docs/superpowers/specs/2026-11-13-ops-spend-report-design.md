@@ -65,13 +65,16 @@ llmaven ops spend-report --start YYYY-MM-DD --end YYYY-MM-DD
 - `src/llmaven/ops/spend.py`: pure functions plus the HTTP loop.
   - `fetch_spend_records(base_url, api_key, start, end)` yields raw records from
     `GET /spend/logs/v2`, one call per day per page:
-    `start_date=<day> 00:00:00&end_date=<day> 23:59:59&page=N&page_size=1000`
+    `start_date=<day> 00:00:00&end_date=<day + 1> 00:00:00&page=N&page_size=1000`
     with an `Authorization: Bearer` header. Both date bounds are inclusive, so
-    the explicit `23:59:59` is what makes the day whole. It pages until a page
-    comes back shorter than `page_size` — the `total` and `total_pages` fields
-    stop counting at 10,000 records and cannot drive the loop. `/spend/logs`
-    (v1) is deprecated and truncates at the same cap, which is why this uses v2.
-    It has its own small retry on transport errors and 5xx (httpx only).
+    the upper one is the next day's midnight — `23:59:59` would lose anything
+    stamped inside the final second — and records that land exactly on the next
+    day are dropped and refetched by that day's own request. It pages until a
+    page comes back shorter than `page_size` — the `total` and `total_pages`
+    fields stop counting at 10,000 records and cannot drive the loop.
+    `/spend/logs` (v1) is deprecated and truncates at the same cap, which is why
+    this uses v2. It has its own small retry on transport errors and 5xx (httpx
+    only).
   - `iter_extract_records(path)` yields raw records from a `.zip` of extract
     output, a directory of `*.jsonl` files, or a single `.jsonl` file, using
     `zipfile` and `json`.
@@ -152,10 +155,10 @@ fire time, so a receiver fills in the dates from the alert's own fire window.
 
 - `tests/ops/test_spend.py`:
   - `fetch_spend_records` against a mocked httpx transport: one request per day
-    for a day that fits in one page, with the inclusive `00:00:00`/`23:59:59`
-    bounds; a second page fetched when the first comes back full; no extra
-    request when `total`/`total_pages` are capped but the page is short; retry
-    on a 5xx then success.
+    for a day that fits in one page, with the inclusive midnight-to-next-
+    midnight bounds; a second page fetched when the first comes back full; no
+    extra request when `total`/`total_pages` are capped but the page is short;
+    retry on a 5xx then success.
   - `iter_extract_records` for a zip fixture, a directory, and a single file.
   - `group_label` for each `--by`, including every fallback.
   - `aggregate` drops records outside the window.

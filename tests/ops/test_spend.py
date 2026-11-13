@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import json
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 
+from llmaven.ops import spend as spend_module
 from llmaven.ops.spend import (
     GroupBy,
+    SpendFetchError,
     aggregate,
     baseline_window,
     compare,
+    fetch_spend_records,
     group_label,
     iter_extract_records,
     record_day,
@@ -310,3 +314,192 @@ class TestIterExtractRecords:
         assert list(iter_extract_records(archive)) == [record]
         assert list(iter_extract_records(directory)) == [record]
         assert list(iter_extract_records(single)) == [record]
+
+
+API_KEY = "sk-fetch-test-secret"
+BASE_URL = "https://litellm.example.test"
+
+
+def _record(day: date, index: int = 0) -> dict:
+    return {
+        "startTime": f"{day}T0{index % 10}:00:00Z",
+        "spend": 1.0,
+        "model": "gpt-4o",
+    }
+
+
+def _page_body(records: list[dict], **extra) -> dict:
+    body = {
+        "data": records,
+        "total": len(records),
+        "page": 1,
+        "page_size": spend_module.PAGE_SIZE,
+        "total_pages": 1,
+        "total_is_capped": False,
+    }
+    body.update(extra)
+    return body
+
+
+class TestFetchSpendRecords:
+    """`fetch_spend_records` against a mocked httpx transport."""
+
+    def _client(self, handler) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(handler))
+
+    def test_fetch_one_request_per_day(self):
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            day = date.fromisoformat(request.url.params["start_date"].split(" ")[0])
+            return httpx.Response(200, json=_page_body([_record(day)]))
+
+        start, end = date(2026, 3, 1), date(2026, 3, 3)
+        with self._client(handler) as client:
+            records = list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, start, end, client=client, sleep=lambda _: None
+                )
+            )
+
+        assert len(requests) == 3
+        assert len(records) == 3
+        for offset, request in enumerate(requests):
+            day = start + timedelta(days=offset)
+            assert request.url.path == "/spend/logs/v2"
+            assert request.url.params["start_date"] == f"{day} 00:00:00"
+            assert (
+                request.url.params["end_date"] == f"{day + timedelta(days=1)} 00:00:00"
+            )
+            assert request.url.params["page"] == "1"
+            assert request.url.params["page_size"] == str(spend_module.PAGE_SIZE)
+            assert request.headers["Authorization"] == f"Bearer {API_KEY}"
+
+    def test_fetch_pages_until_short_page(self, monkeypatch):
+        monkeypatch.setattr(spend_module, "PAGE_SIZE", 2)
+        day = date(2026, 3, 1)
+        pages = [[_record(day, 0), _record(day, 1)], [_record(day, 2)]]
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            page = int(request.url.params["page"])
+            return httpx.Response(200, json={"data": pages[page - 1]})
+
+        with self._client(handler) as client:
+            records = list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=lambda _: None
+                )
+            )
+
+        assert [request.url.params["page"] for request in requests] == ["1", "2"]
+        assert records == pages[0] + pages[1]
+
+    def test_fetch_ignores_capped_totals(self):
+        day = date(2026, 3, 1)
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            body = _page_body(
+                [_record(day)],
+                total=10000,
+                total_pages=10,
+                total_is_capped=True,
+            )
+            return httpx.Response(200, json=body)
+
+        with self._client(handler) as client:
+            records = list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=lambda _: None
+                )
+            )
+
+        assert len(requests) == 1
+        assert len(records) == 1
+
+    def test_fetch_drops_records_from_next_day(self):
+        day = date(2026, 3, 1)
+        keep = _record(day)
+        # The upper bound is the next day's midnight, so the server may return
+        # a record stamped exactly 00:00:00 on the following day.
+        drop = {"startTime": "2026-03-02T00:00:00Z", "spend": 9.0, "model": "gpt-4o"}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_page_body([keep, drop]))
+
+        with self._client(handler) as client:
+            records = list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=lambda _: None
+                )
+            )
+
+        assert records == [keep]
+
+    def test_fetch_retries_5xx_then_succeeds(self):
+        day = date(2026, 3, 1)
+        responses = [
+            httpx.Response(503, text="upstream down"),
+            httpx.Response(200, json=_page_body([_record(day)])),
+        ]
+        slept: list[float] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return responses.pop(0)
+
+        with self._client(handler) as client:
+            records = list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=slept.append
+                )
+            )
+
+        assert responses == []
+        assert len(records) == 1
+        assert slept == [2.0]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"detail": "Internal Server Error"},
+            {"data": {"not": "a list"}},
+        ],
+    )
+    def test_fetch_bad_body_raises(self, body):
+        day = date(2026, 3, 1)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=body)
+
+        with self._client(handler) as client, pytest.raises(SpendFetchError) as excinfo:
+            list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=lambda _: None
+                )
+            )
+
+        message = str(excinfo.value)
+        assert API_KEY not in message
+        assert str(day) in message
+
+    def test_fetch_4xx_raises_without_retry(self):
+        day = date(2026, 3, 1)
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(401, json={"detail": "Invalid proxy key"})
+
+        with self._client(handler) as client, pytest.raises(SpendFetchError) as excinfo:
+            list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=lambda _: None
+                )
+            )
+
+        assert len(requests) == 1
+        assert API_KEY not in str(excinfo.value)

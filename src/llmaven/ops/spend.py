@@ -1,8 +1,10 @@
-"""spend.py — group and aggregate LiteLLM spend-log records.
+"""spend.py — fetch, group and aggregate LiteLLM spend-log records.
 
-The functions here are pure: they take raw record dicts as LiteLLM returns them
-from ``/spend/logs/v2`` (or as ``llmaven infra extract`` writes them) and return
-plain Python values. Nothing in this module touches the network or the console.
+Most of this module is pure: the functions take raw record dicts as LiteLLM
+returns them from ``/spend/logs/v2`` (or as ``llmaven infra extract`` writes
+them) and return plain Python values. ``fetch_spend_records`` is the one
+exception — it reads those records off the network. Nothing here touches the
+console.
 
 Per okf ``cli-output-data-safety``, no label ever carries a raw or whole API
 key: ``api_key`` in spend logs is already a SHA-256 hash, and only a short
@@ -13,15 +15,27 @@ from __future__ import annotations
 
 import io
 import json
+import time
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
+import httpx
+
 # How much of the hashed api_key goes into a label when the key has no alias.
 KEY_LABEL_PREFIX_LEN = 8
+
+# The server caps ``page_size`` at 1000 (``ge=1, le=1000``); asking for more is
+# a 422. A page shorter than this is the only reliable end-of-day signal.
+PAGE_SIZE = 1000
+
+
+class SpendFetchError(Exception):
+    """A spend-log page could not be fetched or could not be understood."""
+
 
 # LiteLLM spend logs store a SHA-256 hash of the key, never the key itself. A
 # value that still looks like a raw key is labelled, not shown.
@@ -239,3 +253,114 @@ def iter_extract_records(path: Path) -> Iterator[dict]:
     raise ValueError(
         f"Expected a .zip archive, a directory or a .jsonl file, got: {path}"
     )
+
+
+def _fetch_page(
+    client: httpx.Client,
+    base_url: str,
+    api_key: str,
+    day: date,
+    page: int,
+    sleep: Callable[[float], None],
+    attempts: int,
+) -> list:
+    """Return one page of records for ``day``, retrying transport errors and 5xx.
+
+    Raises ``SpendFetchError`` on a 4xx, on exhausted retries, or on a body
+    that is not a mapping with a list under ``data``. No message ever names
+    the api key.
+    """
+    params = {
+        "start_date": f"{day} 00:00:00",
+        # Both bounds are inclusive, so the upper one is the next day's
+        # midnight: "23:59:59" would lose anything stamped inside the final
+        # second. Records that land exactly on the next day are dropped by the
+        # caller and come back on that day's own request.
+        "end_date": f"{day + timedelta(days=1)} 00:00:00",
+        "page": page,
+        "page_size": PAGE_SIZE,
+    }
+    headers = {"Authorization": f"Bearer {api_key}"}
+    where = f"day {day}, page {page}"
+
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        try:
+            response = client.get(
+                f"{base_url.rstrip('/')}/spend/logs/v2",
+                params=params,
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+        else:
+            if response.status_code < 400:
+                break
+            if response.status_code < 500:
+                raise SpendFetchError(
+                    f"LiteLLM returned HTTP {response.status_code} "
+                    f"for spend logs ({where})."
+                )
+            last_error = f"HTTP {response.status_code}"
+        if attempt < attempts:
+            sleep(float(2**attempt))
+    else:
+        raise SpendFetchError(
+            f"Could not fetch spend logs ({where}) after {attempts} "
+            f"attempts: {last_error}."
+        )
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise SpendFetchError(
+            f"LiteLLM returned a non-JSON spend-log body ({where})."
+        ) from exc
+    if not isinstance(body, dict) or not isinstance(body.get("data"), list):
+        raise SpendFetchError(
+            f"LiteLLM returned an unexpected spend-log body ({where}): "
+            "expected an object with a list under 'data'."
+        )
+    # The page is returned whole: its length is what ends the day's paging, so
+    # non-record entries are dropped by the caller, not counted out here.
+    return body["data"]
+
+
+def fetch_spend_records(
+    base_url: str,
+    api_key: str,
+    start: date,
+    end: date,
+    *,
+    client: httpx.Client | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    attempts: int = 3,
+) -> Iterator[dict]:
+    """Yield spend-log records for every UTC day in ``[start, end]``.
+
+    One request per day per page against ``GET {base_url}/spend/logs/v2``,
+    paging until a page comes back shorter than ``PAGE_SIZE``. The ``total``
+    and ``total_pages`` fields stop counting at 10,000 records, so they never
+    drive the loop. Only records whose own day matches the day being fetched
+    are yielded.
+    """
+    owned = client is None
+    http = client if client is not None else httpx.Client(timeout=30.0)
+    try:
+        day = start
+        while day <= end:
+            page = 1
+            while True:
+                records = _fetch_page(
+                    http, base_url, api_key, day, page, sleep, attempts
+                )
+                for record in records:
+                    if isinstance(record, dict) and record_day(record) == day:
+                        yield record
+                if len(records) < PAGE_SIZE:
+                    break
+                page += 1
+            day += timedelta(days=1)
+    finally:
+        if owned:
+            http.close()
