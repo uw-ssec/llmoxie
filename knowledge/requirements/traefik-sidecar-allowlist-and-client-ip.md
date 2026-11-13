@@ -3,7 +3,7 @@ type: Requirement
 title: Path-level access control uses a Traefik edge (or sidecar) with an allowlist
 description: A standalone Traefik edge (or the older sidecar) enforces path allowlists because Container Apps restricts by IP per app; the trusted-peer and forged-header gates are unproven on Azure.
 tags: [traefik, litellm, security, container-apps]
-generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-13T20:48:04Z" }
+generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-13T20:50:55Z" }
 status: stable
 code_refs: [src/llmaven/infrastructure/resources/traefik.py, src/llmaven/infrastructure/resources/helpers.py, src/llmaven/infrastructure/resources/container_apps.py, tests/infrastructure/test_litellm_proxy.py]
 stale_after: 2027-05-01
@@ -28,9 +28,10 @@ Public paths must be an allowlist of exact paths. A blocklist of admin paths can
 - The Envoy peer range on Azure is unconfirmed. The Envoy peer must be inside `trusted_proxy_ips`.
 - No other workload in the environment may be able to reach Traefik's port directly and forge an allowlisted `X-Forwarded-For`. The README and infrastructure rule gate production on both checks.
 - Streaming through real Azure ingress is untested, as is that the backends' platform FQDNs no longer answer from outside.
-- Hostname moves need a manual `az containerapp hostname add` / `bind`, with a per-hostname outage window.
+- Hostname moves: the deploy moves each hostname from its old app to Traefik and binds it (SNI) to the existing managed certificate named in `edge.custom_domains`. The manual `az containerapp hostname add` / `bind` is only for a hostname whose managed certificate doesn't exist yet. Whether Azure accepts the hostname on Traefik in the same deploy that removes it from the old app is unverified and is checked on staging first; if it refuses, re-running the deploy is the expected fix. Each hostname has a planned outage window from removal to bind.
+- Callers of the backends' platform FQDNs break at the deploy that flips them to internal ingress, so they must be moved before it.
 
-Evidence so far: the real Traefik v3.7.17 binary (`docker.io/library/traefik:v3.7.17@sha256:321153f6f732f912cf5c6f0597fe38743fc7895d482d7d8804a479ae0403e151`) in Docker against stub backends rendered from the edge renderer. Allowlisted and denied paths, double-slash and mixed-case paths, Host routing (case and port ignored), unknown host 404, the rightmost-XFF cases above, and a 3-chunk SSE stream arriving 1 s apart through Traefik (not buffered) all behaved as designed. Offline comparison shows the template is unchanged with the proxy off.
+Evidence so far: the real Traefik v3.7.17 binary (`docker.io/library/traefik:v3.7.17@sha256:321153f6f732f912cf5c6f0597fe38743fc7895d482d7d8804a479ae0403e151`) in Docker against stub backends rendered from the edge renderer. Allowlisted and denied paths, double-slash paths, Host routing (a mixed-case Host with a port matched), unknown host 404, the rightmost-XFF cases above, and a 3-chunk SSE stream arriving 1 s apart through Traefik (not buffered) all behaved as designed. Offline comparison shows the template is unchanged with the proxy off.
 
 Traefik rate limits are per replica and in memory, so they aren't global the way Redis-backed LiteLLM limits are. Per-host rules were left out of the sidecar. The `LITELLM_HOST` value in the config defaults has no effect.
 
