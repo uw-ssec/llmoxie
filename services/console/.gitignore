@@ -13,6 +13,8 @@ __pycache__/
 # The front end: its packages, and the build that console-web serves
 frontend/node_modules/
 console_app/web/dist/
+# The repository's root .gitignore ignores every lib/ as a Python build directory. The front end's is source.
+!frontend/src/lib/
 
 # Settings for `pixi run test` (see tests/env.example); holds the test stack's secrets
 tests/.env
