@@ -1132,6 +1132,11 @@ class LLMavenConfig(BaseModel):
             backends.append(("litellm", litellm))
         if mlflow.enabled:
             backends.append(("mlflow", mlflow))
+        if not backends:
+            raise ValueError(
+                "edge.enabled needs at least one enabled backend: enable "
+                "litellm or mlflow, or turn the edge off."
+            )
         for name, app in backends:
             if app.hostname is None:
                 raise ValueError(

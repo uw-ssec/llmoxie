@@ -78,6 +78,11 @@ def test_edge_needs_a_hostname_per_enabled_backend():
     LLMavenConfig.model_validate(data)
 
 
+def test_edge_needs_an_enabled_backend():
+    with pytest.raises(ValueError, match="at least one enabled backend"):
+        _config(litellm={"enabled": False}, mlflow={"enabled": False})
+
+
 def test_backend_hostname_must_be_an_edge_custom_domain():
     with pytest.raises(ValueError, match=r"edge\.custom_domains"):
         _config(edge={"custom_domains": _domains(MLFLOW_HOST)})

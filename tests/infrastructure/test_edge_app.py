@@ -26,7 +26,12 @@ class _Mocks(pulumi.runtime.Mocks):
 
 @pytest.fixture(autouse=True)
 def _mocks():
+    settings = pulumi.runtime.settings
+    saved_settings, saved_root = settings.SETTINGS, settings.ROOT.get()
     pulumi.runtime.set_mocks(_Mocks(), project="llmaven", stack="dev", preview=False)
+    yield
+    settings.configure(saved_settings)
+    settings.ROOT.set(saved_root)
 
 
 def _config(**edge) -> LLMavenConfig:
@@ -51,7 +56,7 @@ def _config(**edge) -> LLMavenConfig:
     )
 
 
-def _create(config: LLMavenConfig) -> dict:
+def _create(config: LLMavenConfig, backends: dict = BACKENDS) -> dict:
     """Run create_edge_app and return the ContainerApp kwargs, Outputs resolved."""
     captured: dict = {}
 
@@ -73,7 +78,7 @@ def _create(config: LLMavenConfig) -> dict:
                 location="westus2",
                 container_env_id="env-id",
                 config=config,
-                backends={k: pulumi.Output.from_input(v) for k, v in BACKENDS.items()},
+                backends={k: pulumi.Output.from_input(v) for k, v in backends.items()},
             )
         kwargs = create_app.call_args.kwargs
         container = kwargs["template"].containers[0]
@@ -144,3 +149,17 @@ def test_edge_has_no_key_vault_secrets_or_identity():
     assert all(s.identity is None for s in kwargs["configuration"].secrets)
     assert not kwargs["identity"].user_assigned_identities
     access_policy.assert_not_called()
+
+
+def test_edge_with_only_mlflow_mounts_only_the_mlflow_route():
+    config = _config()
+    config.litellm.enabled = False
+    backends = {"mlflow": BACKENDS["mlflow"]}
+    result = _create(config, backends)
+    secrets = dict(zip(result["secret_names"], result["secrets"]))
+    mounted = yaml.safe_load(secrets[traefik.TRAEFIK_DYNAMIC_SECRET])
+    assert mounted == traefik.build_edge_dynamic_config(
+        config, {"mlflow": URLS["mlflow"]}
+    )
+    assert list(mounted["http"]["routers"]) == ["mlflow"]
+    assert list(mounted["http"]["services"]) == ["mlflow"]
