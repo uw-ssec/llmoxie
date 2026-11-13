@@ -1,5 +1,5 @@
-# services/llmoxie-console/ carries its own .pre-commit-config.yaml
-exclude: '\.csv$|^services/llmoxie-console/'
+# services/console/ carries its own .pre-commit-config.yaml
+exclude: '\.csv$|^services/console/'
 
 ci:
   autoupdate_commit_msg: "chore: update pre-commit hooks"
