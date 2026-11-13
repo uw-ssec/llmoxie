@@ -1,6 +1,6 @@
-"""Traefik sidecar that puts path-level access control in front of LiteLLM.
+"""Traefik path-level access control for LiteLLM, as a sidecar or a standalone edge.
 
-Container Apps ingress sends every request (platform FQDN and custom domains)
+Sidecar (``build_dynamic_config`` and friends): Container Apps ingress sends every request (platform FQDN and custom domains)
 to Traefik, which forwards to LiteLLM on 127.0.0.1. Routing is an allowlist:
 
 - health paths: public, not rate limited (the platform probes use them)
@@ -13,6 +13,12 @@ rightmost ``X-Forwarded-For`` entry. Traefik keeps that header only from
 ``trusted_proxy_ips`` (it deletes X-Forwarded-* from any other peer), and the
 allowlist and rate limiter read the rightmost entry (``depth: 1``), so a
 client-supplied X-Forwarded-For value is never used.
+
+Edge (``build_edge_*``): a separate Container App is the only public entry
+point. Routing is by ``Host``: only the configured LiteLLM and MLflow hostnames
+match, so the edge's own FQDN and any other host get 404. LiteLLM keeps the
+same path allowlist on its host; MLflow's host is open, as its ingress is.
+Backends are reached by their internal FQDN without the original Host header.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import json
 import pulumi_azure_native as azure_native
 import yaml
 
-from ..config.schema import LiteLLMProxyConfig
+from ..config.schema import EdgeConfig, LiteLLMProxyConfig, LLMavenConfig
 
 TRAEFIK_CONTAINER_NAME = "traefik"
 TRAEFIK_VOLUME_NAME = "traefik-config-volume"
@@ -38,6 +44,8 @@ TRAEFIK_DYNAMIC_SECRET = "traefik-dynamic-yaml"
 POLICY_DIGEST_ENV = "TRAEFIK_POLICY_SHA256"
 POLICY_SUFFIX_LENGTH = 8
 ENTRYPOINT = "web"
+EDGE_PING_PATH = "/ping"
+EDGE_PING_ENTRYPOINT = "ping"
 
 # Envoy appends the client address as the last X-Forwarded-For entry.
 _CLIENT_IP_STRATEGY = {"depth": 1}
@@ -162,6 +170,128 @@ def policy_digest(proxy: LiteLLMProxyConfig, dynamic_config: str) -> str:
         "image": proxy.image,
         "cpu": proxy.cpu,
         "memory": proxy.memory,
+    }
+    payload = json.dumps(static, sort_keys=True) + "\n" + dynamic_config
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -> dict:
+    """Build the edge's Traefik file-provider config, routed by Host.
+
+    ``backends`` maps ``"litellm"`` / ``"mlflow"`` to a base URL, with a key
+    only for enabled backends.
+    """
+    edge = config.edge
+    routers: dict[str, dict] = {}
+    middlewares: dict[str, dict] = {
+        "client-rate-limit": {
+            "rateLimit": {
+                "average": edge.rate_limit_average,
+                "burst": edge.rate_limit_burst,
+                "period": "1s",
+                "sourceCriterion": {"ipStrategy": dict(_CLIENT_IP_STRATEGY)},
+            }
+        }
+    }
+    services: dict[str, dict] = {}
+
+    def _service(url: str) -> dict:
+        return {
+            "loadBalancer": {
+                "servers": [{"url": url}],
+                # The backend's own FQDN is what its ingress expects.
+                "passHostHeader": False,
+                "responseForwarding": {"flushInterval": "100ms"},
+            }
+        }
+
+    if "litellm" in backends:
+        litellm = config.litellm
+        host = f"Host(`{litellm.hostname}`)"
+        for name, paths, priority, limited in (
+            ("litellm-health", litellm.health_paths, 300, False),
+            ("litellm-public", litellm.public_paths, 200, True),
+        ):
+            if paths:
+                router = {
+                    "entryPoints": [ENTRYPOINT],
+                    "rule": f"{host} && ({_path_rule(paths)})",
+                    "priority": priority,
+                    "service": "litellm",
+                }
+                if limited:
+                    router["middlewares"] = ["client-rate-limit"]
+                routers[name] = router
+        routers["litellm-admin"] = {
+            "entryPoints": [ENTRYPOINT],
+            "rule": host,
+            "priority": 1,
+            "middlewares": ["litellm-admin-ip-allowlist", "client-rate-limit"],
+            "service": "litellm",
+        }
+        middlewares["litellm-admin-ip-allowlist"] = {
+            "ipAllowList": {
+                "sourceRange": litellm.admin_allowed_ips or _NO_ADMIN_IPS,
+                "ipStrategy": dict(_CLIENT_IP_STRATEGY),
+            }
+        }
+        services["litellm"] = _service(backends["litellm"])
+    if "mlflow" in backends:
+        routers["mlflow"] = {
+            "entryPoints": [ENTRYPOINT],
+            "rule": f"Host(`{config.mlflow.hostname}`)",
+            "service": "mlflow",
+        }
+        services["mlflow"] = _service(backends["mlflow"])
+
+    return {
+        "http": {"routers": routers, "middlewares": middlewares, "services": services}
+    }
+
+
+def build_edge_static_args(edge: EdgeConfig) -> list[str]:
+    """Build the edge's Traefik static configuration as CLI arguments.
+
+    Only the file provider is enabled and the API and dashboard stay off. Ping
+    runs on its own entrypoint so health probes never reach the public one.
+    """
+    trusted = ",".join(edge.trusted_proxy_ips or [])
+    access_log = ["--accessLog=true"]
+    if edge.log_forwarded_for:
+        access_log += [
+            "--accessLog.format=json",
+            "--accessLog.fields.headers.defaultMode=drop",
+            "--accessLog.fields.headers.names.X-Forwarded-For=keep",
+        ]
+    return [
+        f"--entryPoints.{ENTRYPOINT}.address=:{edge.port}",
+        f"--entryPoints.{ENTRYPOINT}.forwardedHeaders.trustedIPs={trusted}",
+        f"--entryPoints.{ENTRYPOINT}.transport.respondingTimeouts.readTimeout=300s",
+        f"--entryPoints.{EDGE_PING_ENTRYPOINT}.address=:{edge.ping_port}",
+        "--ping=true",
+        f"--ping.entryPoint={EDGE_PING_ENTRYPOINT}",
+        f"--providers.file.filename={TRAEFIK_CONFIG_DIR}/{TRAEFIK_DYNAMIC_FILE}",
+        "--providers.file.watch=false",
+        *access_log,
+        "--log.level=INFO",
+        "--global.checkNewVersion=false",
+        "--global.sendAnonymousUsage=false",
+    ]
+
+
+def render_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -> str:
+    return yaml.safe_dump(
+        build_edge_dynamic_config(config, backends), sort_keys=False, width=1000
+    )
+
+
+def edge_policy_digest(edge: EdgeConfig, dynamic_config: str) -> str:
+    """SHA-256 of the edge's static settings plus its rendered dynamic config."""
+    static = {
+        "args": build_edge_static_args(edge),
+        "image": edge.image,
+        "cpu": edge.cpu,
+        "memory": edge.memory,
     }
     payload = json.dumps(static, sort_keys=True) + "\n" + dynamic_config
     return hashlib.sha256(payload.encode()).hexdigest()
