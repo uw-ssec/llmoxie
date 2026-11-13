@@ -29,7 +29,3 @@ export function Landing() {
   }
   return <Home session={session} />
 }
-
-export function NotBuilt() {
-  return <p className="text-muted-foreground">This screen is not built yet.</p>
-}

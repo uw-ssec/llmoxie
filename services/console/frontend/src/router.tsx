@@ -3,8 +3,9 @@ import { ApiError, get, loadSession } from '@/lib/api'
 import { AdminOrgsPage } from '@/pages/admin-orgs'
 import { AuditPage } from '@/pages/audit'
 import { DataProtectionPage } from '@/pages/dlp'
-import { Frame, Landing, NotBuilt } from '@/pages/frame'
+import { Frame, Landing } from '@/pages/frame'
 import { ErrorScreen, InvitationPage, InvitationResult } from '@/pages/messages'
+import { MyTeamPageView } from '@/pages/my-team'
 import { OrgPageView } from '@/pages/org'
 import { TeamManagePageView } from '@/pages/team-manage'
 
@@ -42,7 +43,7 @@ export const routes: RouteObject[] = [
           { path: 'admin/audit', loader: page(() => '/admin/audit'), element: <AuditPage /> },
           { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <DataProtectionPage /> },
           { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <OrgPageView /> },
-          { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <NotBuilt /> },
+          { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <MyTeamPageView /> },
           { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <TeamManagePageView /> },
           {
             path: '*',
