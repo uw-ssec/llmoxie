@@ -373,8 +373,9 @@ rollout, DNS, the two-deploy rollback and the trust boundary: with the edge on,
 LiteLLM and MLflow are reachable from inside the environment without passing
 Traefik's allowlist. Deploys and hostname binds change live infrastructure and
 are the owner's to run. Rehearse staging in the prod shape (edge off, sidecar
-on, hostnames bound) before turning the edge on, check that MLflow accepts its
-internal hostname (`MLFLOW_SERVER_ALLOWED_HOSTS`), and pin
+on, hostnames bound) before turning the edge on, check on the staging flip that
+MLflow accepts its internal hostname (if not, set `MLFLOW_SERVER_ALLOWED_HOSTS`
+in `mlflow.env_vars`, keeping `MLFLOW_HOST: "0.0.0.0"` there), and pin
 `edge.refresh_trigger`. Don't enable the edge in prod until the staging
 client-IP checks there pass. With the edge on, run
 `llmaven infra extract --source mlflow` with the public MLflow hostname set in

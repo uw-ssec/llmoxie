@@ -273,12 +273,12 @@ Per environment, starting with a new `staging` stack (new config in
 `llmaven-deploy`, its own resource group and state; created by the owner):
 
 1. Deploy with `edge.enabled: true`. On a stack with existing hostnames this is
-   where they move: the deploy removes each hostname from its old app and lists
-   it on Traefik. Then, per hostname, bind it to Traefik by hand
-   (`az containerapp hostname add` / `bind`; the builder checks whether the
-   existing managed certificate can be reused in the same environment or a new
-   one must be issued). Each hostname is down from its removal until its bind.
-   Plan the window; announce it on ISS and prod.
+   where they move: the deploy removes each hostname from its old app and binds
+   it (SNI) on Traefik to the existing managed certificate named in
+   `edge.custom_domains`. Only a hostname whose managed certificate doesn't
+   exist yet is bound by hand (`az containerapp hostname add` / `bind`). Whether
+   Azure accepts the move in one deploy is checked on staging. Plan an outage
+   window per hostname; announce it on ISS and prod.
 2. On staging, run the two client-IP checks: the Envoy peer is inside
    `trusted_proxy_ips`, and a workload in the environment cannot reach Traefik's
    port directly and forge an allowlisted `X-Forwarded-For`. Also check

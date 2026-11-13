@@ -255,17 +255,23 @@ owner's to run; nothing here is run by an agent. Per environment, staging first:
    in step 2, which flips both apps to internal ingress.
 1. Staging must rehearse what ISS and prod do. First deploy staging in the prod
    shape: edge off, sidecar on, hostnames and certificates bound on the
-   backends. Then turn the edge on. Before turning it on, check that MLflow
-   accepts the internal FQDN as `Host`. MLflow 3.5 and later answers 403 for a
-   `Host` outside `MLFLOW_SERVER_ALLOWED_HOSTS` (or `--allowed-hosts`). This
-   repo sets neither: `docker/dockerfiles/mlflow.dockerfile` is `mlflow server`
-   on `ghcr.io/mlflow/mlflow:v3.6.0`, and `MLflowConfig.env_vars` defaults to
+   backends. Then turn the edge on. Behind the edge MLflow receives its internal
+   FQDN as `Host`, and MLflow 3.5 and later answers 403 for a `Host` outside
+   `MLFLOW_SERVER_ALLOWED_HOSTS` (or `--allowed-hosts`). This repo sets neither:
+   `docker/dockerfiles/mlflow.dockerfile` is `mlflow server` on
+   `ghcr.io/mlflow/mlflow:v3.6.0`, and `MLflowConfig.env_vars` defaults to
    `MLFLOW_HOST=0.0.0.0` only (compose passes `--allowed-hosts "*"`, the
    deployed app does not). So MLflow uses its default host policy, and whether
-   that covers `<app>.internal.<domain>` is unverified. On staging, request
-   `https://<mlflow-app>.internal.<domain>/` through the edge. If it returns
-   403, set `MLFLOW_SERVER_ALLOWED_HOSTS` in `mlflow.env_vars` to include the
-   internal FQDN (and the public hostname) before enabling the edge.
+   that accepts `<app>.internal.<domain>` is unverified; MLflow 3.10's default
+   (localhost and private IPs) would not. That `Host` only exists once the edge
+   is on, so the staging flip is the test: open the MLflow hostname through the
+   edge and send one LiteLLM request (step 4). If MLflow answers 403, set
+   `MLFLOW_SERVER_ALLOWED_HOSTS` in `mlflow.env_vars` on staging, and on ISS and
+   prod before their flip. Setting `mlflow.env_vars` replaces the default
+   mapping, so keep `MLFLOW_HOST: "0.0.0.0"` in it (without it MLflow listens on
+   localhost only and is unreachable). While the edge is off, the list must also
+   cover the hosts MLflow answers to today (its platform FQDN and public
+   hostname), or setting it early breaks current callers.
 2. Deploy with `edge.enabled: true`. The deploy moves each hostname from its old
    app to Traefik and binds it (SNI) to the existing managed certificate named
    in `edge.custom_domains`, so that certificate must already exist in the
@@ -299,11 +305,12 @@ owner's to run; nothing here is run by an agent. Per environment, staging first:
 **Rollback takes two deploys.** Pulumi creates and updates before it deletes, so
 a single deploy cannot give the backends hostnames Traefik still holds.
 
-1. Deploy with `edge.enabled: false` and the backends' `custom_domains` still
-   empty. This removes Traefik (and its hostname bindings) and returns the
-   backends to external ingress.
-2. Deploy again with the backends' `custom_domains` restored (and
-   `litellm.proxy.enabled` if the sidecar was on).
+1. Deploy with `edge.enabled: false`, the backends' `custom_domains` still
+   empty, and `litellm.proxy.enabled: true` if the sidecar was on before. This
+   removes Traefik (and its hostname bindings) and returns the backends to
+   external ingress. Restore the sidecar in this deploy, not the next: without
+   it LiteLLM's admin surface is open on its platform FQDN until deploy 2.
+2. Deploy again with the backends' `custom_domains` restored.
 
 Rehearse both on staging before the first prod enable. Expect the hostnames to
 be down between the two deploys.
