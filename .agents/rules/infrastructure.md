@@ -107,6 +107,9 @@ reach Redis, so rotate in a quiet window.
 
 ## Traefik proxy for LiteLLM
 
+The edge (next section) replaces this sidecar. It stays for stacks that have not
+moved to the edge and will be removed in a follow-up once every stack has.
+
 `litellm.proxy.enabled` (off by default) adds a Traefik sidecar, built in
 `resources/traefik.py`. Ingress `targetPort` moves to the proxy port, and
 LiteLLM is started with `--host 127.0.0.1`. LiteLLM reads `--host` or `HOST`;
@@ -138,3 +141,102 @@ the `LITELLM_HOST` env var has no effect.
   XFF is refused.
 - With the proxy disabled the template is unchanged, so
   `deploy --expect-no-changes` still passes.
+
+## Traefik edge in front of the stack
+
+`edge.enabled` (off by default) adds a standalone Traefik Container App,
+`<stack>-traefik`, built by `create_edge_app` in `resources/helpers.py` from the
+renderer in `resources/traefik.py`. With it on:
+
+- Traefik is the only app with external ingress. All public hostnames
+  (`edge.custom_domains`) are bound to it. Its own platform FQDN answers 404 for
+  everything except the health path.
+- LiteLLM and MLflow move to internal ingress, so their platform FQDNs stop
+  answering from the internet. This removes the platform-FQDN bypass the sidecar
+  could not close.
+- Routing is by host. Each backend has a `hostname`, and Traefik sends that host
+  to the backend's internal FQDN. It passes the internal FQDN as `Host`
+  (`passHostHeader: false`), because the environment's internal Envoy routes by
+  `Host`. A request with no `Host` gets 400 (HTTP/1.1) or 404 (HTTP/1.0), and an
+  unknown host gets 404, so nothing reaches a backend without a configured host.
+- LiteLLM's host keeps the sidecar's policy: exact health paths open, exact
+  public paths open and rate limited, everything else only from
+  `litellm.admin_allowed_ips`. MLflow's host is open.
+- `mlflow-tracking-uri` becomes MLflow's internal address automatically. If you
+  run `llmaven infra extract --source mlflow`, set the public MLflow hostname in
+  your env file.
+
+```yaml
+edge:
+  enabled: true
+  image: docker.io/library/traefik:v3.7.x@sha256:<digest>
+  min_replicas: 2
+  custom_domains: # every public hostname, bound to the Traefik app
+    - { name: ai.example.org, certificate_name: ... }
+    - { name: mlflow.example.org, certificate_name: ... }
+  trusted_proxy_ips: null # defaults to the Container Apps subnet
+  rate_limit_average: 50
+  rate_limit_burst: 100
+litellm:
+  hostname: ai.example.org
+  admin_allowed_ips: [203.0.113.0/24]
+  public_paths: [...] # defaults as today
+  health_paths: [...]
+mlflow:
+  hostname: mlflow.example.org
+```
+
+**Client IP and trust.** Traefik keeps `X-Forwarded-For` only from peers in
+`edge.trusted_proxy_ips` (default: `networking.container_apps_subnet`). The
+admin allowlist and rate limiter read the rightmost entry of the header as
+received (`depth: 1`). That is safe only because every legitimate peer is the
+Container Apps Envoy, which appends the real client IP. Any other workload that
+can reach Traefik's port directly from inside the trusted range can forge an
+allowlisted IP. This was observed with the real binary: a forged
+`X-Forwarded-For: 203.0.113.7` from a trusted peer reached the backend (200),
+while the same header from an untrusted peer got 403. Don't widen
+`trusted_proxy_ips`.
+
+**Validation errors** (all raised when the config loads):
+
+- `edge.enabled and litellm.proxy.enabled are both true`: set
+  `litellm.proxy.enabled: false` and move its policy to `litellm.hostname` and
+  `litellm.admin_allowed_ips`. Public and health paths move to
+  `litellm.public_paths` and `litellm.health_paths`, and `trusted_proxy_ips`,
+  `rate_limit_average` and `rate_limit_burst` move to `edge.*`.
+- `<app>.hostname is not set`, or
+  `<app>.hostname ... is not listed in edge.custom_domains`: every enabled
+  backend needs a hostname that is also in `edge.custom_domains`.
+- `edge.custom_domains lists [...] more than once`, and
+  `litellm.hostname and mlflow.hostname are both ...`: each hostname appears
+  once and the two backends differ.
+- `<app>.custom_domains must be empty when the edge is on`: move those hostnames
+  to `edge.custom_domains`.
+- `litellm.ip_security_restrictions must be empty when the edge is on`: use
+  `litellm.admin_allowed_ips`.
+- `litellm.health_paths must not be empty when the edge is on`, and
+  `edge.port and edge.ping_port must differ`.
+- `edge.enabled needs at least one enabled backend`.
+
+`llmaven infra validate` warns when a prod config has `edge.min_replicas`
+below 2. Rate limits stay per replica.
+
+**Rollout.** Per environment, staging first:
+
+1. Deploy with `edge.enabled: true`. On a stack with existing hostnames, the
+   deploy removes each hostname from its old app and lists it on Traefik. Then,
+   per hostname, bind it to Traefik by hand with `az containerapp hostname add`
+   and `az containerapp hostname bind`. Check whether the existing managed
+   certificate can be reused in the same environment or a new one must be
+   issued. Each hostname is down from its removal until its bind, so plan the
+   window and announce it on ISS and prod.
+2. On staging, run both client-IP checks. The Envoy peer must be inside
+   `trusted_proxy_ips`, and no other workload in the environment may be able to
+   reach Traefik's port directly and forge an allowlisted `X-Forwarded-For`.
+   Also check streaming responses through Traefik, and that LiteLLM's and
+   MLflow's platform FQDNs no longer answer from outside.
+3. Anyone still calling LiteLLM or MLflow at a platform FQDN breaks at this
+   step. Find those callers and move them before ISS and prod.
+
+Without `edge.enabled` the stack deploys exactly as before. Design:
+`docs/superpowers/specs/2026-11-13-keycloak-azure-design.md`.

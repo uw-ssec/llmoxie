@@ -337,7 +337,40 @@ time, not by `infra validate`.
 With `foundry.enabled: false` (the default) nothing changes: bring your own
 endpoint through the `azure-api-*` secrets.
 
-### Restricting LiteLLM admin routes (optional Traefik proxy)
+### Restricting LiteLLM admin routes (optional Traefik edge)
+
+With `edge.enabled`, a standalone Traefik app is the only public entry point and
+LiteLLM and MLflow move to internal ingress. It replaces the sidecar described
+in the next subsection, which stays for stacks that have not moved. Setting both
+`edge.enabled` and `litellm.proxy.enabled` is refused.
+
+```yaml
+edge:
+  enabled: true
+  image: docker.io/library/traefik:v3.7.x@sha256:<digest>
+  min_replicas: 2
+  custom_domains: # every public hostname, bound to the Traefik app
+    - { name: ai.example.org, certificate_name: ... }
+    - { name: mlflow.example.org, certificate_name: ... }
+  trusted_proxy_ips: null # defaults to the Container Apps subnet
+  rate_limit_average: 50
+  rate_limit_burst: 100
+litellm:
+  hostname: ai.example.org
+  admin_allowed_ips: [203.0.113.0/24]
+mlflow:
+  hostname: mlflow.example.org
+```
+
+Hostnames move from the backends to Traefik, so each one is down between its
+removal and a manual `az containerapp hostname add` / `bind`. See "Traefik edge
+in front of the stack" in `.agents/rules/infrastructure.md` for the trust model,
+validation errors and rollout. Don't enable the edge in prod until the staging
+client-IP checks there pass. With the edge on, run
+`llmaven infra extract --source mlflow` with the public MLflow hostname set in
+your env file.
+
+#### Sidecar (stacks without the edge)
 
 LiteLLM serves the inference API and its admin surface (UI, key, team, model and
 MCP management) on one port, and Container Apps ingress can only filter by IP
