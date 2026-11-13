@@ -3,7 +3,7 @@ import { useLoaderData } from 'react-router'
 import { ActionButton } from '@/components/action-button'
 import { CodeBlock } from '@/components/code-block'
 import { Field, FormError } from '@/components/form-field'
-import { Muted, PageHeader, Section } from '@/components/page'
+import { Muted, PageHeader, Section, Stat, Stats } from '@/components/page'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -48,22 +48,35 @@ export function MyTeamPageView() {
     <>
       <PageHeader title={team.name} lede={team.org_name} />
       {!live && (
-        <Alert className="mb-6">
+        <Alert>
           <AlertDescription>This team is closed. Its keys no longer work.</AlertDescription>
         </Alert>
       )}
+      {agreed && (
+        <Stats label="Your usage">
+          <Stat label="Your keys" value={view.keys.length} detail={`of ${team.key_limit} allowed`} />
+          <Stat label="Requests" value={view.usage.requests} />
+          <Stat label="Tokens" value={view.usage.tokens} />
+          <Stat label="Spend" value={usd(view.usage.spend, 4)} />
+        </Stats>
+      )}
       {shown && (
-        <Section title={`${shown.rotated ? 'Your replacement key' : 'Your new key'}: ${shown.name}`}>
+        <Section
+          title={`${shown.rotated ? 'Your replacement key' : 'Your new key'}: ${shown.name}`}
+          className="border-transparent bg-nav text-white shadow-(--shadow-glow-teal-md) [&_h2]:text-white"
+        >
           <p>
             Copy it now. It will not be shown again.{shown.rotated && ' The key it replaces no longer works.'}
           </p>
           <CodeBlock value={shown.key} copy label={shown.rotated ? 'Your replacement key' : 'Your new key'} />
         </Section>
       )}
-      <Terms view={view} live={live} />
-      {agreed && (
-        <>
-          <Keys view={view} live={live} show={show} />
+      {agreed ? (
+        <div className="grid items-start gap-6 xl:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-6">
+            <Keys view={view} live={live} show={show} />
+            <Terms view={view} live={live} />
+          </div>
           <Section title="How to connect">
             <Labelled label="Base URL">
               <CodeBlock value={`${gateway_url}/v1`} />
@@ -79,7 +92,7 @@ export function MyTeamPageView() {
                 </p>
               )}
             </Labelled>
-            <h3>Shared knowledge</h3>
+            <h3 className="border-t pt-5 text-base">Shared knowledge</h3>
             <p className="max-w-[75ch]">
               {team.org_name} has one knowledge base, shared by all its teams. Add it to an MCP client as a streamable HTTP server and
               send your key as the bearer token. Its tools are named <code>{view.knowledge_tools}-okf_search</code>,{' '}
@@ -89,14 +102,9 @@ export function MyTeamPageView() {
               <CodeBlock value={`${gateway_url}/mcp`} />
             </Labelled>
           </Section>
-          <Section title="Your usage">
-            <dl className="grid grid-cols-3 gap-4">
-              <Figure label="Requests" value={view.usage.requests} />
-              <Figure label="Tokens" value={view.usage.tokens} />
-              <Figure label="Spend" value={usd(view.usage.spend, 4)} />
-            </dl>
-          </Section>
-        </>
+        </div>
+      ) : (
+        <Terms view={view} live={live} />
       )}
     </>
   )
@@ -107,15 +115,6 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
     <div className="flex flex-col gap-1.5">
       <span className="font-ui text-sm font-semibold tracking-wider uppercase">{label}</span>
       {children}
-    </div>
-  )
-}
-
-function Figure({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <dt className="font-ui text-xs font-semibold tracking-wider text-muted-foreground uppercase">{label}</dt>
-      <dd className="font-heading text-2xl font-bold text-primary tabular-nums">{value}</dd>
     </div>
   )
 }
@@ -137,13 +136,13 @@ function Terms({ view: { team, consent }, live }: { view: MyTeamPage; live: bool
             void action.run(() => post(`/teams/${team.id}/my/consent`, { terms_accepted: terms, research_use: research }), { inline: true })
           }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             <Checkbox id={`${id}-terms`} checked={terms} onCheckedChange={(ticked) => setTerms(ticked === true)} />
-            <Label htmlFor={`${id}-terms`}>I accept these terms. Without this you cannot have a key.</Label>
+            <Label htmlFor={`${id}-terms`} className="leading-snug">I accept these terms. Without this you cannot have a key.</Label>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             <Checkbox id={`${id}-research`} checked={research} onCheckedChange={(ticked) => setResearch(ticked === true)} />
-            <Label htmlFor={`${id}-research`}>My usage may also be used for research. This is optional.</Label>
+            <Label htmlFor={`${id}-research`} className="leading-snug">My usage may also be used for research. This is optional.</Label>
           </div>
           <FormError message={action.error} />
           <div>
@@ -171,7 +170,7 @@ function Keys({ view: { team, keys }, live, show }: { view: MyTeamPage; live: bo
             {keys.map((key) => (
               <TableRow key={key.id}>
                 <TableCell>{key.name}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="whitespace-normal text-muted-foreground">
                   {key.waiting ? 'rotated by your lead; the old key no longer works' : `created ${day(key.created_at)}`}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap">

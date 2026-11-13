@@ -68,6 +68,15 @@ is for the console's own pages and reads the session cookie; `/api/v1/` is the
 separate API for connected services. Signing in, signing out and accepting an
 invitation are plain form posts, because each ends at the identity provider.
 
+Every signed-in screen sits in one shell: a sidebar listing what the person
+leads, belongs to or administers, and a top bar naming the page. An organization
+and a team (for its lead) are split into tabs, and the open tab is part of the
+address (`?tab=keys`), so a link to it and a reload both work. The overview at
+`/` has no call of its own: it asks for the pages the person can already open
+(`frontend/src/lib/overview.ts`), and a part that cannot be read leaves a gap
+that says so. Figures on a screen are ones the server sent or counts of what
+that screen lists; there are no charts until the browser API has data for them.
+
 Three rules shape the front end:
 
 - **The browser is given only what a page shows.** The broker's replies hold

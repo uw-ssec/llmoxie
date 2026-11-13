@@ -1,6 +1,9 @@
-import { Outlet, redirect, type LoaderFunctionArgs, type RouteObject } from 'react-router'
+import { Outlet, redirect, type LoaderFunctionArgs, type RouteObject, type ShouldRevalidateFunction } from 'react-router'
+import type { Crumb, RouteHandle } from '@/components/app-shell'
 import { ApiError, get, loadSession } from '@/lib/api'
+import { loadOverview } from '@/lib/overview'
 import { pageData } from '@/lib/page-data'
+import type { KnowledgePage, MyTeamPage, OrgPage, TeamManagePage } from '@/lib/types'
 import { AdminOrgsPage } from '@/pages/admin-orgs'
 import { AuditPage } from '@/pages/audit'
 import { DataProtectionPage } from '@/pages/dlp'
@@ -22,6 +25,16 @@ function page(path: (args: Args) => string) {
   }
 }
 
+/** The trail in the top bar, from the page's own data. A page that failed to load has none. */
+function trail<Data>(crumbs: (data: Data) => Crumb[]): RouteHandle {
+  return { crumbs: (data) => (data ? crumbs(data as Data) : []) }
+}
+const named = (label: string): RouteHandle => ({ crumbs: () => [{ label }] })
+
+/** Changing which tab is open changes the address and nothing else, so the page's data is not asked for again. */
+const keepForTabs: ShouldRevalidateFunction = ({ currentUrl, nextUrl, defaultShouldRevalidate }) =>
+  currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search ? false : defaultShouldRevalidate
+
 export const routes: RouteObject[] = [
   {
     id: 'root',
@@ -38,15 +51,23 @@ export const routes: RouteObject[] = [
       {
         errorElement: <ErrorScreen />, // a page failed; the bar across the top stays
         children: [
-          { index: true, element: <Landing /> },
+          { index: true, loader: loadOverview, handle: named('Overview'), element: <Landing /> },
           { path: 'invite/:token', loader: ({ params }) => get(`/invites/${params.token}`), element: <InvitationPage /> },
           { path: 'invite-result/:outcome', element: <InvitationResult /> },
-          { path: 'admin', loader: page(() => '/admin/orgs'), element: <AdminOrgsPage /> },
-          { path: 'admin/audit', loader: page(() => '/admin/audit'), element: <AuditPage /> },
-          { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <DataProtectionPage /> },
-          { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <OrgPageView /> },
+          { path: 'admin', loader: page(() => '/admin/orgs'), handle: named('Organizations'), element: <AdminOrgsPage /> },
+          { path: 'admin/audit', loader: page(() => '/admin/audit'), handle: named('Audit log'), element: <AuditPage /> },
+          { path: 'admin/dlp', loader: page(() => '/admin/dlp'), handle: named('Data protection'), element: <DataProtectionPage /> },
+          {
+            path: 'orgs/:orgId',
+            loader: page(({ params }) => `/orgs/${params.orgId}`),
+            shouldRevalidate: keepForTabs,
+            // An admin who does not lead it came from the list of every organization.
+            handle: trail<OrgPage>(({ org, is_lead }) => [...(is_lead ? [] : [{ label: 'Organizations', to: '/admin' }]), { label: org.name }]),
+            element: <OrgPageView />,
+          },
           {
             path: 'orgs/:orgId/knowledge',
+            handle: trail<KnowledgePage>(({ org }) => [{ label: org.name, to: `/orgs/${org.id}` }, { label: 'Knowledge' }]),
             // Which concept is open is part of the address, so a link to it and a reload both work.
             loader: page(({ params, request }) => {
               const concept = new URL(request.url).searchParams.get('concept')
@@ -54,8 +75,19 @@ export const routes: RouteObject[] = [
             }),
             element: <KnowledgePageView />,
           },
-          { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <MyTeamPageView /> },
-          { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <TeamManagePageView /> },
+          {
+            path: 'teams/:teamId',
+            loader: page(({ params }) => `/teams/${params.teamId}`),
+            handle: trail<MyTeamPage>(({ team }) => [{ label: team.name }]),
+            element: <MyTeamPageView />,
+          },
+          {
+            path: 'teams/:teamId/manage',
+            loader: page(({ params }) => `/teams/${params.teamId}/manage`),
+            shouldRevalidate: keepForTabs,
+            handle: trail<TeamManagePage>(({ team }) => [{ label: team.org_name, to: `/orgs/${team.org_id}` }, { label: team.name }]),
+            element: <TeamManagePageView />,
+          },
           {
             path: '*',
             loader: () => {

@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 import type { KnowledgePage } from '@/lib/types'
 
 /**
@@ -16,9 +16,16 @@ export function KnowledgeGraph({
   /** What makes a dot a link to its concept. */
   link: (id: string) => { href: string; onClick: (event: MouseEvent) => void }
 }) {
+  const frame = useRef<HTMLDivElement>(null)
+  const chosen = graph.nodes.find((node) => node.selected)
+  const at = chosen ? chosen.x / graph.width : null
+  useEffect(() => {
+    const element = frame.current
+    if (element && at !== null) element.scrollLeft = at * element.scrollWidth - element.clientWidth / 2
+  }, [at, chosen?.id])
   return (
     <>
-      <div className="overflow-x-auto">
+      <div ref={frame} className="overflow-x-auto">
         <svg className="knowledge-graph" viewBox={`0 0 ${graph.width} ${graph.height}`} role="img" aria-label={label}>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse">

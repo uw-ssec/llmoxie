@@ -36,7 +36,7 @@ it('lists the concepts and draws the graph, with no concept text until one is se
   await openApp('/orgs/o1/knowledge')
   expect(await screen.findByRole('heading', { name: 'Knowledge', level: 1 })).toBeInTheDocument()
   expect(screen.getByText('2 concepts, 1 link · read-only', { exact: false })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Astro Lab' })).toHaveAttribute('href', '/orgs/o1')
+  expect(within(screen.getByRole('main')).getByRole('link', { name: 'Astro Lab' })).toHaveAttribute('href', '/orgs/o1')
   const row = screen.getAllByRole('link', { name: 'Lab door code' }).map((a) => a.closest('tr')).find(Boolean)!
   expect(within(row).getByText('facts/lab-door')).toBeInTheDocument()
   expect(within(row).getByText('2026-11-03')).toBeInTheDocument()

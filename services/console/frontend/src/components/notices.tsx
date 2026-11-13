@@ -1,4 +1,4 @@
-import { XIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleCheckIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { notices, useNotices } from '@/lib/notices'
 
@@ -11,11 +11,13 @@ export function Notices() {
         <div
           key={notice.id}
           role={notice.kind === 'bad' ? 'alert' : undefined}
-          className={cn(
-            'flex items-start gap-3 rounded-md border border-l-4 bg-card p-4 text-sm shadow-lg',
-            notice.kind === 'good' ? 'border-l-good' : 'border-l-destructive',
-          )}
+          className={cn('flex items-start gap-3 rounded-md border bg-card p-4 text-sm shadow-lg', notice.kind === 'bad' && 'border-destructive/40')}
         >
+          {notice.kind === 'good' ? (
+            <CircleCheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-good" />
+          ) : (
+            <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+          )}
           <p className="flex-1">{notice.message}</p>
           <button type="button" aria-label="Dismiss" className="text-muted-foreground hover:text-foreground" onClick={() => notices.dismiss(notice.id)}>
             <XIcon className="size-4" />

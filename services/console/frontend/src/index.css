@@ -39,6 +39,8 @@
   /* The design system's own surfaces, under names of their own. */
   --color-nav: var(--surface-inverse);
   --color-nav-foreground: var(--color-gold-200);
+  --color-nav-muted: var(--color-gold-500);
+  --color-page: var(--surface-secondary);
   --color-signature: var(--color-teal-500);
   --color-terminal: var(--surface-terminal);
   --color-terminal-foreground: var(--color-teal-500);
@@ -95,9 +97,16 @@
   }
   html {
     @apply font-sans;
+    accent-color: var(--color-purple-700);
+    caret-color: var(--color-purple-700);
+    scrollbar-color: var(--color-neutral-300) transparent;
   }
   body {
     @apply bg-background text-base leading-relaxed text-foreground;
+  }
+  ::selection {
+    background: var(--color-purple-100);
+    color: var(--color-purple-950);
   }
   h1,
   h2,
@@ -126,10 +135,70 @@
   }
 }
 
+/* A table as a list of records, for a card too narrow for its columns (components/ui/table.tsx). */
+@utility stacked {
+  & :is(table, tbody) {
+    display: block;
+  }
+  & thead {
+    @apply sr-only;
+  }
+  & tr {
+    @apply grid gap-x-6 gap-y-2 py-3.5;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  }
+  & td {
+    @apply block min-w-0 p-0 text-left wrap-break-word whitespace-normal;
+  }
+  & td:empty {
+    display: none;
+  }
+  & td [data-slot='badge'] {
+    @apply h-auto text-left whitespace-normal;
+  }
+  & td:first-child,
+  & td:last-child:not([data-label]) {
+    grid-column: 1 / -1;
+  }
+  & td:first-child {
+    @apply font-semibold;
+  }
+  & td[data-label]:not(:first-child)::before {
+    @apply block font-ui text-xs font-semibold tracking-wider text-muted-foreground uppercase;
+    content: attr(data-label);
+  }
+  & td:last-child:not([data-label]) > [data-slot='button']:first-child {
+    @apply -ml-3;
+  }
+  /* A long log: the first cell on a line of its own, the rest running on after it with no headings. */
+  &.dense tr {
+    @apply flex flex-wrap gap-x-3 gap-y-0.5 py-3;
+  }
+  &.dense td:first-child {
+    @apply basis-full;
+  }
+  &.dense td[data-label]:not(:first-child)::before {
+    content: none;
+  }
+  &.dense td[data-empty] {
+    display: none;
+  }
+}
+
 /* Encode Sans Compressed, for buttons, navigation, labels and tags. */
 @utility font-ui {
   font-family: var(--font-compressed);
   font-stretch: 75%;
+}
+
+/* The line under the top bar while a page's data is on its way (components/app-shell.tsx). */
+@keyframes loading-line {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -139,10 +208,31 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  .loading-line::after {
+    animation: none;
+  }
 }
 
 /* Text the server made from a concept's Markdown (pages/knowledge.tsx). Plain elements, styled here. */
 @layer components {
+  /* Teal alone is too faint on white to be seen, so it runs along a purple track. */
+  .loading-line {
+    @apply absolute inset-x-0 -bottom-px h-0.5 overflow-hidden bg-nav;
+  }
+  .loading-line::after {
+    @apply absolute inset-y-0 left-0 w-2/5 bg-signature content-[''];
+    animation: loading-line 1.1s var(--ease-in-out) infinite;
+  }
+
+  /* The purple sidebar and the full-screen menu that stands in for it on a narrow screen. */
+  .on-nav {
+    scrollbar-color: var(--color-purple-600) transparent;
+  }
+  .on-nav ::selection {
+    background: var(--color-teal-500);
+    color: var(--color-purple-950);
+  }
+
   .doc {
     @apply max-w-[75ch] text-base leading-relaxed;
   }

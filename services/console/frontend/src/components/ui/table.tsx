@@ -3,17 +3,47 @@
 import * as React from "react"
 import { cn } from "cn"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+// Where the card a table sits in is narrower than its columns need, each row is laid out as a record
+// instead: its first cell as the row's name, the others beneath with their column heading above them,
+// its buttons last (the `stacked` utility in index.css). `stack` says how wide this table needs to be.
+const stacks = {
+  narrow: "@max-[30rem]:stacked",
+  medium: "@max-[40rem]:stacked",
+  wide: "@max-[54rem]:stacked",
+}
+
+function Table({
+  className,
+  stack = "narrow",
+  dense = false,
+  ...props
+}: React.ComponentProps<"table"> & {
+  stack?: keyof typeof stacks
+  /** For a long log: as records, a row is its first cell and then the rest run on, unlabelled. */
+  dense?: boolean
+}) {
+  const ref = React.useRef<HTMLTableElement>(null)
+  // A record's cells are labelled from the column headings, so no cell has to repeat its heading.
+  React.useLayoutEffect(() => {
+    const table = ref.current
+    if (!table) return
+    const headings = Array.from(table.querySelectorAll("thead th"), (th) => th.textContent?.trim() ?? "")
+    for (const row of table.querySelectorAll("tbody tr")) {
+      Array.from(row.children).forEach((cell, index) => {
+        if (headings[index]) cell.setAttribute("data-label", headings[index])
+      })
+    }
+  })
   return (
-    <div
-      data-slot="table-container"
-      className="relative w-full overflow-x-auto"
-    >
-      <table
-        data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
-      />
+    <div data-slot="table-container" className="@container relative w-full">
+      <div className={cn("overflow-x-auto", stacks[stack], dense && "dense")}>
+        <table
+          ref={ref}
+          data-slot="table"
+          className={cn("w-full caption-bottom text-sm", className)}
+          {...props}
+        />
+      </div>
     </div>
   )
 }

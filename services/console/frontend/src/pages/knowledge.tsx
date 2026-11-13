@@ -50,6 +50,10 @@ export function KnowledgePageView() {
         lede={
           <>
             <Link to={`/orgs/${org.id}`}>{org.name}</Link> · {plural(concepts.length, 'concept')}, {plural(view.edge_count, 'link')} · read-only
+            <span className="block">
+              One knowledge base, shared by all of {org.name}'s teams and written through their MCP clients. Only leads can read all of it
+              here.
+            </span>
           </>
         }
       />
@@ -63,7 +67,7 @@ export function KnowledgePageView() {
       ) : (
         <>
           {concept && (
-            <section id="concept" className="scroll-mt-24">
+            <section id="concept" className="scroll-mt-20">
               <Section
                 title={
                   <span className="flex flex-wrap items-center gap-3">
@@ -72,25 +76,32 @@ export function KnowledgePageView() {
                   </span>
                 }
               >
-                <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <code>{concept.id}</code>
-                  {concept.written_at && <span>· written {concept.written_at}</span>}
-                  {(concept.tags ?? []).map((tag) => (
-                    <Tag key={tag}>{tag}</Tag>
-                  ))}
-                </p>
-                {concept.description && <p>{concept.description}</p>}
-                <div className="doc" onClick={followTextLink} dangerouslySetInnerHTML={{ __html: concept.html }} />
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                  <dt className="font-ui font-semibold tracking-wider uppercase">Links to</dt>
-                  <dd>
-                    <Links to={concept.links_out} open={open} />
-                  </dd>
-                  <dt className="font-ui font-semibold tracking-wider uppercase">Linked from</dt>
-                  <dd>
-                    <Links to={concept.links_in} open={open} />
-                  </dd>
-                </dl>
+                {/* The text at reading width; beside it, what the concept is and what it links to. */}
+                <div className="grid gap-x-10 gap-y-5 @4xl:grid-cols-[minmax(0,75ch)_minmax(14rem,1fr)]">
+                  <div className="flex min-w-0 flex-col gap-5">
+                    {concept.description && <p className="text-base">{concept.description}</p>}
+                    <div className="doc" onClick={followTextLink} dangerouslySetInnerHTML={{ __html: concept.html }} />
+                  </div>
+                  <div className="flex flex-col gap-5 @4xl:border-l @4xl:pl-10">
+                    <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                      <code>{concept.id}</code>
+                      {concept.written_at && <span>· written {concept.written_at}</span>}
+                      {(concept.tags ?? []).map((tag) => (
+                        <Tag key={tag}>{tag}</Tag>
+                      ))}
+                    </p>
+                    <dl className="flex flex-col gap-1 text-sm">
+                      <dt className={th}>Links to</dt>
+                      <dd className="mb-3">
+                        <Links to={concept.links_out} open={open} />
+                      </dd>
+                      <dt className={th}>Linked from</dt>
+                      <dd>
+                        <Links to={concept.links_in} open={open} />
+                      </dd>
+                    </dl>
+                  </div>
+                </div>
               </Section>
             </section>
           )}
@@ -108,7 +119,7 @@ export function KnowledgePageView() {
           </Section>
 
           <Section title="Concepts">
-            <Table>
+            <Table stack="medium">
               <TableHeader>
                 <TableRow>
                   <TableHead className={th}>Concept</TableHead>

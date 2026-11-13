@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { cleanup, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openApp } from '@/test/open'
@@ -27,36 +27,51 @@ const AS_ADMIN = {
   ],
 }
 const ok = { json: { message: 'Done.' } }
+/** Opens one of the organization's tabs, as following its link does. */
+async function tab(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const tabs = within(screen.getByRole('navigation', { name: 'Parts of Astro Lab' }))
+  await user.click(tabs.getByRole('link', { name: new RegExp(`^${name}`) }))
+  await tabs.findByRole('link', { name: new RegExp(`^${name}`), current: 'page' })
+}
 
 it('shows a lead the organization, with no admin controls and no lead invitations', async () => {
+  const user = userEvent.setup()
   serve({ ...signedIn(), 'GET /web-api/orgs/o1': { json: ORG } })
   await openApp('/orgs/o1')
   expect(await screen.findByRole('heading', { name: 'Astro Lab', level: 1 })).toBeInTheDocument()
-  expect(screen.getByText('$100.00', { exact: false })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Browse the knowledge base and its graph' })).toHaveAttribute('href', '/orgs/o1/knowledge')
+  expect(screen.getByText('Budget ceiling').parentElement).toHaveTextContent('$100.00')
+  expect(screen.getByRole('link', { name: 'Knowledge base' })).toHaveAttribute('href', '/orgs/o1/knowledge')
+  expect(screen.queryByRole('link', { name: /^Admin/ })).toBeNull() // no admin tab for a lead
+  // Teams is the tab that opens first.
   expect(screen.getByRole('link', { name: 'Workshop' })).toHaveAttribute('href', '/teams/t1/manage')
   expect(within(screen.getByRole('link', { name: 'Workshop' }).closest('tr')!).getByText('archived')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Add model' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Create team' })).toBeInTheDocument()
-  for (const name of ['Save ceiling', 'Suspend organization', 'Remove organization', 'Send invitation']) {
-    expect(screen.queryByRole('button', { name })).toBeNull()
-  }
   // A lead may remove a model, but not another lead.
+  await tab(user, 'Models')
+  expect(screen.getByRole('button', { name: 'Add model' })).toBeInTheDocument()
   expect(within(screen.getByText('astro/gpt').closest('tr')!).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+  await tab(user, 'Leads')
   expect(within(screen.getByText('lead@uw.edu').closest('tr')!).queryByRole('button')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Send invitation' })).toBeNull()
 })
 
 it('shows an admin who is not a lead the admin controls, and no add-model or new-team form', async () => {
+  const user = userEvent.setup()
   serve({ ...signedIn({ is_admin: true }), 'GET /web-api/orgs/o1': { json: AS_ADMIN } })
   await openApp('/orgs/o1')
-  expect(await screen.findByRole('button', { name: 'Save ceiling' })).toBeInTheDocument()
+  await screen.findByRole('heading', { name: 'Astro Lab', level: 1 })
+  expect(screen.queryByRole('button', { name: 'Create team' })).toBeNull()
+  expect(screen.queryByRole('link', { name: /knowledge base/i })).toBeNull()
+  await tab(user, 'Admin')
+  expect(screen.getByRole('button', { name: 'Save ceiling' })).toBeInTheDocument()
   expect(screen.getByLabelText(/Budget ceiling/)).toHaveValue(100)
   expect(screen.getByRole('button', { name: 'Suspend organization' })).toBeInTheDocument()
+  await tab(user, 'Models')
+  expect(screen.queryByRole('button', { name: 'Add model' })).toBeNull()
+  expect(within(screen.getByText('astro/gpt').closest('tr')!).queryByRole('button')).toBeNull()
+  await tab(user, 'Leads')
   expect(screen.getByRole('button', { name: 'Send invitation' })).toBeInTheDocument()
   expect(within(screen.getByText('lead@uw.edu').closest('tr')!).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
-  for (const name of ['Add model', 'Create team']) expect(screen.queryByRole('button', { name })).toBeNull()
-  expect(screen.queryByRole('link', { name: /knowledge base/ })).toBeNull()
-  expect(within(screen.getByText('astro/gpt').closest('tr')!).queryByRole('button')).toBeNull()
   const pending = screen.getByText('new@uw.edu').closest('li')!
   expect(within(pending).getByText('invited, not yet accepted')).toBeInTheDocument()
   expect(within(pending).getByRole('button', { name: 'Cancel invitation' })).toBeInTheDocument()
@@ -68,12 +83,16 @@ it('shows an admin who is not a lead the admin controls, and no add-model or new
 it('hides add-model and new-team when the organization is suspended, and offers the admin Resume', async () => {
   const suspended = { ...ORG.org, status: 'suspended' }
   serve({ ...signedIn(), 'GET /web-api/orgs/o1': { json: { ...ORG, org: suspended } } })
+  const user = userEvent.setup()
   await openApp('/orgs/o1')
   expect(await screen.findByText('suspended')).toBeInTheDocument()
-  for (const name of ['Add model', 'Create team']) expect(screen.queryByRole('button', { name })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Create team' })).toBeNull()
+  await tab(user, 'Models')
+  expect(screen.queryByRole('button', { name: 'Add model' })).toBeNull()
+  cleanup()
 
   serve({ ...signedIn({ is_admin: true }), 'GET /web-api/orgs/o1': { json: { ...AS_ADMIN, org: suspended } } })
-  await openApp('/orgs/o1')
+  await openApp('/orgs/o1?tab=admin')
   expect(await screen.findByRole('button', { name: 'Resume organization' })).toBeInTheDocument()
 })
 
@@ -85,7 +104,7 @@ it('sends the typed short name when removing and follows goto to /admin', async 
     'POST /web-api/admin/orgs/o1/remove': { json: { message: 'Organization removed: 1 team(s) archived, 2 key(s) deleted, 1 model(s) removed.', goto: '/admin' } },
     'GET /web-api/admin/orgs': { json: { orgs: [] } },
   })
-  const router = await openApp('/orgs/o1')
+  const router = await openApp('/orgs/o1?tab=admin')
   await user.click(await screen.findByRole('button', { name: 'Remove organization' }))
   const dialog = screen.getByRole('dialog')
   await user.type(within(dialog).getByRole('textbox'), 'astro')
@@ -102,7 +121,7 @@ it('adds a model with the first provider chosen, and clears the provider key aft
     'GET /web-api/orgs/o1': { json: ORG },
     'POST /web-api/orgs/o1/models': { json: { message: 'Added astro/gpt-5-mini. The key cannot be viewed again.' } },
   })
-  await openApp('/orgs/o1')
+  await openApp('/orgs/o1?tab=models')
   const key = await screen.findByLabelText(/Provider API key/)
   expect(key).toHaveAttribute('type', 'password')
   expect(key).toHaveAttribute('autocomplete', 'off')
@@ -149,7 +168,7 @@ it('lets an admin decide a lead request, cancel an invitation, and remove a lead
     'POST /web-api/admin/orgs/o1/suspend': ok,
     'POST /web-api/admin/orgs/o1/leads': ok,
   })
-  await openApp('/orgs/o1')
+  await openApp('/orgs/o1?tab=leads')
   await user.click(within((await screen.findByText('other@uw.edu')).closest('li')!).getByRole('button', { name: 'Reject' }))
   await user.click(within(screen.getByText('new@uw.edu').closest('li')!).getByRole('button', { name: 'Cancel invitation' }))
   await user.click(within(screen.getByText('lead@uw.edu').closest('tr')!).getByRole('button', { name: 'Remove' }))

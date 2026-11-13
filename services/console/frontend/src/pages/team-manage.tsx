@@ -3,7 +3,7 @@ import { Link, useLoaderData } from 'react-router'
 import { ActionButton } from '@/components/action-button'
 import { ActionForm } from '@/components/action-form'
 import { Field } from '@/components/form-field'
-import { Muted, PageHeader, Section, SubHeading } from '@/components/page'
+import { Muted, PageHeader, Section, Split, Stat, Stats, Tabs } from '@/components/page'
 import { PendingInvites } from '@/components/pending-invites'
 import { StatusTag } from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -18,6 +18,7 @@ import { number } from '@/lib/forms'
 import { usd } from '@/lib/format'
 import { useSignedIn } from '@/lib/session'
 import { num, th } from '@/lib/styles'
+import { useTab, type Tab } from '@/lib/tabs'
 import type { TeamManagePage } from '@/lib/types'
 import { useAction } from '@/lib/use-action'
 import { ConnectedServices, KeysSection, RemoveTeam, UsageSection } from './team-manage-sections'
@@ -30,13 +31,21 @@ import { ConnectedServices, KeysSection, RemoveTeam, UsageSection } from './team
  */
 export function TeamManagePageView() {
   const view = useLoaderData() as TeamManagePage
-  const { team, is_lead } = view
+  const { team, members, keys, usage, invites, is_lead } = view
   const { is_admin } = useSignedIn().me
   const live = is_lead && team.status === 'active' && team.org_status === 'active'
+  const tabs: Tab<'people' | 'keys' | 'usage' | 'settings'>[] = [
+    { id: 'people', label: 'People', count: members.length },
+    { id: 'keys', label: 'Keys', count: keys.length },
+    { id: 'usage', label: 'Usage' },
+    { id: 'settings', label: 'Settings' },
+  ]
+  const tab = useTab(tabs)
+  const total = (of: (row: TeamManagePage['usage'][number]) => number) => usage.reduce((sum, row) => sum + of(row), 0)
+  const failed = total((row) => row.failed)
   return (
     <>
       <PageHeader
-        back={{ to: `/orgs/${team.org_id}`, label: team.org_name }}
         title={team.name}
         tag={<StatusTag status={team.status} />}
         lede={`Up to ${team.key_limit} keys per person · ${usd(team.key_budget)} per key · keys expire after ${team.key_expiry_days} days`}
@@ -49,55 +58,66 @@ export function TeamManagePageView() {
       )}
       {team.status === 'archived' && <Note>This team is archived. Its keys are deleted and nothing here can be changed.</Note>}
 
-      <Section title="Budget">
-        <ActionForm
-          keep
-          submit={live ? 'Save budget' : undefined}
-          call={(fields) => post(`/teams/${team.id}/budget`, { team_budget: number(fields, 'team_budget') })}
-        >
-          <Field label={`Team budget (USD), up to the organization's ceiling of ${usd(team.org_budget_ceiling)}`}>
-            <Input name="team_budget" type="number" min={0} step={0.01} required defaultValue={Number(team.team_budget)} disabled={!live} className="max-w-60" />
-          </Field>
-        </ActionForm>
-      </Section>
+      <Stats label={`${team.name} in figures`}>
+        <Stat label="Members" value={members.length} detail={invites.length > 0 ? `${invites.length} invited or waiting` : undefined} />
+        <Stat label="Keys" value={keys.length} />
+        <Stat label="Requests" value={total((row) => row.requests)} detail={failed > 0 ? `${failed} failed` : undefined} />
+        <Stat label="Spend" value={usd(total((row) => row.spend))} detail={`team budget ${usd(team.team_budget)}`} />
+      </Stats>
+      <Tabs label={`Parts of ${team.name}`} tabs={tabs} current={tab} />
 
-      <Section title="Models this team may use">
-        {view.models.length === 0 ? (
-          <Muted>
-            The organization has no models yet. <Link to={`/orgs/${team.org_id}`}>Add one</Link>.
-          </Muted>
-        ) : (
-          <ModelChoice view={view} live={live} />
-        )}
-      </Section>
-
-      <People view={view} live={live} isAdmin={is_admin} />
-      <KeysSection view={view} live={live} />
-      <UsageSection view={view} />
-
-      {live && (
-        <Section title="Archive" description="Deletes every key in this team and makes it read-only. Records are kept. This cannot be undone.">
-          <div>
-            <ActionButton
-              variant="destructive"
-              size="default"
-              call={() => post(`/teams/${team.id}/archive`)}
-              confirm={{ title: `Archive ${team.name}?`, description: 'Every key in this team is deleted and the team becomes read-only. This cannot be undone.' }}
+      {tab === 'people' && <People view={view} live={live} isAdmin={is_admin} />}
+      {tab === 'keys' && <KeysSection view={view} live={live} />}
+      {tab === 'usage' && <UsageSection view={view} />}
+      {tab === 'settings' && (
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <Section title="Budget">
+            <ActionForm
+              keep
+              submit={live ? 'Save budget' : undefined}
+              call={(fields) => post(`/teams/${team.id}/budget`, { team_budget: number(fields, 'team_budget') })}
             >
-              Archive team
-            </ActionButton>
-          </div>
-        </Section>
+              <Field label={`Team budget (USD), up to the organization's ceiling of ${usd(team.org_budget_ceiling)}`}>
+                <Input name="team_budget" type="number" min={0} step={0.01} required defaultValue={Number(team.team_budget)} disabled={!live} className="max-w-60" />
+              </Field>
+            </ActionForm>
+          </Section>
+
+          <Section title="Models this team may use">
+            {view.models.length === 0 ? (
+              <Muted>
+                The organization has no models yet. <Link to={`/orgs/${team.org_id}?tab=models`}>Add one</Link>.
+              </Muted>
+            ) : (
+              <ModelChoice view={view} live={live} />
+            )}
+          </Section>
+
+          {(view.integrations.length > 0 || is_admin) && <ConnectedServices view={view} isAdmin={is_admin} />}
+          {live && (
+            <Section title="Archive" description="Deletes every key in this team and makes it read-only. Records are kept. This cannot be undone.">
+              <div>
+                <ActionButton
+                  variant="destructive"
+                  size="default"
+                  call={() => post(`/teams/${team.id}/archive`)}
+                  confirm={{ title: `Archive ${team.name}?`, description: 'Every key in this team is deleted and the team becomes read-only. This cannot be undone.' }}
+                >
+                  Archive team
+                </ActionButton>
+              </div>
+            </Section>
+          )}
+          {is_admin && <RemoveTeam view={view} />}
+        </div>
       )}
-      {(view.integrations.length > 0 || is_admin) && <ConnectedServices view={view} isAdmin={is_admin} />}
-      {is_admin && <RemoveTeam view={view} />}
     </>
   )
 }
 
 function Note({ children }: { children: string }) {
   return (
-    <Alert className="mb-6">
+    <Alert>
       <AlertDescription>{children}</AlertDescription>
     </Alert>
   )
@@ -148,58 +168,62 @@ function ModelChoice({ view: { team, models }, live }: { view: TeamManagePage; l
 function People({ view: { team, members, invites }, live, isAdmin }: { view: TeamManagePage; live: boolean; isAdmin: boolean }) {
   const mayRemove = live || (isAdmin && team.status === 'active')
   return (
-    <Section title="People">
-      {members.length === 0 ? (
-        <Muted>Nobody has joined yet.</Muted>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className={th}>Email</TableHead>
-              <TableHead className={th}>Terms</TableHead>
-              <TableHead className={`${th} ${num}`}>Keys</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.map((member) => (
-              <TableRow key={member.id}>
-                <TableCell>{member.email}</TableCell>
-                <TableCell>{member.terms_accepted ? 'accepted' : 'not accepted'}</TableCell>
-                <TableCell className={num}>{member.keys}</TableCell>
-                <TableCell className="text-right">
-                  {mayRemove && <ActionButton call={() => post(`/teams/${team.id}/members/${member.id}/remove`)}>Remove</ActionButton>}
-                </TableCell>
+    <Split
+      aside={
+        live && (
+          <Section title="Invite people">
+            {/* The one form sent as a form: it can carry a file, which the server reads. */}
+            <ActionForm submit="Send invitations" call={(fields) => postForm(`/teams/${team.id}/invites`, fields)}>
+              <Field label="Email addresses, one per line">
+                <Textarea name="emails" rows={4} />
+              </Field>
+              <Field
+                label={
+                  <>
+                    Or a CSV file with an <code className="normal-case">email</code> column
+                  </>
+                }
+              >
+                <Input name="csv_file" type="file" accept=".csv,text/csv" />
+              </Field>
+            </ActionForm>
+          </Section>
+        )
+      }
+    >
+      <Section title="People">
+        {members.length === 0 ? (
+          <Muted>Nobody has joined yet.</Muted>
+        ) : (
+          <Table stack="medium">
+            <TableHeader>
+              <TableRow>
+                <TableHead className={th}>Email</TableHead>
+                <TableHead className={th}>Terms</TableHead>
+                <TableHead className={`${th} ${num}`}>Keys</TableHead>
+                <TableHead />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-      <PendingInvites
-        invites={invites}
-        decide={(invite, approve) => post(`/teams/${team.id}/requests/${invite.id}`, { approve })}
-        cancel={live ? (invite) => post(`/teams/${team.id}/invites/${invite.id}/revoke`) : undefined}
-      />
-      {live && (
-        <>
-          <SubHeading>Invite people</SubHeading>
-          {/* The one form sent as a form: it can carry a file, which the server reads. */}
-          <ActionForm submit="Send invitations" call={(fields) => postForm(`/teams/${team.id}/invites`, fields)}>
-            <Field label="Email addresses, one per line">
-              <Textarea name="emails" rows={4} />
-            </Field>
-            <Field
-              label={
-                <>
-                  Or a CSV file with an <code className="normal-case">email</code> column
-                </>
-              }
-            >
-              <Input name="csv_file" type="file" accept=".csv,text/csv" />
-            </Field>
-          </ActionForm>
-        </>
-      )}
-    </Section>
+            </TableHeader>
+            <TableBody>
+              {members.map((member) => (
+                <TableRow key={member.id}>
+                  <TableCell>{member.email}</TableCell>
+                  <TableCell>{member.terms_accepted ? 'accepted' : 'not accepted'}</TableCell>
+                  <TableCell className={num}>{member.keys}</TableCell>
+                  <TableCell className="text-right">
+                    {mayRemove && <ActionButton call={() => post(`/teams/${team.id}/members/${member.id}/remove`)}>Remove</ActionButton>}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        <PendingInvites
+          invites={invites}
+          decide={(invite, approve) => post(`/teams/${team.id}/requests/${invite.id}`, { approve })}
+          cancel={live ? (invite) => post(`/teams/${team.id}/invites/${invite.id}/revoke`) : undefined}
+        />
+      </Section>
+    </Split>
   )
 }

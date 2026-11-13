@@ -5,7 +5,7 @@ import { Centered } from '@/components/page'
 import { ApiError } from '@/lib/api'
 import type { Invitation, Me } from '@/lib/types'
 
-const lede = 'max-w-[60ch] text-lg text-muted-foreground'
+const lede = 'max-w-[60ch] text-muted-foreground'
 const SPENT = 'It may have been used already, expired, or been replaced by a newer one. Ask for a new invitation.'
 
 export function NotInvited({ me }: { me: Me }) {

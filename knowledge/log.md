@@ -1,4 +1,7 @@
 ## 2026-11-13
+* **Update**: Updated concept `decisions/console-dashboard-layout.md`.
+* **Update**: Linked `decisions/console-dashboard-layout.md` to `decisions/console-react-front-end.md` (The dashboard layout is built on that React front end and keeps its rules: the strict content security policy, field-by-field responses, keys in memory only).
+* **Creation**: Documented concept `decisions/console-dashboard-layout.md` (The console is a sidebar dashboard that shows only figures the server sent, with no charts until analytics exist).
 * **Update**: Linked `decisions/console-react-front-end.md` to `decisions/platform-only-scope.md` (The console this front end belongs to is in the repo's scope by that decision).
 * **Creation**: Documented concept `decisions/console-react-front-end.md` (The console's pages are a React application served by console-web, under a policy that allows nothing inline).
 * **Update**: Updated concept `decisions/platform-only-scope.md`.

@@ -8,7 +8,7 @@ export function SignIn() {
   const [query] = useSearchParams()
   return (
     <Centered title="LLMoxie console">
-      <p className="text-lg text-muted-foreground">Manage your organization's teams, models and API keys.</p>
+      <p className="text-muted-foreground">Manage your organization's teams, models and API keys.</p>
       {query.get('signin') === 'failed' && (
         <Alert variant="destructive" role="alert">
           <AlertDescription>That sign-in could not be completed. Please start again.</AlertDescription>

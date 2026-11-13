@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { useNavigate, useRevalidator } from 'react-router'
+import { useLocation, useNavigate, useRevalidator } from 'react-router'
 import { ApiError, type ActionResult } from './api'
 import { notices } from './notices'
 import { reloadAfterAction } from './page-data'
@@ -18,6 +18,7 @@ export function useAction() {
   const [error, setError] = useState<string | null>(null)
   const busy = useRef(false)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { revalidate } = useRevalidator()
 
   const run = useCallback(
@@ -29,7 +30,8 @@ export function useAction() {
       try {
         const result = await call()
         if (result.message) notices.add('good', result.message)
-        if (result.goto) await navigate(result.goto)
+        // Sent to the page already open, stay at this address: it also says which tab is open.
+        if (result.goto && result.goto !== pathname) await navigate(result.goto)
         else await reloadAfterAction(revalidate)
         return result
       } catch (failure) {
@@ -43,7 +45,7 @@ export function useAction() {
         setPending(false)
       }
     },
-    [navigate, revalidate],
+    [navigate, revalidate, pathname],
   )
 
   return { run, pending, error }

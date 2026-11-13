@@ -55,6 +55,16 @@ it('goes to goto when the answer has one', async () => {
   await vi.waitFor(() => expect(t.router.state.location.pathname).toBe('/orgs/7'))
 })
 
+it('reloads in place, keeping the open tab, when goto is the page already open', async () => {
+  const t = setup()
+  await vi.waitFor(() => expect(t.hook).toBeDefined())
+  await act(async () => { await t.router.navigate('/start?tab=settings') })
+  const loads = t.loader.mock.calls.length
+  await act(async () => { await t.hook.run(async () => ({ message: 'Disconnected.', goto: '/start' })) })
+  await vi.waitFor(() => expect(t.loader).toHaveBeenCalledTimes(loads + 1))
+  expect(t.router.state.location.search).toBe('?tab=settings')
+})
+
 it('keeps a refusal the user can fix for the form to show, and says other failures aloud', async () => {
   const t = setup()
   await vi.waitFor(() => expect(t.hook).toBeDefined())

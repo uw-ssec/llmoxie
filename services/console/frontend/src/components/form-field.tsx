@@ -22,9 +22,9 @@ export function Field({ label, hint, children }: { label: ReactNode; hint?: Reac
   )
 }
 
-/** Fields side by side, stacking on a narrow screen. */
+/** Fields side by side, stacking where the card they are in is narrow (components/page.tsx marks it as the container). */
 export function Row({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-4 sm:flex-row">{children}</div>
+  return <div className="flex flex-col gap-4 @lg:flex-row">{children}</div>
 }
 
 /** Why the server refused what was just submitted, next to the form it came from. */

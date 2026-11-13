@@ -25,19 +25,40 @@ const TEAM = {
 }
 const page = (view: unknown) => ({ 'GET /web-api/teams/t1/manage': { json: view } })
 const ok = { json: { message: 'Done.' } }
-const LEAD_ONLY = ['Save budget', 'Save models', 'Send invitations', 'Rotate', 'Revoke', 'Cancel invitation', 'Archive team']
+/** What only the lead can do, by the tab it is on. */
+const LEAD_ONLY = { People: ['Send invitations', 'Cancel invitation'], Keys: ['Rotate', 'Revoke'], Settings: ['Save budget', 'Save models', 'Archive team'] }
+/** Opens one of the team's tabs, as following its link does. */
+async function tab(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const tabs = within(screen.getByRole('navigation', { name: 'Parts of Workshop' }))
+  await user.click(tabs.getByRole('link', { name: new RegExp(`^${name}`) }))
+  await tabs.findByRole('link', { name: new RegExp(`^${name}`), current: 'page' })
+}
 
 it('gives the lead every control, and shows who holds which key but never a key', async () => {
+  const user = userEvent.setup()
   serve({ ...signedIn(), ...page(TEAM) })
   await openApp('/teams/t1/manage')
   expect(await screen.findByRole('heading', { name: 'Workshop', level: 1 })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: '← Astro Lab' })).toHaveAttribute('href', '/orgs/o1')
+  expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Astro Lab' })).toHaveAttribute('href', '/orgs/o1')
   expect(screen.getByText('Up to 2 keys per person · $5.00 per key · keys expire after 30 days')).toBeInTheDocument()
   expect(screen.queryByText(/viewing this team as an SSEC admin/)).toBeNull()
-  for (const name of LEAD_ONLY) expect(screen.getAllByRole('button', { name }).length).toBeGreaterThan(0)
+  // The figures are sums of what the tabs list.
+  const figures = within(screen.getByRole('region', { name: 'Workshop in figures' }))
+  expect(figures.getByText('Members').parentElement).toHaveTextContent('2')
+  expect(figures.getByText('Requests').parentElement).toHaveTextContent('1 failed')
+  expect(figures.getByText('Spend').parentElement).toHaveTextContent('$0.01')
+
+  // People is the tab that opens first.
+  for (const name of LEAD_ONLY.People) expect(screen.getAllByRole('button', { name }).length).toBeGreaterThan(0)
+  expect(within(screen.getByText('p2@uw.edu').closest('tr')!).getByText('not accepted')).toBeInTheDocument()
+
+  await tab(user, 'Settings')
+  for (const name of LEAD_ONLY.Settings) expect(screen.getAllByRole('button', { name }).length).toBeGreaterThan(0)
   for (const name of ['Remove team', 'Connect service', 'Disconnect']) expect(screen.queryByRole('button', { name })).toBeNull()
   expect(screen.getByText('JupyterHub')).toBeInTheDocument() // a lead can see what is connected
 
+  await tab(user, 'Keys')
+  for (const name of LEAD_ONLY.Keys) expect(screen.getAllByRole('button', { name }).length).toBeGreaterThan(0)
   const laptop = screen.getByText('laptop').closest('tr')!
   expect(within(laptop).getByText('sk-...abcd')).toBeInTheDocument()
   expect(within(laptop).getByText('$0.0125 of $5.00')).toBeInTheDocument()
@@ -46,36 +67,51 @@ it('gives the lead every control, and shows who holds which key but never a key'
   expect(within(desk).getByText('rotated, not collected yet')).toBeInTheDocument()
   expect(within(desk).queryByRole('button', { name: 'Rotate' })).toBeNull() // nothing to rotate until it is collected
   expect(within(desk).getByRole('button', { name: 'Revoke' })).toBeInTheDocument()
-  expect(within(screen.getByText('p2@uw.edu').closest('tr')!).getByText('not accepted')).toBeInTheDocument()
 })
 
 it('gives an admin who is not the lead only the remove-member, service and remove-team controls', async () => {
   serve({ ...signedIn({ is_admin: true }), ...page({ ...TEAM, is_lead: false }) })
+  const user = userEvent.setup()
   await openApp('/teams/t1/manage')
   expect(await screen.findByText(/You are viewing this team as an SSEC admin/)).toBeInTheDocument()
-  for (const name of LEAD_ONLY) expect(screen.queryByRole('button', { name })).toBeNull()
-  expect(screen.getByLabelText(/Team budget/)).toBeDisabled()
-  for (const box of screen.getAllByRole('checkbox', { name: /^astro\// })) expect(box).toBeDisabled()
-  expect(within(screen.getAllByText('p1@uw.edu')[0].closest('tr')!).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
-  for (const name of ['Remove team', 'Connect service', 'Disconnect']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
+  for (const name of LEAD_ONLY.People) expect(screen.queryByRole('button', { name })).toBeNull()
+  expect(within(screen.getByText('p1@uw.edu').closest('tr')!).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
   // A request waiting for a decision is still shown with its buttons; the server decides whose it is to answer.
   expect(within(screen.getByText('asked@uw.edu').closest('li')!).getByRole('button', { name: 'Approve' })).toBeInTheDocument()
+
+  await tab(user, 'Keys')
+  for (const name of LEAD_ONLY.Keys) expect(screen.queryByRole('button', { name })).toBeNull()
+
+  await tab(user, 'Settings')
+  for (const name of LEAD_ONLY.Settings) expect(screen.queryByRole('button', { name })).toBeNull()
+  expect(screen.getByLabelText(/Team budget/)).toBeDisabled()
+  for (const box of screen.getAllByRole('checkbox', { name: /^astro\// })) expect(box).toBeDisabled()
+  for (const name of ['Remove team', 'Connect service', 'Disconnect']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
 })
 
 it('freezes every control on an archived team', async () => {
   const archived = { ...TEAM, team: { ...TEAM.team, status: 'archived' }, keys: [], invites: [] }
   serve({ ...signedIn(), ...page(archived) })
+  const user = userEvent.setup()
   await openApp('/teams/t1/manage')
   expect(await screen.findByText('This team is archived. Its keys are deleted and nothing here can be changed.')).toBeInTheDocument()
+  // Nothing on any tab can be pressed.
+  const buttons = () => within(screen.getByRole('main')).queryAllByRole('button')
+  expect(buttons()).toEqual([])
+  await tab(user, 'Keys')
   expect(screen.getByText('Archived teams have no keys.')).toBeInTheDocument()
+  expect(buttons()).toEqual([])
+  await tab(user, 'Usage')
+  expect(buttons()).toEqual([])
+  await tab(user, 'Settings')
   expect(screen.getByLabelText(/Team budget/)).toBeDisabled()
-  expect(screen.queryAllByRole('button').map((b) => b.textContent)).toEqual(['Sign out'])
+  expect(buttons()).toEqual([])
 })
 
 it('saves the budget as a number and the ticked models as ids', async () => {
   const user = userEvent.setup()
   const { calls } = serve({ ...signedIn(), ...page(TEAM), 'POST /web-api/teams/t1/budget': ok, 'POST /web-api/teams/t1/models': ok })
-  await openApp('/teams/t1/manage')
+  await openApp('/teams/t1/manage?tab=settings')
   const budget = await screen.findByLabelText(/Team budget/)
   expect(budget).toHaveValue(50)
   await user.clear(budget)
@@ -122,9 +158,10 @@ it('lets the lead decide requests, cancel invitations, rotate and revoke keys, a
   await openApp('/teams/t1/manage')
   await user.click(within((await screen.findByText('asked@uw.edu')).closest('li')!).getByRole('button', { name: 'Approve' }))
   await user.click(within(screen.getByText('new@uw.edu').closest('li')!).getByRole('button', { name: 'Cancel invitation' }))
+  await user.click(within(screen.getByText('p2@uw.edu').closest('tr')!).getByRole('button', { name: 'Remove' }))
+  await tab(user, 'Keys')
   await user.click(within(screen.getByText('laptop').closest('tr')!).getByRole('button', { name: 'Rotate' }))
   await user.click(within(screen.getByText('desk').closest('tr')!).getByRole('button', { name: 'Revoke' }))
-  await user.click(within(screen.getByText('p2@uw.edu').closest('tr')!).getByRole('button', { name: 'Remove' }))
   await vi.waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(5))
   const posts = Object.fromEntries(calls.filter((call) => call.method === 'POST').map((call) => [call.path, call.body]))
   expect(posts['/web-api/teams/t1/requests/i2']).toEqual({ approve: true })
@@ -137,7 +174,7 @@ it('lets the lead decide requests, cancel invitations, rotate and revoke keys, a
 it('archives only after the question is answered', async () => {
   const user = userEvent.setup()
   const { calls } = serve({ ...signedIn(), ...page(TEAM), 'POST /web-api/teams/t1/archive': { json: { message: 'Team archived. 2 key(s) deleted.' } } })
-  await openApp('/teams/t1/manage')
+  await openApp('/teams/t1/manage?tab=settings')
   await user.click(await screen.findByRole('button', { name: 'Archive team' }))
   expect(calls.some((call) => call.method === 'POST')).toBe(false)
   await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive team' }))
@@ -153,7 +190,7 @@ it('lets an admin connect and disconnect a service, and remove the team by typin
     'POST /web-api/admin/teams/t1/remove': { json: { message: 'Team removed: 2 member(s) removed, 1 key(s) deleted.', goto: '/orgs/o1' } },
     'GET /web-api/orgs/o1': { status: 403, json: { error: { status: 403, message: 'You do not have access to that.' } } },
   })
-  const router = await openApp('/teams/t1/manage')
+  const router = await openApp('/teams/t1/manage?tab=settings')
   await user.type(await screen.findByLabelText(/client ID/), ' lab ')
   await user.type(screen.getByLabelText(/Name, also used/), 'Lab')
   await user.click(screen.getByRole('checkbox', { name: /may add its signed-in users/ }))

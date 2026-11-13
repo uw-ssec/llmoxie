@@ -2,7 +2,7 @@
 import { ActionButton } from '@/components/action-button'
 import { ActionForm } from '@/components/action-form'
 import { Field, Row } from '@/components/form-field'
-import { Muted, Section, SubHeading } from '@/components/page'
+import { Muted, Section } from '@/components/page'
 import { Tag } from '@/components/status-badge'
 import { TypeToConfirmDialog } from '@/components/type-to-confirm-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { post } from '@/lib/api'
 import { text } from '@/lib/forms'
-import { day, usd } from '@/lib/format'
+import { count, day, usd } from '@/lib/format'
 import { num, th } from '@/lib/styles'
 import type { TeamManagePage } from '@/lib/types'
 import { useAction } from '@/lib/use-action'
@@ -23,10 +23,10 @@ export function KeysSection({ view: { team, keys }, live }: { view: TeamManagePa
       title="Keys"
       description="Each person's keys. Only the owner ever sees a key itself, once, when they create it. Rotate stops a key at once and lets its owner collect a replacement; Revoke removes it."
     >
-      <Table>
+      <Table stack="wide">
         <TableHeader>
           <TableRow>
-            {['Email', 'Name', 'Key', 'Created', 'Expires', 'Last used'].map((heading) => (
+            {['Owner and name', 'Key', 'Created', 'Expires', 'Last used'].map((heading) => (
               <TableHead key={heading} className={th}>
                 {heading}
               </TableHead>
@@ -38,16 +38,19 @@ export function KeysSection({ view: { team, keys }, live }: { view: TeamManagePa
         <TableBody>
           {keys.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-muted-foreground">
+              <TableCell colSpan={7} className="text-muted-foreground">
                 {team.status === 'archived' ? 'Archived teams have no keys.' : 'Nobody has created a key yet.'}
               </TableCell>
             </TableRow>
           )}
           {keys.map((key) => (
             <TableRow key={key.id}>
-              <TableCell>{key.email}</TableCell>
-              <TableCell>{key.name}</TableCell>
-              <TableCell>{key.waiting ? <Tag>rotated, not collected yet</Tag> : <code>{key.hint ?? '—'}</code>}</TableCell>
+              <TableCell>
+                {key.email}
+                <br />
+                <span className="font-normal text-muted-foreground">{key.name}</span>
+              </TableCell>
+              <TableCell className="whitespace-normal">{key.waiting ? <Tag>rotated, not collected yet</Tag> : <code>{key.hint ?? '—'}</code>}</TableCell>
               <TableCell className="tabular-nums">{day(key.created_at)}</TableCell>
               <TableCell className="tabular-nums">{key.expires ? day(key.expires) : '—'}</TableCell>
               <TableCell className="tabular-nums">{key.last_used ? day(key.last_used) : 'never'}</TableCell>
@@ -69,7 +72,7 @@ export function KeysSection({ view: { team, keys }, live }: { view: TeamManagePa
 export function UsageSection({ view: { usage } }: { view: TeamManagePage }) {
   return (
     <Section title="Usage" description="Totals per person. Prompts and responses are never shown here.">
-      <Table>
+      <Table stack="medium">
         <TableHeader>
           <TableRow>
             <TableHead className={th}>Email</TableHead>
@@ -91,9 +94,9 @@ export function UsageSection({ view: { usage } }: { view: TeamManagePage }) {
           {usage.map((row) => (
             <TableRow key={row.email}>
               <TableCell>{row.email}</TableCell>
-              <TableCell className={num}>{row.requests}</TableCell>
-              <TableCell className={num}>{row.failed}</TableCell>
-              <TableCell className={num}>{row.tokens}</TableCell>
+              <TableCell className={num}>{count(row.requests)}</TableCell>
+              <TableCell className={num}>{count(row.failed)}</TableCell>
+              <TableCell className={num}>{count(row.tokens)}</TableCell>
               <TableCell className={num}>{usd(row.spend, 4)}</TableCell>
             </TableRow>
           ))}
@@ -105,42 +108,45 @@ export function UsageSection({ view: { usage } }: { view: TeamManagePage }) {
 
 /** Outside services that may fetch a key for a member signed in to them. Only an admin connects one. */
 export function ConnectedServices({ view: { team, integrations }, isAdmin }: { view: TeamManagePage; isAdmin: boolean }) {
+  const mayConnect = isAdmin && team.status === 'active'
   return (
-    <Section
-      title="Connected services"
-      description="Outside services, such as a JupyterHub, that may fetch a key for a member who is signed in to them. Only an SSEC admin can connect or disconnect one."
-    >
-      {integrations.length === 0 ? (
-        <Muted>None.</Muted>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className={th}>Name</TableHead>
-              <TableHead className={th}>Client</TableHead>
-              <TableHead className={th}>May add members</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {integrations.map((service) => (
-              <TableRow key={service.id}>
-                <TableCell>{service.name}</TableCell>
-                <TableCell>
-                  <code>{service.client_id}</code>
-                </TableCell>
-                <TableCell>{service.can_enroll ? 'yes' : 'no'}</TableCell>
-                <TableCell className="text-right">
-                  {isAdmin && <ActionButton call={() => post(`/admin/integrations/${service.id}/remove`)}>Disconnect</ActionButton>}
-                </TableCell>
+    <>
+      <Section
+        className={mayConnect ? undefined : 'lg:col-span-2'}
+        title="Connected services"
+        description="Outside services, such as a JupyterHub, that may fetch a key for a member who is signed in to them. Only an SSEC admin can connect or disconnect one."
+      >
+        {integrations.length === 0 ? (
+          <Muted>None.</Muted>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className={th}>Name</TableHead>
+                <TableHead className={th}>Client</TableHead>
+                <TableHead className={th}>May add members</TableHead>
+                <TableHead />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-      {isAdmin && team.status === 'active' && (
-        <>
-          <SubHeading>Connect a service</SubHeading>
+            </TableHeader>
+            <TableBody>
+              {integrations.map((service) => (
+                <TableRow key={service.id}>
+                  <TableCell>{service.name}</TableCell>
+                  <TableCell>
+                    <code>{service.client_id}</code>
+                  </TableCell>
+                  <TableCell>{service.can_enroll ? 'yes' : 'no'}</TableCell>
+                  <TableCell className="text-right">
+                    {isAdmin && <ActionButton call={() => post(`/admin/integrations/${service.id}/remove`)}>Disconnect</ActionButton>}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Section>
+      {mayConnect && (
+        <Section title="Connect a service">
           <ActionForm
             submit="Connect service"
             call={(fields) =>
@@ -164,9 +170,9 @@ export function ConnectedServices({ view: { team, integrations }, isAdmin }: { v
               <Label htmlFor="can-enroll">It may add its signed-in users to this team without an invitation</Label>
             </div>
           </ActionForm>
-        </>
+        </Section>
       )}
-    </Section>
+    </>
   )
 }
 
