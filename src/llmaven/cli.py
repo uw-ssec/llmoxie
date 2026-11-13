@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, NoReturn
 import typer
 from rich.console import Console
 
+from llmaven.ops import build_ops_app
+
 if TYPE_CHECKING:
     from datetime import date
 
@@ -46,6 +48,12 @@ backup_infra_app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(backup_infra_app)
+
+# Operator reports. The lambda defers the credential lookup because
+# _get_litellm_credentials is defined further down this module.
+app.add_typer(
+    build_ops_app(lambda env_file: _get_litellm_credentials(env_file)), name="ops"
+)
 
 
 # Shared --env-file option: enforces consistent Typer Path validation
