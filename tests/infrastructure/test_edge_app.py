@@ -1,11 +1,13 @@
 """The standalone Traefik edge Container App."""
 
+import contextlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pulumi
 import pytest
 import yaml
+from pulumi._utils import ContextProperty
 
 from llmaven.infrastructure.config.schema import LLMavenConfig
 from llmaven.infrastructure.resources import container_apps, helpers, traefik
@@ -24,14 +26,50 @@ class _Mocks(pulumi.runtime.Mocks):
         return {}
 
 
+def _runtime_state() -> dict:
+    """Every context-backed attribute of the global Pulumi runtime settings."""
+    settings = pulumi.runtime.settings
+    names = [
+        name
+        for name, attr in vars(type(settings.SETTINGS)).items()
+        if isinstance(attr, ContextProperty)
+    ]
+    return {
+        **{name: getattr(settings.SETTINGS, name) for name in names},
+        "root": settings.ROOT.get(),
+    }
+
+
+@contextlib.contextmanager
+def _isolated_mocks():
+    """Run under Pulumi mocks, then put back the runtime settings and root.
+
+    set_mocks overwrites the attributes of the global SETTINGS object in place,
+    so a saved reference to it would see the mocks too; snapshot its attributes.
+    """
+    settings = pulumi.runtime.settings
+    saved = _runtime_state()
+    pulumi.runtime.set_mocks(_Mocks(), project="llmaven", stack="dev", preview=False)
+    try:
+        yield
+    finally:
+        saved_root = saved.pop("root")
+        for name, value in saved.items():
+            setattr(settings.SETTINGS, name, value)
+        settings.ROOT.set(saved_root)
+
+
 @pytest.fixture(autouse=True)
 def _mocks():
-    settings = pulumi.runtime.settings
-    saved_settings, saved_root = settings.SETTINGS, settings.ROOT.get()
-    pulumi.runtime.set_mocks(_Mocks(), project="llmaven", stack="dev", preview=False)
-    yield
-    settings.configure(saved_settings)
-    settings.ROOT.set(saved_root)
+    with _isolated_mocks():
+        yield
+
+
+def test_mocks_leave_the_runtime_settings_as_they_were():
+    before = _runtime_state()
+    with _isolated_mocks():
+        assert pulumi.runtime.settings.SETTINGS.monitor is not before["monitor"]
+    assert _runtime_state() == before
 
 
 def _config(**edge) -> LLMavenConfig:
