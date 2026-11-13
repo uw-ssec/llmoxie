@@ -7,6 +7,7 @@ keys are never written.
 
 import json
 import logging
+import math
 import re
 import sys
 from datetime import datetime, timezone
@@ -32,6 +33,12 @@ def _key_hash(value: Any) -> str | None:
     return None
 
 
+def _finite_cost(value: Any) -> float:
+    """Return the cost as a float, or 0.0 when it is not a finite number."""
+    cost = float(value or 0.0)
+    return cost if math.isfinite(cost) else 0.0
+
+
 def spend_record(payload: dict) -> dict:
     """Build the spend record for one standard logging payload."""
     metadata = payload.get("metadata") or {}
@@ -43,7 +50,7 @@ def spend_record(payload: dict) -> dict:
         "user_id": metadata.get("user_api_key_user_id"),
         "team_alias": metadata.get("user_api_key_team_alias"),
         "model": payload.get("model"),
-        "spend": float(payload.get("response_cost") or 0.0),
+        "spend": _finite_cost(payload.get("response_cost")),
         "total_tokens": int(payload.get("total_tokens") or 0),
     }
 
@@ -61,7 +68,7 @@ class SpendLogger(CustomLogger):
             if not payload:
                 return
             record = spend_record(payload)
-            line = json.dumps(record, separators=(",", ":"))
+            line = json.dumps(record, separators=(",", ":"), allow_nan=False)
             sys.stdout.write(SPEND_LINE_PREFIX + line + "\n")
             sys.stdout.flush()
         except Exception:  # never fail the request over logging

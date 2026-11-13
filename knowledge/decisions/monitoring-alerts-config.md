@@ -3,7 +3,7 @@ type: Decision
 title: "Monitoring alerts are email-only, opt-in per environment, and the budget is scoped to the resource group"
 description: "Alerting uses one email action group, absolute thresholds listed in enabled_alerts, a resource-group-scoped budget with no tag filter, Maximum-per-podName for restarts, and an llm_spend alert that reads a LiteLLM stdout line."
 tags: [azure, monitoring, alerts]
-generated: { by: "github-copilot:claude-sonnet-5.5", at: "2026-11-12T23:59:06Z" }
+generated: { by: "github-copilot:claude-sonnet-5.5", at: "2026-11-13T00:06:15Z" }
 status: stable
 code_refs: [src/llmaven/infrastructure/resources/monitoring.py, src/llmaven/infrastructure/config/schema.py]
 ---
@@ -25,7 +25,7 @@ The monitoring-alerting work adds Azure Monitor alert rules, one action group an
 - **The backup rule evaluates hourly over a two-hour window.** Prod backup system logs took a median of 131 s to ingest, so the overlap covers records that arrive after an evaluation. The rule is stateful (`auto_mitigate`), so the overlap shouldn't send a second email.
 - **`llm_spend` reads a stdout line, not Postgres.** The `spend_logger` LiteLLM callback prints one `LLMOXIE_SPEND {json}` line per successful request, best effort, never raising, and never writing prompts, responses or raw keys. Container Apps forwards it to `ContainerAppConsoleLogs_CL`, and the alert sums `spend` over the window. Querying the Postgres spend logs would have needed a database connection from Azure Monitor. The cost is that console lines can be dropped or delayed, so the alert can under-report; the Postgres spend logs stay the source of truth.
 - **One `ScheduledQueryRule` per threshold.** `max_usd_per_hour` (default null) and `max_usd_per_day` (default 50) each create `alert-llm-spend-hourly` and `alert-llm-spend-daily`, evaluated hourly over a one-hour and a one-day window. Both null is rejected at config load because the alert could never fire. The summarize has no `by` clause, so an idle gateway yields one row with 0 and doesn't fire. The rule is skipped with a warning when LiteLLM is disabled.
-- **A missing callback is a warning, not an error.** `missing_spend_logger` warns on deploy (`pulumi.log.warn`) and in `llmaven validate` when `llm_spend` is enabled and the LiteLLM config has no `spend_logger.` callback. It never fails, because an operator may be mid-rollout and the alert is still valid once the callback lands. The cost estimate adds one log-alert price per threshold.
+- **A missing callback is a warning, not an error.** `missing_spend_logger` warns on deploy (`pulumi.log.warn`) and in `llmaven infra validate` when `llm_spend` is enabled and the LiteLLM config has no `spend_logger.` callback. It fails only under `--strict`, because an operator may be mid-rollout and the alert is still valid once the callback lands. The cost estimate adds one log-alert price per threshold.
 - **`cloud_budget.notify_at_percent` is limited to five distinct values,** because Azure rejects more notifications than that.
 - **`monitoring.enable_application_insights` is deprecated** and provisions nothing. Loading a config with it set raises `FutureWarning`, not `DeprecationWarning`, which Python hides outside `__main__` so operators would never see it.
 

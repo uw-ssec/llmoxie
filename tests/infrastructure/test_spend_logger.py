@@ -180,3 +180,13 @@ def test_line_is_compact_json(spend_logger, capsys):
     body = line[len(spend_logger.SPEND_LINE_PREFIX) :]
     assert ", " not in body
     assert ": " not in body
+
+
+@pytest.mark.parametrize("cost", [float("nan"), float("inf"), float("-inf"), "nan"])
+def test_non_finite_cost_is_zero_and_line_is_valid_json(spend_logger, capsys, cost):
+    _emit(spend_logger, {"standard_logging_object": _payload(response_cost=cost)})
+    out = capsys.readouterr().out
+    assert "NaN" not in out
+    assert "Infinity" not in out
+    record = _only_line(out)
+    assert record["spend"] == 0.0
