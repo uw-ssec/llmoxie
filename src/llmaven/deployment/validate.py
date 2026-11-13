@@ -8,7 +8,10 @@ import subprocess
 from pathlib import Path
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
-from ..infrastructure.config.litellm_models import missing_foundry_deployments
+from ..infrastructure.config.litellm_models import (
+    missing_foundry_deployments,
+    missing_spend_logger,
+)
 from ..infrastructure.config.schema import (
     FOUNDRY_MANAGED_SECRETS,
     LLMavenConfig,
@@ -389,7 +392,8 @@ def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
     """Return the monthly cost of the enabled alert rules.
 
     Gateway alerts only exist when LiteLLM is enabled. replica_restarts is
-    created once per enabled container app (LiteLLM, MLflow). cloud_budget is free.
+    created once per enabled container app (LiteLLM, MLflow). llm_spend adds one
+    log rule per non-null threshold when LiteLLM is enabled. cloud_budget is free.
     """
     enabled = set(config.monitoring.alerts.enabled_alerts)
     metric_count = len(enabled & {"db_storage", "db_cpu"})
@@ -402,6 +406,8 @@ def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
     log_count = (
         1 if "backup_job_failures" in enabled and config.backup_job.enabled else 0
     )
+    if "llm_spend" in enabled and config.litellm.enabled:
+        log_count += len(config.monitoring.alerts.llm_spend.thresholds())
     return metric_count * METRIC_ALERT_MONTHLY_COST + log_count * LOG_ALERT_MONTHLY_COST
 
 
@@ -615,6 +621,9 @@ def validate_config(
                 f"   ✓ {len(alerts.enabled_alerts)} alert(s) notify "
                 f"{len(alerts.email_receivers)} address(es)"
             )
+        for message in missing_spend_logger(config, config_path):
+            warnings.append(message)
+            print(f"   ⚠️  {message}")
         print()
 
     # 5. Cost Estimation

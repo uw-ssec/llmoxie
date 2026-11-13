@@ -79,3 +79,55 @@ def missing_foundry_deployments(config: LLMavenConfig, config_path: Path) -> lis
                 f"(deployed: {sorted(deployed)})"
             )
     return errors
+
+
+def missing_spend_logger(config: LLMavenConfig, config_path: Path) -> list[str]:
+    """Warnings when llm_spend is enabled but the LiteLLM config lacks the callback.
+
+    The ``llm_spend`` alert reads the ``LLMOXIE_SPEND`` line written by the
+    ``spend_logger`` callback, so without it the alert never sees any data.
+    Returns an empty list unless ``llm_spend`` is enabled and LiteLLM is enabled.
+
+    Args:
+        config: LLMaven configuration
+        config_path: Path of the infra YAML (litellm.config_file is relative to it)
+
+    Returns:
+        Human-readable warning messages, one per problem
+    """
+    if not (
+        "llm_spend" in config.monitoring.alerts.enabled_alerts
+        and config.litellm
+        and config.litellm.enabled
+    ):
+        return []
+
+    litellm_path = resolve_litellm_config_file(config, config_path)
+    try:
+        litellm_config = yaml.safe_load(litellm_path.read_text())
+    except (OSError, yaml.YAMLError) as e:
+        return [f"Cannot read LiteLLM config {litellm_path}: {e}"]
+
+    if litellm_config is None:  # Empty file
+        litellm_config = {}
+    if not isinstance(litellm_config, dict):
+        return [
+            f"{litellm_path}: top level must be a mapping, "
+            f"got {type(litellm_config).__name__}"
+        ]
+
+    settings = litellm_config.get("litellm_settings")
+    callbacks = settings.get("callbacks") if isinstance(settings, dict) else None
+    if callbacks is None:
+        callbacks = []
+    elif not isinstance(callbacks, list):
+        callbacks = [callbacks]
+    if not any(
+        isinstance(entry, str) and entry.startswith("spend_logger.")
+        for entry in callbacks
+    ):
+        return [
+            f"{litellm_path}: litellm_settings.callbacks has no spend_logger "
+            "entry; the llm_spend alert will see no data"
+        ]
+    return []

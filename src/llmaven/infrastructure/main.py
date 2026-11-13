@@ -127,6 +127,11 @@ def create_pulumi_program(config_path: Path):
             if model_errors:
                 raise ValueError("; ".join(model_errors))
 
+        from llmaven.infrastructure.config.litellm_models import missing_spend_logger
+
+        for message in missing_spend_logger(config, config_path):
+            pulumi.log.warn(message)
+
         container_apps_subnet = azure_native.network.Subnet(
             "container-apps-subnet",
             resource_group_name=resource_group,
@@ -468,6 +473,9 @@ def create_pulumi_program(config_path: Path):
 
             # Add the adl_logger.py as an extra module
             adl_logger_path = Path(__file__).parent / Path("resources/adl_logger.py")
+            spend_logger_path = Path(__file__).parent / Path(
+                "resources/spend_logger.py"
+            )
 
             litellm_env_vars = dict(config.litellm.env_vars)
             litellm_secret_refs = dict(config.litellm.key_vault_secret_refs)
@@ -512,7 +520,7 @@ def create_pulumi_program(config_path: Path):
                         ),
                     ]
                 ),
-                extra_modules=[adl_logger_path],
+                extra_modules=[adl_logger_path, spend_logger_path],
                 revision_suffix=config.litellm.revision_suffix,
                 refresh_trigger=config.litellm.refresh_trigger,
                 custom_domains=config.litellm.custom_domains,
