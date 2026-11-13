@@ -49,9 +49,7 @@ pixi run pre-commit-all # the checks every change must pass
 ```
 
 For first-time setup, `pixi run -e onboard onboard` installs the pre-commit
-hooks and runs the SSEC onboarding. The repository also ships a
-[`.devcontainer/`](.devcontainer/) configuration for GitHub Codespaces and VS
-Code Dev Containers.
+hooks and runs the SSEC onboarding.
 
 The image installs the locked versions in `requirements.txt`; the test image
 adds `requirements-test.txt`.
@@ -337,24 +335,3 @@ suite expects of the stack under test:
 
 It creates organizations, teams and accounts with a random suffix on every run
 and leaves them in place. CI builds the image and does not run the suite.
-
-## For AI coding agents
-
-`AGENTS.md` is the entry point for Claude Code, Codex, Copilot, Cursor and other
-agents; `CLAUDE.md` points to it. On-demand rules are in
-[`.agents/rules/`](.agents/rules/) and step-by-step skills in
-[`.agents/skills/`](.agents/skills/). [`knowledge/`](knowledge/) is an OKF
-bundle for project memory (decisions, constraints and caveats the code cannot
-show), read and written with `pixi run okf`.
-
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of
-conduct and the process for submitting pull requests. If you use AI tools while
-contributing, read the [AI Policy](AI_POLICY.md) first: it covers disclosure,
-review responsibility, and how to credit AI assistance in commits.
-
-## License
-
-This project is licensed under the terms specified in the [LICENSE](LICENSE)
-file.

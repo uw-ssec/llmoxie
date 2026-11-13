@@ -1,4 +1,4 @@
-# services/console/ carries its own .pre-commit-config.yaml
+# services/console/ was imported as-is and is not formatted to these hooks
 exclude: '\.csv$|^services/console/'
 
 ci:
