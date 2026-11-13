@@ -44,7 +44,17 @@ def _merge(base: Any, over: Any, path: tuple[str, ...]) -> Any:
     if isinstance(base, dict) and isinstance(over, dict):
         out = dict(base)
         for key, value in over.items():
-            out[key] = _merge(base[key], value, (*path, key)) if key in base else value
+            if key not in base:
+                out[key] = value
+                continue
+            current = base[key]
+            if isinstance(current, (dict, list)) and type(value) is not type(current):
+                where = ".".join(("realm", "overrides", *path, key))
+                raise ValueError(
+                    f"{where} must be a {type(current).__name__}, "
+                    f"not {type(value).__name__}"
+                )
+            out[key] = _merge(current, value, (*path, key))
         return out
     key = _list_key(path)
     if key and isinstance(base, list) and isinstance(over, list):
@@ -195,6 +205,7 @@ def build_realm_document(config: LLMavenConfig) -> dict:
                 "LiteLLM SSO",
             )
         )
+    roles = list({r["name"]: r for r in reversed(roles)}.values())[::-1]
     if roles:
         doc["roles"] = {"realm": roles}
     if clients:

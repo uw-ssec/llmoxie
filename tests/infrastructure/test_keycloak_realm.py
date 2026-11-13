@@ -3,6 +3,8 @@
 import json
 import re
 
+import pytest
+
 from llmaven.infrastructure.config.schema import LLMavenConfig
 from llmaven.infrastructure.resources.keycloak_realm import (
     CLIENT_SECRET_ENV,
@@ -151,19 +153,47 @@ def test_roles_reach_access_tokens():
 
 
 def test_no_secret_values_in_document():
-    text = render_realm_document(_config())
+    config = _config()
+    doc = build_realm_document(config)
+    for client in doc["clients"]:
+        assert client["secret"] == f"$(env:{CLIENT_SECRET_ENV[client['clientId']]})"
+    text = render_realm_document(config)
     stripped = re.sub(r"\$\(env:[A-Z0-9_]+\)", "", text)
-    # Mapper type ids are long kebab-case words and redirect URIs are URLs;
-    # anything else that long could be a secret.
+    allowed = {
+        "oidc-usermodel-realm-role-mapper",
+        "oidc-audience-mapper",
+        f"https://{MLFLOW_HOST}/oauth2/callback",
+        f"https://{LITELLM_HOST}/oauth2/callback",
+        f"https://{LITELLM_HOST}/sso/callback",
+    }
     long = [
         s
         for s in re.findall(r'"([^"]*)"', stripped)
-        if len(s) >= 32
-        and not re.fullmatch(r"[a-z]+(-[a-z]+)+", s)
-        and not s.startswith("https://")
+        if len(s) >= 32 and s not in allowed
     ]
     assert long == []
-    assert "$(env:KC_CLIENT_SECRET_MLFLOW_GATE)" in text
+
+
+@pytest.mark.parametrize(
+    "overrides, path",
+    [
+        ({"clients": None}, "clients"),
+        ({"clients": {}}, "clients"),
+        ({"roles": []}, "roles"),
+        ({"roles": {"realm": None}}, "roles.realm"),
+    ],
+)
+def test_type_changing_overrides_are_rejected(overrides, path):
+    with pytest.raises(ValueError, match=f"realm.overrides.{path} must be"):
+        build_realm_document(_config(overrides=overrides))
+
+
+def test_same_role_on_both_logins_is_one_role():
+    config = _config()
+    config.mlflow.login.role = "admin"
+    config.litellm.login.role = "admin"
+    names = [r["name"] for r in build_realm_document(config)["roles"]["realm"]]
+    assert names == ["admin"]
 
 
 def test_overrides_merge_lists_by_key():
