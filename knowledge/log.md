@@ -1,4 +1,5 @@
 ## 2026-11-13
+* **Update**: Updated concept `decisions/console-design-direction.md`.
 * **Update**: Linked `decisions/console-design-direction.md` to `decisions/console-dashboard-layout.md` (The direction and review behind the dashboard layout that concept describes).
 * **Creation**: Documented concept `decisions/console-design-direction.md` (The console's design direction, what the design review settled, and what it left open).
 * **Update**: Updated concept `decisions/console-dashboard-layout.md`.

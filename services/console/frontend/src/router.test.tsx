@@ -1,4 +1,5 @@
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { serve, signedIn, signedOut } from '@/test/server'
 
@@ -108,6 +109,46 @@ it('shows an admin a few organizations, those not active first, and says how man
   expect(within(within(main).getAllByRole('row')[1]).getByRole('link', { name: 'Org 10' })).toBeInTheDocument()
   expect(within(main).getByText(/Showing 8 of 11\./)).toBeInTheDocument()
   expect(within(main).getByText('Nothing has been recorded yet.')).toBeInTheDocument()
+})
+
+it('collapses the sidebar to its icons and remembers that', async () => {
+  const user = userEvent.setup()
+  serve(signedIn({ is_admin: true, lead_orgs: [{ id: 'o1', name: 'Astro', status: 'active' }] }))
+  await open('/')
+  const toggle = await screen.findByRole('button', { name: 'Collapse sidebar' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(toggle).toHaveAttribute('aria-controls', 'sidebar')
+  await user.click(toggle)
+  expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
+  // Every place is still a link with its name; pointing at an icon says where it leads.
+  const nav = screen.getByRole('navigation', { name: 'Main' })
+  expect(within(nav).getByRole('link', { name: 'Audit log' })).toHaveAttribute('title', 'Audit log')
+  expect(within(nav).getByRole('link', { name: 'Astro' })).toHaveAttribute('href', '/orgs/o1')
+  // The pages under an organization are not shown at this width, nor the control that folds them.
+  expect(within(nav).queryByRole('link', { name: 'Astro: Knowledge' })).toBeNull()
+  expect(within(nav).queryByRole('button', { name: 'Pages of Astro' })).toBeNull()
+  cleanup()
+  await open('/') // a reload: the choice was kept in this browser
+  expect(await screen.findByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
+})
+
+it('folds away the pages under an organization and remembers that', async () => {
+  const user = userEvent.setup()
+  serve(signedIn({ lead_orgs: [{ id: 'o1', name: 'Astro', status: 'active' }, { id: 'o2', name: 'Bio', status: 'active' }] }))
+  await open('/')
+  const nav = await screen.findByRole('navigation', { name: 'Main' })
+  const fold = within(nav).getByRole('button', { name: 'Pages of Astro' })
+  expect(fold).toHaveAttribute('aria-expanded', 'true')
+  expect(within(nav).getByRole('link', { name: 'Astro: Knowledge' })).toBeInTheDocument()
+  await user.click(fold)
+  expect(fold).toHaveAttribute('aria-expanded', 'false')
+  expect(within(nav).queryByRole('link', { name: 'Astro: Knowledge' })).toBeNull()
+  expect(within(nav).getByRole('link', { name: 'Bio: Knowledge' })).toBeInTheDocument() // the other organization is untouched
+  cleanup()
+  await open('/')
+  const again = await screen.findByRole('navigation', { name: 'Main' })
+  expect(within(again).getByRole('button', { name: 'Pages of Astro' })).toHaveAttribute('aria-expanded', 'false')
+  expect(within(again).queryByRole('link', { name: 'Astro: Knowledge' })).toBeNull()
 })
 
 it('names the page and the way back to it in the top bar', async () => {

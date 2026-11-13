@@ -2,7 +2,10 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  window.localStorage.clear() // how the sidebar was left is remembered there; no test should inherit it
+})
 
 // jsdom's <dialog> has the `open` attribute but may lack the methods. Enough of them for the tests.
 if (!HTMLDialogElement.prototype.showModal) {

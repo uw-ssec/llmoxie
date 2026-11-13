@@ -212,7 +212,8 @@ browser's own `<dialog>` element and the select is the browser's own `<select>`.
 **Key Characteristics:**
 
 - A pinned copy of upstream tokens; the console defines no colours of its own.
-- One shell for every signed-in screen: 256px sidebar, 56px top bar, page.
+- One shell for every signed-in screen: a sidebar (256px, or 64px when
+  collapsed), a 56px top bar, the page.
 - One signature: a 2px teal line that marks where you are.
 - Square buttons, 8px cards, hairline borders, almost no shadow.
 - Uppercase compressed Encode Sans for every label; sentence case for all else.
@@ -328,12 +329,14 @@ in mono. If not, it is not.
 
 ## Layout
 
-The shell is fixed. From 1024px up, a 256px sidebar is pinned to the left edge
-at full height and the page is offset by the same amount. A 56px white top bar
-sticks to the top with a hairline beneath it: the breadcrumb trail at the left,
-the signed-in address and Sign out at the right. The page is a single column, at
-most 1400px wide and centred, with 24px between its parts and padding of 16px on
-a phone, 24px from 640px and 32px from 1024px.
+The shell is fixed. From 1024px up, a sidebar is pinned to the left edge at full
+height and the page is offset by its width: 256px, or 64px when the person has
+collapsed it with the button at the left of the top bar. The browser remembers
+that choice. A 56px white top bar sticks to the top with a hairline beneath it:
+the sidebar button and the breadcrumb trail at the left, the signed-in address
+and Sign out at the right. The page is a single column, at most 1400px wide and
+centred, with 24px between its parts and padding of 16px on a phone, 24px from
+640px and 32px from 1024px.
 
 A page reads in a fixed order: title and one-line lede; an optional plain note;
 one strip of figures; on an organization or a team, a row of tabs; then cards.
@@ -509,13 +512,27 @@ number the server sent or a count of what the page lists.
 
 ### Navigation
 
-- **Sidebar:** Husky Purple, 256px. The wordmark at the top is "LLMoxie" in bold
-  white Encode Sans followed by "console" in regular Light Gold. Items are 40px
-  rows with 8px corners, a 16px line icon and a label in the label face at 16 to
-  17px, semibold, sentence case, 0.025em tracking, Light Gold. Groups ("Your
-  organizations", "Your teams", "Administration") are headed in Husky Gold in
-  the label style with 0.1em tracking, 24px apart. A child item has no icon and
-  is indented to align with its parent's text.
+- **Sidebar:** Husky Purple, 256px. At the top, the console's mark (a Spirit
+  Purple square with a white L over a teal bar, the same drawing as the favicon)
+  and the wordmark: "LLMoxie" in bold white Encode Sans followed by "console" in
+  regular Light Gold. Items are 40px rows with 8px corners and a label in the
+  label face at 16 to 17px, semibold, sentence case, 0.025em tracking, Light
+  Gold. In front of the label a fixed place has a 16px line icon; an
+  organization or a team has the first letter of its name on a 20px tile of
+  white at 15%, so several can be told apart. Groups ("Your organizations",
+  "Your teams", "Administration") are headed in Husky Gold in the label style
+  with 0.1em tracking, 24px apart.
+- **Pages under an organization:** a child item has no icon and is indented to
+  align with its parent's text. A 32px chevron button at the right of the
+  organization's row folds its pages away and brings them back; the chevron
+  points right when folded and down when open. They start open, and the browser
+  remembers what was folded.
+- **Collapsed sidebar:** 64px. Each item is a 40px square showing its icon or
+  letter alone; pointing at it names it, and its name stays readable to a screen
+  reader. Group headings become a hairline of white at 15%. Pages under an
+  organization and their chevrons are not shown; the organization's letter leads
+  to the organization. The teal line sits under the icon of the current item.
+  The width changes over 200ms.
 - **States:** hover is white at 10% with white text. The current item keeps that
   fill and white text and gains the teal line under its words. Focus is a 2px
   teal ring.

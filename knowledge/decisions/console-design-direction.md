@@ -3,14 +3,11 @@ type: Decision
 title: "The console's design direction, what the design review settled, and what it left open"
 description: "The direction the dashboard was built to, the eight findings and two regressions an independent review raised and how each was settled, the gaps knowingly left, and why .impeccable/ is ignored."
 tags: [console, frontend, design]
-generated: { by: "claude-code:claude-fable-5-2", at: "2026-11-13T19:25:35Z" }
+generated: { by: "claude-code:claude-fable-5-2", at: "2026-11-13T19:31:09Z" }
 status: stable
-code_refs:
-  - "DESIGN.md"
-  - "PRODUCT.md"
-  - ".gitignore"
+code_refs: [DESIGN.md, PRODUCT.md, .gitignore]
 sources:
-  - resource: "owner decisions in the 2026-11-13 session"
+  - resource: owner decisions in the 2026-11-13 session
   - resource: DESIGN.md
   - resource: PRODUCT.md
 ---
@@ -49,7 +46,7 @@ The reviewer could not see hover, empty, error and loading states: no screenshot
 - The file picker for a CSV of invitations is the browser's default control.
 - Text in tables and cards is 14 to 15px; the SSEC body minimum is 16px.
 - Spend and budget are shown as two figures and never as "left" or "over": the period a budget covers is not in the browser API.
-- No collapsed, icon-only sidebar. No dark theme, by decision.
+- No dark theme, by decision.
 - Card, notice and dialog shadows compile to Tailwind's built-in scale, not the SSEC `--shadow-*` tokens; the values are close.
 - The textarea and the input differ in padding and ground. The theme maps `good-surface`, `caution` and `caution-surface`, and the button has `secondary` and `link` variants, that no screen uses.
 - The name "The Working Ledger" in `DESIGN.md` was proposed by the agent that wrote the file. The owner has not confirmed it.
@@ -57,6 +54,7 @@ The reviewer could not see hover, empty, error and loading states: no screenshot
 ## Open requests from the owner
 
 - **Analytics**: where time series and charts go once the browser API has them.
+- Done since: on 2026-11-14 the owner asked for the sidebar to collapse and for the pages under an organization to fold. Both are built; `DESIGN.md` describes them.
 - **A boxed login** in the manner of dashboard.shadcnspace.com/auth/auth2/login, "using Keycloak under the hood" (asked 2026-11-13, not started). The undecided point: whether the username and password fields live on Keycloak's own page, restyled with a login theme, or on the console's page. The second means console-web handles passwords through the password grant, which reverses the rule that it holds no credential and loses MFA, single sign-on and federated sign-in. I recommended the theme; the owner has not answered.
 
 ## About `.impeccable/`

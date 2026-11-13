@@ -3,7 +3,7 @@ type: Decision
 title: "The console is a sidebar dashboard that shows only figures the server sent, with no charts until analytics exist"
 description: "Sidebar and top bar shell, a role-aware overview built from pages the person can already open, organization and team screens split into tabs kept in the address; no charts, chart placeholders or sample data until the browser API has analytics."
 tags: [console, frontend, design]
-generated: { by: "claude-code:claude-fable-5-2", at: "2026-11-13T19:22:09Z" }
+generated: { by: "claude-code:claude-fable-5-2", at: "2026-11-13T19:31:09Z" }
 status: stable
 governance: constraint
 code_refs: [services/console/frontend/src/components/app-shell.tsx, services/console/frontend/src/components/page.tsx, services/console/frontend/src/lib/overview.ts, services/console/frontend/src/pages/home.tsx, services/console/frontend/src/router.tsx]
@@ -32,10 +32,12 @@ On 2026-11-13 the owner asked for the console's React pages to become a dashboar
 - The sidebar and top bar are fixed, so a full-page screenshot paints them once at the first window height. Capture in a window as tall as the page instead.
 - A table turns into a list of labelled records where its card is narrower than its columns need (`components/ui/table.tsx`, the `stacked` utility in `index.css`). The switch is a container query, so it depends on the card's width, not the window's; each table says how wide it needs to be (`stack`), and the cell labels are copied from the column headings after render. A new table with many columns needs its `stack` set, and a check at 1280 wide that it is still a table there: an independent review caught two tables falling to the record form at laptop width.
 - A list and the form beside it (`Split`) go side by side by the page's own width for the same reason.
+- The sidebar's width and which organizations' pages are folded are kept in the browser's `localStorage` (`lib/stored.ts`), the only thing the console keeps there. It is for layout choices only: never a key, never anything a page loaded. `test-setup.ts` clears it after every test, or one test's collapsed sidebar would hide links from the next.
+- Collapsed, the sidebar shows an icon per place. Organizations and teams therefore show the first letter of their name instead of a shared icon: with one icon for all of them a lead with two organizations could not tell them apart.
 
 ## How it was checked
 
-`npm run check` in `services/console/frontend`: lint, type-check and 72 tests pass. Every screen was opened in headless Chromium at 1440, 1280, 1024 and 390 wide against a stand-in server sending sample data under the console's real policy header: no policy violations, no page errors, no sideways scroll. It was then run on a local docker-compose stack with real data: signed in as an admin, every admin screen and one organization's and one team's tabs opened with no policy violations, page errors or failed calls. That stack held 138 organizations and the admin's overview listed all of them, which sample data had hidden; the overview now shows eight, those not active first, and says how many there are. The lead's and participant's screens were not walked on the stack, and the end-to-end suite in `tests/` was not rerun (it drives `/web-api/`, which did not change).
+`npm run check` in `services/console/frontend`: lint, type-check and 74 tests pass. Every screen was opened in headless Chromium at 1440, 1280, 1024 and 390 wide against a stand-in server sending sample data under the console's real policy header: no policy violations, no page errors, no sideways scroll. It was then run on a local docker-compose stack with real data: signed in as an admin, every admin screen and one organization's and one team's tabs opened with no policy violations, page errors or failed calls. That stack held 138 organizations and the admin's overview listed all of them, which sample data had hidden; the overview now shows eight, those not active first, and says how many there are. The lead's and participant's screens were not walked on the stack, and the end-to-end suite in `tests/` was not rerun (it drives `/web-api/`, which did not change).
 
 # Related Concepts
 - [The console's pages are a React application served by console-web, under a policy that allows nothing inline](console-react-front-end.md): The dashboard layout is built on that React front end and keeps its rules: the strict content security policy, field-by-field responses, keys in memory only
