@@ -7,7 +7,6 @@ participants, and the admin's Keycloak sign-in to LiteLLM must still work.
 import base64
 import json
 import os
-import re
 
 import httpx
 
@@ -59,5 +58,8 @@ def test_other_keycloak_users_are_turned_away():
 
 def test_console_links_admins_to_the_litellm_ui():
     from .helpers import sign_in
-    assert f'href="{ADMIN_URL}/ui/"' in sign_in("alice", "alice123").landed.text
-    assert not re.search(r"LiteLLM UI", sign_in("operator-outsider@example.com", "Correct-horse-9").landed.text)
+    # The menu shows "LiteLLM UI" to admins only, pointing at the address console-web was started with.
+    alice = sign_in("alice", "alice123").api_get("/session").json()
+    assert alice["me"]["is_admin"] is True and alice["config"]["litellm_admin_url"] == ADMIN_URL
+    outsider = sign_in("operator-outsider@example.com", "Correct-horse-9").api_get("/session").json()
+    assert outsider["me"]["is_admin"] is False

@@ -65,20 +65,12 @@ class Browser:
         return self.request("GET", path if path.startswith("http") else CONSOLE + path, **kwargs)
 
     def post(self, path, data=None, **kwargs):
-        """Post a console form, adding the page's CSRF token the way the real form would."""
+        """Post one of the console's plain forms (sign-in, sign-out, accepting an invitation), with the
+        session's CSRF token as a field the way the form carries it."""
         data = dict(data or {})
         if "csrf" not in data and getattr(self, "csrf", None):
             data["csrf"] = self.csrf
         return self.request("POST", path if path.startswith("http") else CONSOLE + path, data=data, **kwargs)
-
-    def remember_csrf(self, response):
-        found = re.search(r'name="csrf" value="([^"]+)"', response.text)
-        if found:
-            self.csrf = found.group(1)
-        return response
-
-    def page(self, path):
-        return self.remember_csrf(self.get(path))
 
     def api_get(self, path, **kwargs):
         """Ask console-web's browser API for a page's data, the way the application does."""
@@ -107,7 +99,7 @@ def sign_in(email: str, password: str, start=None) -> Browser:
     response = _submit_keycloak_login(browser, response, email, password)
     assert response.status_code == 200 and "Signed in" in response.text, response.text[:300]
     target = re.search(r'http-equiv="refresh" content="0; url=([^"]+)"', response.text).group(1)
-    browser.landed = browser.page(target)
+    browser.landed = browser.get(target)
     browser.landed_path = target
     session = browser.api_get("/session")
     if session.status_code == 200 and session.json().get("signed_in"):

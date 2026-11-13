@@ -5,6 +5,7 @@ that key's organization, and the hub lets that token touch one bundle only. So t
 organizations apart: LiteLLM (which server a team's keys may use) and the hub (which bundle a token may touch).
 """
 
+import json
 import os
 import re
 import uuid
@@ -40,11 +41,10 @@ def tools(letter: str) -> str:
 
 
 def make_org(alice: Browser, letter: str) -> None:
-    alice.page("/admin")
-    alice.post("/admin/orgs", {"name": f"Knowledge {letter.upper()} {RUN}", "slug": slug(letter), "budget_ceiling": "100"})
+    alice.api_post("/admin/orgs", {"name": f"Knowledge {letter.upper()} {RUN}", "slug": slug(letter), "budget_ceiling": 100})
     org = str(one("SELECT id FROM org WHERE slug = %s", (slug(letter),))["id"])
     create_user(email(f"lead-{letter}"), PASSWORD)
-    alice.post(f"/admin/orgs/{org}/leads", {"email": email(f"lead-{letter}")})
+    alice.api_post(f"/admin/orgs/{org}/leads", {"email": email(f"lead-{letter}")})
     lead = sign_in(email(f"lead-{letter}"), PASSWORD, start=(f"/invite/{invite_token(email(f'lead-{letter}'))}", {}))
     W.update({f"org_{letter}": org, f"lead_{letter}": lead})
 
@@ -52,18 +52,16 @@ def make_org(alice: Browser, letter: str) -> None:
 def make_member(letter: str, team_name: str, person: str) -> str:
     """A team in the org with one member, and that member's key."""
     org, lead = W[f"org_{letter}"], W[f"lead_{letter}"]
-    lead.page(f"/orgs/{org}")
-    lead.post(f"/orgs/{org}/teams", {"name": team_name, "team_budget": "50", "key_budget": "5", "key_limit": "2",
-                                     "key_expiry_days": "7", "consent_text": "You agree that leads see your usage totals."})
+    lead.api_post(f"/orgs/{org}/teams", {"name": team_name, "team_budget": 50, "key_budget": 5, "key_limit": 2,
+                                         "key_expiry_days": 7, "consent_text": "You agree that leads see your usage totals."})
     team = str(one("SELECT id FROM team WHERE org_id = %s AND name = %s", (org, team_name))["id"])
     create_user(email(person), PASSWORD)
-    lead.page(f"/teams/{team}/manage")
-    lead.post(f"/teams/{team}/invites", {"emails": email(person)})
+    lead.api_post(f"/teams/{team}/invites", data={"emails": email(person)})
     member = sign_in(email(person), PASSWORD, start=(f"/invite/{invite_token(email(person))}", {}))
-    member.post(f"/teams/{team}/my/consent", {"terms_accepted": "yes"})
-    page = member.post(f"/teams/{team}/my/keys", {"name": "k"})
+    member.api_post(f"/teams/{team}/my/consent", {"terms_accepted": True})
+    created = member.api_post(f"/teams/{team}/my/keys", {"name": "k"})
     W.update({f"team_{person}": team, f"browser_{person}": member})
-    return re.search(r'<code class="key">(sk-[^<]+)</code>', page.text).group(1)
+    return created.json()["key"]["key"]
 
 
 def keycloak_clients(client_id: str) -> list:
@@ -97,8 +95,10 @@ def test_a_key_lists_its_orgs_knowledge_tools_and_no_others():
     assert {f"{tools('a')}-okf_search", f"{tools('a')}-okf_create", f"{tools('a')}-okf_show"} <= names
     assert all(name.startswith(f"{tools('a')}-") for name in names)
     assert mcp(None, "tools/list")[0] == 401 and mcp("sk-not-a-key", "tools/list")[0] == 401
-    page = W["browser_a1"].get(f"/teams/{W['team_a1']}").text
-    assert f"{os.environ['GATEWAY_URL']}/mcp" in page and f"{tools('a')}-okf_search" in page
+    # What the member's team page builds the MCP address and the tool names from.
+    member = W["browser_a1"]
+    assert member.api_get("/session").json()["config"]["gateway_url"] == os.environ["GATEWAY_URL"]
+    assert member.api_get(f"/teams/{W['team_a1']}").json()["knowledge_tools"] == tools("a")
 
 
 def test_knowledge_is_shared_by_every_team_of_the_org():
@@ -154,26 +154,36 @@ def test_a_lead_browses_the_orgs_knowledge_and_its_graph():
     ok, _ = mcp_tool(W["key_a2"], f"{mine}-okf_relate", source_id="decisions/badge-readers", target_id="facts/lab-door",
                      description="replaces")
     assert ok
-    assert f'href="/orgs/{org}/knowledge"' in lead.get(f"/orgs/{org}").text
+    assert lead.api_get(f"/orgs/{org}").json()["is_lead"] is True   # what puts the link to the knowledge on the page
 
-    page = lead.get(f"/orgs/{org}/knowledge")
+    page = lead.api_get(f"/orgs/{org}/knowledge")
     assert page.status_code == 200
-    assert "2 concepts" in page.text and "1 link" in page.text
-    assert "Lab door code" in page.text and "Badge readers" in page.text and "<code>decisions/badge-readers</code>" in page.text
+    view = page.json()
+    assert set(view) == {"org", "tools", "edge_count", "concepts", "concept", "graph", "log_html"}
+    assert len(view["concepts"]) == 2 and view["edge_count"] == 1 and view["tools"] == mine
+    assert {c["id"]: c["title"] for c in view["concepts"]} == {"facts/lab-door": "Lab door code",
+                                                               "decisions/badge-readers": "Badge readers"}
+    assert all(set(c) == {"id", "title", "type", "description", "tags", "links", "written_at"} for c in view["concepts"])
     # The graph: a dot per concept, one arrow carrying the relation's description, and the bundle's own log.
-    assert page.text.count("<circle") == 2 + 2 and page.text.count("<line") == 1    # two more circles in the legend
-    assert "<title>replaces</title>" in page.text and "Change log" in page.text
-    assert f"DOOR-{RUN}" not in page.text.split("Change log")[0]                    # a body shows only once selected
+    assert len(view["graph"]["nodes"]) == 2 and len(view["graph"]["legend"]) == 2
+    assert [line["note"] for line in view["graph"]["lines"]] == ["replaces"] and view["log_html"]
+    # A body shows only once selected, and never as the Markdown it was written in.
+    assert view["concept"] is None and f"DOOR-{RUN}" not in json.dumps({**view, "log_html": ""})
+    assert '"body"' not in page.text and '"log"' not in page.text
 
-    one_concept = lead.get(f"/orgs/{org}/knowledge?concept=facts/lab-door")
-    assert f"The marker is DOOR-{RUN}." in one_concept.text and "Linked from" in one_concept.text
-    assert re.search(r"Linked from</dt><dd><a [^>]*>Badge readers</a>\s*<span class=\"muted\">\(replaces\)", one_concept.text)
-    assert lead.get(f"/orgs/{org}/knowledge?concept=no/such").status_code == 200
+    one_concept = lead.api_get(f"/orgs/{org}/knowledge?concept=facts/lab-door").json()["concept"]
+    assert f"The marker is DOOR-{RUN}." in one_concept["html"]
+    assert one_concept["links_in"] == [{"id": "decisions/badge-readers", "title": "Badge readers", "note": "replaces"}]
+    assert one_concept["links_out"] == []
+    missing = lead.api_get(f"/orgs/{org}/knowledge?concept=no/such")
+    assert missing.status_code == 200 and missing.json()["concept"] is None
 
     # The text is shown as formatted Markdown. It is members' writing, so nothing in it can act on the reader:
     # HTML stays text, images are not loaded, and only links to http(s) addresses or other concepts survive.
-    shown = lead.get(f"/orgs/{org}/knowledge?concept=decisions/badge-readers").text
-    doc = shown.split('<div class="doc">')[1].split("</div>")[0]
+    shown = lead.api_get(f"/orgs/{org}/knowledge?concept=decisions/badge-readers")
+    doc = shown.json()["concept"]["html"]
+    rest = {**shown.json(), "log_html": "", "concept": {**shown.json()["concept"], "html": ""}}
+    assert f"BADGE-{RUN}" not in json.dumps(rest)   # the text travels as sanitized HTML and nowhere else
     assert f"<h2>Why</h2>" in doc and f"<strong>BADGE-{RUN}</strong>" in doc and "<li>one</li>" in doc
     assert "<script" not in doc and "<b>" not in doc and "&lt;script&gt;" in doc and "<img" not in doc
     assert "javascript:" not in re.sub(r"\[bad\]\(javascript:alert\(1\)\)", "", doc) and 'href="file:' not in doc
@@ -188,8 +198,9 @@ def test_a_lead_browses_the_orgs_knowledge_and_its_graph():
                (org,))["n"] >= 3
 
     # An org with nothing written yet has an empty page, not an error.
-    empty = W["lead_b"].get(f"/orgs/{W['org_b']}/knowledge")
-    assert empty.status_code == 200 and "Nothing has been written yet" in empty.text and "lab-door" not in empty.text
+    empty = W["lead_b"].api_get(f"/orgs/{W['org_b']}/knowledge")
+    assert empty.status_code == 200 and empty.json()["concepts"] == [] and "lab-door" not in empty.text
+    assert empty.json()["tools"] == tools("b")   # the page names the tools to write with
 
 
 def test_only_the_orgs_own_leads_get_that_view():
@@ -198,12 +209,12 @@ def test_only_the_orgs_own_leads_get_that_view():
               "another org's lead": (W["lead_b"], access_token(email("lead-b"), PASSWORD)),
               "a member of the org": (W["browser_a1"], access_token(email("a1"), PASSWORD))}
     for who, (browser, token) in people.items():
-        page = browser.get(f"/orgs/{org}/knowledge")
+        page = browser.api_get(f"/orgs/{org}/knowledge")
         assert page.status_code == 403 and "lab-door" not in page.text and f"DOOR-{RUN}" not in page.text, who
         refused = broker("GET", f"/orgs/{org}/knowledge", token)
         assert refused.status_code == 403 and "lab-door" not in refused.text, who
     # The admin can open the org's page, but is offered no way in.
-    assert "/knowledge" not in W["alice"].get(f"/orgs/{org}").text
+    assert W["alice"].api_get(f"/orgs/{org}").json()["is_lead"] is False
     assert one("SELECT count(*) AS n FROM audit_event WHERE org_id = %s AND action = 'org.knowledge' AND result = 'denied'",
                (org,))["n"] >= 3
     # The console's reader can read bundles in the hub and write none.
@@ -218,24 +229,22 @@ def test_only_the_orgs_own_leads_get_that_view():
 
 def test_suspending_an_org_closes_its_knowledge_until_resumed():
     alice, org = W["alice"], W["org_a"]
-    alice.page(f"/orgs/{org}")
-    alice.post(f"/admin/orgs/{org}/suspend")
-    assert "Lab door code" in W["lead_a"].get(f"/orgs/{org}/knowledge").text        # its lead can still read it
+    alice.api_post(f"/admin/orgs/{org}/suspend")
+    assert "Lab door code" in W["lead_a"].api_get(f"/orgs/{org}/knowledge").text    # its lead can still read it
     # Blocking a team does not stop MCP in LiteLLM, so the console takes the knowledge away from its teams.
     for key in (W["key_a1"], W["key_a2"]):
         status, reply = mcp(key, "tools/call", {"name": f"{tools('a')}-okf_search", "arguments": {"query": "lab door"}})
         assert "lab-door" not in str(reply) and (status != 200 or reply["result"]["isError"]), reply
         status, reply = mcp(key, "tools/list")
         assert status != 200 or reply["result"]["tools"] == [], reply
-    alice.post(f"/admin/orgs/{org}/resume")
+    alice.api_post(f"/admin/orgs/{org}/resume")
     ok, text = mcp_tool(W["key_a1"], f"{tools('a')}-okf_search", query="lab door")
     assert ok and "facts/lab-door" in text
 
 
 def test_removing_an_org_ends_access_to_its_knowledge():
     alice, org = W["alice"], W["org_a"]
-    alice.page(f"/orgs/{org}")
-    alice.post(f"/admin/orgs/{org}/remove", {"confirm_slug": slug("a")})
+    alice.api_post(f"/admin/orgs/{org}/remove", {"confirm_slug": slug("a")})
     assert one("SELECT status, mcp_server_id FROM org WHERE id = %s", (org,)) == {"status": "removed", "mcp_server_id": None}
     assert keycloak_clients(f"okf-org-{slug('a')}") == []
     names = [s["server_name"] for s in httpx.get(f"{LITELLM}/v1/mcp/server", headers=MASTER).json()]

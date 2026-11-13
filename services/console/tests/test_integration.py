@@ -5,7 +5,6 @@ when that user signed in through it, and its own client-credentials token.
 """
 
 import os
-import re
 import uuid
 
 import httpx
@@ -28,9 +27,10 @@ def one(query: str, params=()):
     return sql("SUPERUSER_DATABASE_URL", query, params)[0]
 
 
-def flash(response) -> str:
-    found = re.search(r'class="flash \w+" role="status">([^<]+)<', response.text)
-    return found.group(1) if found else ""
+def said(response) -> str:
+    """What the application would show after an action: its message, or the reason it was refused."""
+    body = response.json()
+    return body.get("message") or body.get("error", {}).get("message", "")
 
 
 def user_token(name: str, client: str = HUB, secret: str = HUB_SECRET) -> str:
@@ -40,19 +40,17 @@ def user_token(name: str, client: str = HUB, secret: str = HUB_SECRET) -> str:
 def make_team(alice: Browser, letter: str) -> None:
     """An org with a lead, one mock model, and a team that allows it. One key per person."""
     slug = f"int{letter}-{RUN}"
-    alice.page("/admin")
-    alice.post("/admin/orgs", {"name": f"Integration {letter.upper()} {RUN}", "slug": slug, "budget_ceiling": "100"})
+    alice.api_post("/admin/orgs", {"name": f"Integration {letter.upper()} {RUN}", "slug": slug, "budget_ceiling": 100})
     org = str(one("SELECT id FROM org WHERE slug = %s", (slug,))["id"])
     create_user(email(f"lead-{letter}"), PASSWORD)
-    alice.post(f"/admin/orgs/{org}/leads", {"email": email(f"lead-{letter}")})
+    alice.api_post(f"/admin/orgs/{org}/leads", {"email": email(f"lead-{letter}")})
     lead = sign_in(email(f"lead-{letter}"), PASSWORD, start=(f"/invite/{invite_token(email(f'lead-{letter}'))}", {}))
-    lead.post(f"/orgs/{org}/models", {"provider": "mock", "model": "m1", "api_key": "sk-provider"})
-    lead.post(f"/orgs/{org}/teams", {"name": "Notebooks", "team_budget": "50", "key_budget": "5", "key_limit": "1",
-                                     "key_expiry_days": "7", "consent_text": "You agree that leads see your usage totals."})
+    lead.api_post(f"/orgs/{org}/models", {"provider": "mock", "model": "m1", "api_key": "sk-provider"})
+    lead.api_post(f"/orgs/{org}/teams", {"name": "Notebooks", "team_budget": 50, "key_budget": 5, "key_limit": 1,
+                                         "key_expiry_days": 7, "consent_text": "You agree that leads see your usage totals."})
     team = str(one("SELECT id FROM team WHERE org_id = %s", (org,))["id"])
-    model = one("SELECT id FROM org_model WHERE org_id = %s", (org,))["id"]
-    lead.page(f"/teams/{team}/manage")
-    lead.post(f"/teams/{team}/models", {"model_ids": model})
+    model = str(one("SELECT id FROM org_model WHERE org_id = %s", (org,))["id"])
+    lead.api_post(f"/teams/{team}/models", {"model_ids": [model]})
     W.update({f"org_{letter}": org, f"team_{letter}": team, f"lead_{letter}": lead, f"slug_{letter}": slug})
 
 
@@ -64,19 +62,19 @@ def test_admin_connects_services_and_leads_cannot():
     create_service_client(LAB, LAB_SECRET)
     team_a, team_b, lead = W["team_a"], W["team_b"], W["lead_a"]
 
-    lead.page(f"/teams/{team_a}/manage")
-    assert lead.post(f"/admin/teams/{team_a}/integrations", {"client_id": HUB, "name": "JupyterHub"}).status_code == 403
-    assert ">Connect service</button>" not in lead.page(f"/teams/{team_a}/manage").text
+    assert lead.api_post(f"/admin/teams/{team_a}/integrations", {"client_id": HUB, "name": "JupyterHub"}).status_code == 403
+    assert lead.api_get("/session").json()["me"]["is_admin"] is False   # what keeps "Connect a service" off their page
 
-    alice.page(f"/teams/{team_a}/manage")
-    connected = alice.post(f"/admin/teams/{team_a}/integrations", {"client_id": HUB, "name": "JupyterHub", "can_enroll": "yes"})
-    assert "Connected JupyterHub" in flash(connected) and HUB in connected.text
-    alice.page(f"/teams/{team_b}/manage")
-    assert "Connected Lab" in flash(alice.post(f"/admin/teams/{team_b}/integrations", {"client_id": LAB, "name": "Lab"}))
+    connected = alice.api_post(f"/admin/teams/{team_a}/integrations", {"client_id": HUB, "name": "JupyterHub", "can_enroll": True})
+    assert "Connected JupyterHub" in said(connected)
+    listed = alice.api_get(f"/teams/{team_a}/manage").json()["integrations"]
+    assert [(i["name"], i["client_id"], i["can_enroll"]) for i in listed] == [("JupyterHub", HUB, True)]
+    assert set(listed[0]) == {"id", "name", "client_id", "can_enroll"}
+    assert "Connected Lab" in said(alice.api_post(f"/admin/teams/{team_b}/integrations", {"client_id": LAB, "name": "Lab"}))
     # One client, one team; and the console's own client cannot be made an integration.
-    assert "already connected" in flash(alice.post(f"/admin/teams/{team_b}/integrations", {"client_id": HUB, "name": "Again"}))
-    assert "console itself" in flash(alice.post(f"/admin/teams/{team_b}/integrations", {"client_id": "console", "name": "Self"}))
-    assert "JupyterHub" in lead.page(f"/teams/{team_a}/manage").text      # the lead can see what is connected
+    assert "already connected" in said(alice.api_post(f"/admin/teams/{team_b}/integrations", {"client_id": HUB, "name": "Again"}))
+    assert "console itself" in said(alice.api_post(f"/admin/teams/{team_b}/integrations", {"client_id": "console", "name": "Self"}))
+    assert "JupyterHub" in lead.api_get(f"/teams/{team_a}/manage").text   # the lead can see what is connected
     W["hub"], W["lab"] = service_token(HUB, HUB_SECRET), service_token(LAB, LAB_SECRET)
 
 
@@ -122,13 +120,14 @@ def test_service_enrolls_a_user_but_no_key_before_consent():
 
     # The user follows the link and accepts in the console themselves.
     consent_path = f"/teams/{team}"
-    signed_out = Browser().get(consent_path)
-    assert "Sign in" in signed_out.text and f'name="next" value="{consent_path}"' in signed_out.text
+    # Signed out, the page's data is refused, so the application shows "Sign in" and sends this address as `next`.
+    assert Browser().get(consent_path).status_code == 200 and Browser().api_get(consent_path).status_code == 401
     W["u1_browser"] = browser = sign_in(email("u1"), PASSWORD, start=("/login", {"next": consent_path}))
-    assert browser.landed_path == consent_path and "You agree that leads see your usage totals." in browser.landed.text
+    assert browser.landed_path == consent_path
+    assert browser.api_get(consent_path).json()["team"]["consent_text"] == "You agree that leads see your usage totals."
     for elsewhere in ("//evil.example/x", "https://evil.example", "/\\evil.example", "javascript:alert(1)"):
         assert sign_in(email("u1"), PASSWORD, start=("/login", {"next": elsewhere})).landed_path == "/"
-    browser.post(f"/teams/{team}/my/consent", {"terms_accepted": "yes"})
+    browser.api_post(f"/teams/{team}/my/consent", {"terms_accepted": True})
     assert api("enroll", u1, hub).json()["terms_accepted"] is True
 
 
@@ -156,9 +155,10 @@ def test_service_gets_a_working_key_and_a_new_one_each_session():
     assert [k["name"] for k in live] == ["JupyterHub"]                   # the team allows one key each; still one
 
     # The user and the lead see it in the console like any other key, never the secret.
-    assert "JupyterHub" in W["u1_browser"].page(f"/teams/{team}").text
-    page = W["lead_a"].page(f"/teams/{team}/manage")
-    assert "JupyterHub" in page.text and second["key"] not in page.text
+    mine = W["u1_browser"].api_get(f"/teams/{team}")
+    assert "JupyterHub" in [k["name"] for k in mine.json()["keys"]] and second["key"] not in mine.text
+    page = W["lead_a"].api_get(f"/teams/{team}/manage")
+    assert "JupyterHub" in [k["name"] for k in page.json()["keys"]] and second["key"] not in page.text
     W["u1_key"] = second["key"]
 
 
@@ -168,8 +168,8 @@ def test_the_teams_key_limit_still_applies():
     u2 = user_token("u2")
     api("enroll", u2, hub)
     browser = sign_in(email("u2"), PASSWORD)
-    browser.post(f"/teams/{team}/my/consent", {"terms_accepted": "yes"})
-    browser.post(f"/teams/{team}/my/keys", {"name": "my own"})          # uses the one slot this team allows
+    browser.api_post(f"/teams/{team}/my/consent", {"terms_accepted": True})
+    browser.api_post(f"/teams/{team}/my/keys", {"name": "my own"})      # uses the one slot this team allows
     refused = api("key", u2, hub)
     assert refused.status_code == 409 and refused.json()["error"] == "key_limit"
 
@@ -191,10 +191,9 @@ def test_a_service_only_ever_touches_its_own_team():
     refused = api("enroll", u3, lab)
     assert refused.status_code == 403 and refused.json()["error"] == "not_allowed"
     assert api("key", u3, lab).json()["error"] == "not_member"
-    lead_b.page(f"/teams/{team_b}/manage")
-    lead_b.post(f"/teams/{team_b}/invites", {"emails": email("u3")})
+    lead_b.api_post(f"/teams/{team_b}/invites", data={"emails": email("u3")})
     member = sign_in(email("u3"), PASSWORD, start=(f"/invite/{invite_token(email('u3'))}", {}))
-    member.post(f"/teams/{team_b}/my/consent", {"terms_accepted": "yes"})
+    member.api_post(f"/teams/{team_b}/my/consent", {"terms_accepted": True})
     issued = api("key", u3, lab).json()
     assert issued["team"]["id"] == team_b and issued["models"] == [f"{W['slug_b']}/m1"]
     assert chat(issued["key"], f"{W['slug_a']}/m1").status_code in (401, 403)   # not the other org's model
@@ -207,8 +206,7 @@ def test_a_service_only_ever_touches_its_own_team():
 def test_a_removed_member_is_not_brought_back_by_the_service():
     u1, hub, team, lead = W["u1"], W["hub"], W["team_a"], W["lead_a"]
     person = one("SELECT id FROM person WHERE email = %s", (email("u1"),))["id"]
-    lead.page(f"/teams/{team}/manage")
-    lead.post(f"/teams/{team}/members/{person}/remove")
+    lead.api_post(f"/teams/{team}/members/{person}/remove")
     assert chat(W["u1_key"], f"{W['slug_a']}/m1").status_code == 401
     assert api("enroll", u1, hub).json()["error"] == "removed"
     assert api("key", u1, hub).json()["error"] == "not_member"
@@ -223,8 +221,8 @@ def test_everything_is_audited_under_the_services_name():
     assert ("integration.enroll", "denied") in [
         (e["action"], e["result"]) for e in sql(
             "SUPERUSER_DATABASE_URL", "SELECT action, result FROM audit_event WHERE actor_role = %s", (f"integration:{LAB}",))]
-    page = W["alice"].get("/admin/audit")
-    assert f"integration:{HUB}" in page.text and "integration.register" in page.text
+    shown = W["alice"].api_get("/admin/audit").json()["events"]
+    assert f"integration:{HUB}" in {e["actor_role"] for e in shown} and "integration.register" in {e["action"] for e in shown}
 
 
 def test_closing_the_team_or_disconnecting_the_service_shuts_it_out():
@@ -233,21 +231,21 @@ def test_closing_the_team_or_disconnecting_the_service_shuts_it_out():
     u4 = user_token("u4")
     api("enroll", u4, hub)
     browser = sign_in(email("u4"), PASSWORD)
-    browser.post(f"/teams/{team_a}/my/consent", {"terms_accepted": "yes"})
+    browser.api_post(f"/teams/{team_a}/my/consent", {"terms_accepted": True})
     key = api("key", u4, hub).json()["key"]
 
     # Disconnecting deletes the keys the service issued and refuses it from then on.
     integration = one("SELECT id FROM integration WHERE client_id = %s", (HUB,))["id"]
-    alice.page(f"/teams/{team_a}/manage")
-    assert "Integration disconnected. 1 key(s) deleted" in flash(alice.post(f"/admin/integrations/{integration}/remove"))
+    disconnected = alice.api_post(f"/admin/integrations/{integration}/remove")
+    assert "Integration disconnected. 1 key(s) deleted" in said(disconnected)
+    assert disconnected.json()["goto"] == f"/teams/{team_a}/manage"
     assert chat(key, f"{W['slug_a']}/m1").status_code == 401
     for operation in ("enroll", "key", "key/revoke"):
         assert api(operation, u4, hub).status_code == 403
-    assert W["lead_a"].post(f"/admin/integrations/{integration}/remove").status_code in (403, 404)
+    assert W["lead_a"].api_post(f"/admin/integrations/{integration}/remove").status_code in (403, 404)
 
     # An archived team answers "closed" to its service.
     u3 = user_token("u3", LAB, LAB_SECRET)
-    W["lead_b"].page(f"/teams/{team_b}/manage")
-    W["lead_b"].post(f"/teams/{team_b}/archive")
+    W["lead_b"].api_post(f"/teams/{team_b}/archive")
     closed = api("key", u3, lab)
     assert closed.status_code == 409 and closed.json()["error"] == "team_closed"

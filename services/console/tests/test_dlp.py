@@ -116,12 +116,18 @@ def test_litellm_lists_it_as_a_guardrail_that_is_on_for_everyone():
 
 def test_admins_see_what_was_found_and_never_the_values():
     alice = sign_in("alice@example.com", "alice123")
-    assert 'href="/admin/dlp"' in alice.landed.text
-    page = alice.get("/admin/dlp")
-    assert page.status_code == 200 and "Data protection" in page.text
-    for kind in ("credit_card", "ssn", "pem_key", "api_key", "email", "phone"):
-        assert f"<code>{kind}</code>" in page.text, kind
-    assert "request refused" in page.text and "hidden from the model" in page.text and "swapped for a stand-in" in page.text
+    assert alice.api_get("/session").json()["me"]["is_admin"] is True   # what puts "Data protection" in the menu
+    page = alice.api_get("/admin/dlp")
+    assert page.status_code == 200
+    shown = page.json()
+    assert set(shown) == {"enabled", "read", "shown", "actions", "totals", "events"} and shown["enabled"] is True
+    kinds = {t["kind"] for t in shown["totals"]} | {k for e in shown["events"] for k in e["kinds"]}
+    assert kinds >= {"credit_card", "ssn", "pem_key", "api_key", "email", "phone"}
+    # The words the page uses for each action, and the mark that makes it say "request refused".
+    assert shown["actions"]["mask"] == "hidden from the model" and shown["actions"]["whistledown"] == "swapped for a stand-in"
+    assert any(e["blocked"] for e in shown["events"])
+    assert all(set(e) == {"at", "kinds", "blocked", "action", "source", "mode", "count", "email", "user_id", "request"}
+               and len(e["request"]) <= 8 for e in shown["events"])
     view = broker("GET", "/admin/dlp", access_token("alice@example.com", "alice123")).json()
     assert view["enabled"] and {(t["kind"], t["action"]) for t in view["totals"]} >= {
         ("credit_card", "blocked"), ("ssn", "blocked"), ("api_key", "mask"), ("email", "whistledown")}
@@ -132,5 +138,6 @@ def test_admins_see_what_was_found_and_never_the_values():
     # Admins only.
     create_user(f"dlp-{RUN}@example.com", "Correct-horse-9")
     outsider = sign_in(f"dlp-{RUN}@example.com", "Correct-horse-9")
-    assert outsider.get("/admin/dlp").status_code == 403 and "/admin/dlp" not in outsider.landed.text
+    assert outsider.api_get("/admin/dlp").status_code == 403
+    assert outsider.api_get("/session").json()["me"]["is_admin"] is False
     assert broker("GET", "/admin/dlp", access_token(f"dlp-{RUN}@example.com", "Correct-horse-9")).status_code == 403
