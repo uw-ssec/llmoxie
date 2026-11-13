@@ -417,7 +417,9 @@ def test_repeated_cookie_headers_any_value_counts():
     ) == ("litellm-session")
 
 
-@pytest.mark.parametrize("path", ["/ui%2F", "/ui%2f", "/v2%2Flogin", "/a%25b"])
+@pytest.mark.parametrize(
+    "path", ["/ui%2F", "/ui%2f", "/v2%2Flogin", "/a%25b", "/ui\\", "/ui\x00"]
+)
 def test_encoded_reserved_characters_never_use_the_bearer_route(path):
     """The routing path keeps %2F/%25 encoded while LiteLLM decodes them."""
     http = _http()
@@ -426,19 +428,6 @@ def test_encoded_reserved_characters_never_use_the_bearer_route(path):
     assert "litellm-bearer" not in hits
     for name in hits:
         assert _carries(http, name, "litellm-login"), name
-
-
-def test_edge_rejects_encoded_slashes_backslashes_nulls_and_percents():
-    from llmaven.infrastructure.resources.traefik import build_edge_static_args
-
-    args = build_edge_static_args(_config().edge)
-    for name in (
-        "allowEncodedSlash",
-        "allowEncodedBackSlash",
-        "allowEncodedNullCharacter",
-        "allowEncodedPercent",
-    ):
-        assert f"--entryPoints.web.http.encodedCharacters.{name}=false" in args
 
 
 def test_keycloak_on_with_litellm_login_off_leaves_litellm_as_stage_1():

@@ -210,6 +210,8 @@ def policy_digest(proxy: LiteLLMProxyConfig, dynamic_config: str) -> str:
 _OAUTH2_PRIORITY = 150
 _SESSION_PRIORITY = 100
 _BEARER_PRIORITY = 50
+# Go regexp: a percent sign, a backslash or a NUL in the routing path.
+_ODD_PATH_CHARS = r"[%\\\x00]"
 
 
 def _forward_auth(login_base_url: str) -> dict:
@@ -255,10 +257,11 @@ def _add_litellm_login_routes(
     routers["litellm-bearer"] = {
         "entryPoints": [ENTRYPOINT],
         # The routing path keeps a reserved character (%2F, %25, ...) encoded,
-        # which the backend would decode, so a path with a '%' is never a
-        # bearer-key request: it needs a session.
+        # and decodes %5C and %00 to a backslash and a NUL, all of which the
+        # backend may read differently. Such a path is never a bearer-key
+        # request: it needs a session.
         "rule": (
-            f"{host} && {bearer} && !{cookie} && !PathRegexp(`%`) "
+            f"{host} && {bearer} && !{cookie} && !PathRegexp(`{_ODD_PATH_CHARS}`) "
             f"&& !({_litellm_ui_rule()})"
         ),
         "priority": _BEARER_PRIORITY,
@@ -417,18 +420,6 @@ def build_edge_static_args(edge: EdgeConfig) -> list[str]:
         f"--entryPoints.{ENTRYPOINT}.address=:{edge.port}",
         f"--entryPoints.{ENTRYPOINT}.forwardedHeaders.trustedIPs={trusted}",
         f"--entryPoints.{ENTRYPOINT}.transport.respondingTimeouts.readTimeout=300s",
-        # Traefik routes on the path with these still encoded (so /ui%2F does
-        # not match /ui) while the backends decode them; v3.7 allows them by
-        # default. Reject them with a 400 so no encoded form can dodge a rule.
-        *(
-            f"--entryPoints.{ENTRYPOINT}.http.encodedCharacters.{name}=false"
-            for name in (
-                "allowEncodedSlash",
-                "allowEncodedBackSlash",
-                "allowEncodedNullCharacter",
-                "allowEncodedPercent",
-            )
-        ),
         f"--entryPoints.{EDGE_PING_ENTRYPOINT}.address=:{edge.ping_port}",
         "--ping=true",
         f"--ping.entryPoint={EDGE_PING_ENTRYPOINT}",
