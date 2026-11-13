@@ -6,6 +6,7 @@ import { DataProtectionPage } from '@/pages/dlp'
 import { Frame, Landing, NotBuilt } from '@/pages/frame'
 import { ErrorScreen, InvitationPage, InvitationResult } from '@/pages/messages'
 import { OrgPageView } from '@/pages/org'
+import { TeamManagePageView } from '@/pages/team-manage'
 
 type Args = LoaderFunctionArgs
 
@@ -42,7 +43,7 @@ export const routes: RouteObject[] = [
           { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <DataProtectionPage /> },
           { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <OrgPageView /> },
           { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <NotBuilt /> },
-          { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <NotBuilt /> },
+          { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <TeamManagePageView /> },
           {
             path: '*',
             loader: () => {
