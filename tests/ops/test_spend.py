@@ -572,3 +572,29 @@ class TestRenderTable:
         assert "alpha" in text
         assert "beta" in text
         assert "5.00" in text
+
+    @pytest.mark.parametrize("label", ["model[beta]", "a[bold]b", "team[/x]"])
+    def test_render_table_shows_square_brackets_in_labels_verbatim(self, label):
+        rows = [SpendRow(label, 1.0, None, None, "")]
+
+        text = self._render(render_table(rows, title="Spend", top=None))
+
+        assert label in text
+
+    def test_render_table_shows_square_brackets_in_title_verbatim(self):
+        title = "Spend by model[beta] [/x]"
+
+        text = self._render(render_table([], title=title, top=None))
+
+        assert title in text
+
+    def test_render_table_empty_rows_totals_zero(self):
+        assert "0.00" in self._render(render_table([], title="Spend", top=None))
+
+    def test_render_table_top_zero_shows_only_total(self):
+        rows = [SpendRow("alpha", 3.0, None, None, "")]
+
+        text = self._render(render_table(rows, title="Spend", top=0))
+
+        assert "alpha" not in text
+        assert "3.00" in text

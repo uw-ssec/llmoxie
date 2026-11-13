@@ -26,6 +26,7 @@ from pathlib import Path
 
 import httpx
 from rich.table import Table
+from rich.text import Text
 
 # How much of the hashed api_key goes into a label when the key has no alias.
 KEY_LABEL_PREFIX_LEN = 8
@@ -239,8 +240,13 @@ def render_table(rows: list[SpendRow], *, title: str, top: int | None) -> Table:
     just the ones shown, so a truncated table still reports the true spend.
     The caller supplies ``title``, which names the source, window, baseline
     and grouping.
+
+    Labels and the title come from user data — model names, team and key
+    aliases — so both are wrapped in ``Text`` and render verbatim. Left as
+    plain strings, rich would read square brackets as markup: ``model[beta]``
+    would print as ``model`` and ``team[/x]`` would raise ``MarkupError``.
     """
-    table = Table(title=title, show_header=True, header_style="bold")
+    table = Table(title=Text(title), show_header=True, header_style="bold")
     table.add_column("Label")
     table.add_column("Spend (USD)", justify="right")
     table.add_column("Prior (USD)", justify="right")
@@ -250,7 +256,7 @@ def render_table(rows: list[SpendRow], *, title: str, top: int | None) -> Table:
     shown = rows if top is None else rows[:top]
     for row in shown:
         table.add_row(
-            row.label,
+            Text(row.label),
             _money(row.spend),
             "" if row.prior is None else _money(row.prior),
             "" if row.ratio is None else f"{row.ratio:.2f}",
