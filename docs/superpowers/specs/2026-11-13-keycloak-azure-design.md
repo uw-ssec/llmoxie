@@ -455,21 +455,23 @@ On LiteLLM's host there are four routers:
 - Everything else goes through `ForwardAuth`.
 
 LiteLLM's UI and login paths are `/ui`, `/login`, `/v2/login`, `/sso` and
-`/fallback/login`. They are never on the bearer-key route, so LiteLLM's own
-master-key login form is never reachable without a Keycloak session. The tests
-below pin the behavior.
+`/fallback/login`; this list is confirmed against the
+`uw-ssec/llmoxie-litellm-fork` routes before it is relied on, because a path
+missing from it would sit on the bearer-key route and bypass the login. They are
+never on the bearer-key route, so LiteLLM's own master-key login form is never
+reachable without a Keycloak session. The tests below pin the behavior.
 
 ### 2.7 LiteLLM on the fork, with SSO
 
 **Image.** `docker/dockerfiles/litellm.dockerfile` changes its base from
 `ghcr.io/berriai/litellm:v1.108.6@sha256:…` to
-`ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6@sha256:<digest>`. It keeps the
-logging packages it adds but **not** its `litellm==1.108.6` re-pin from PyPI,
-which would put upstream's package back over the fork's and bring the five-user
-cap back; the fork image already carries MLflow support. A test fails if the
-re-pin returns, and the image build checks that the installed `litellm` lacks
-the cap (`_raise_if_sso_exceeds_free_user_limit`). Whether the `ensurepip` step
-(`knowledge/facts/litellm-image-install-quirks.md`) is still needed on the
+`ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6@sha256:98070f3fcfb082155d5153bdaddbaa18a1fa05524990e7cb4b8c9fd42e68fbd3`.
+It keeps the logging packages it adds but **not** its `litellm==1.108.6` re-pin
+from PyPI, which would put upstream's package back over the fork's and bring the
+five-user cap back; the fork image already carries MLflow support. A test fails
+if the re-pin returns, and the image build checks that the installed `litellm`
+lacks the cap (`_raise_if_sso_exceeds_free_user_limit`). Whether the `ensurepip`
+step (`knowledge/facts/litellm-image-install-quirks.md`) is still needed on the
 fork's base is checked, not assumed.
 
 The fork image is published as
@@ -515,7 +517,7 @@ against stacks where MLflow has no login.
 
 Per environment, staging first, with a recent `pg_dump` of `litellm_db`:
 
-1. Publish the fork image; pin its digest; release.
+1. Release with the fork image pinned (published 2026-11-13).
 2. Deploy with `keycloak.enabled: true`, logins off, and Keycloak's hostname
    added to `edge.custom_domains` (bind its certificate by hand, as in stage 1).
    Check the issuer at
