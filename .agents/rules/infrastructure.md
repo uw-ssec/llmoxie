@@ -175,7 +175,7 @@ edge:
   custom_domains: # every public hostname, bound to the Traefik app
     - { name: ai.example.org, certificate_name: ... }
     - { name: mlflow.example.org, certificate_name: ... }
-  trusted_proxy_ips: null # defaults to the Container Apps subnet
+  trusted_proxy_ips: [100.100.0.0/17] # required, no default; see below
   rate_limit_average: 50
   rate_limit_burst: 100
 litellm:
@@ -188,8 +188,9 @@ mlflow:
 ```
 
 **Client IP and trust.** Traefik keeps `X-Forwarded-For` only from peers in
-`edge.trusted_proxy_ips` (default: `networking.container_apps_subnet`). The
-admin allowlist and rate limiter read the rightmost entry of the header as
+`edge.trusted_proxy_ips`, which is required when the edge is on and has no
+default (a missing or empty value is a config error, issue #229). The admin
+allowlist and rate limiter read the rightmost entry of the header as
 received (`depth: 1`). That is safe only because every legitimate peer is the
 Container Apps Envoy, which appends the real client IP. Any other workload that
 can reach Traefik's port directly from inside the trusted range can forge an
@@ -198,6 +199,19 @@ allowlisted IP. This was observed with the real binary: a forged
 while the same header from an untrusted peer got 403. Don't widen
 `trusted_proxy_ips`.
 
+**What to set.** The Envoy peer range is not `networking.container_apps_subnet`.
+In the workload-profile environment on ISS (#229), Traefik's access log showed
+Envoy connecting from `100.100.0.0/17` (`ClientAddr` `100.100.0.86` and
+`100.100.0.246`), while replicas sat in `100.100.192.0/19`. With
+`trusted_proxy_ips: [100.100.0.0/17]` admin paths returned 200 from allowlisted
+IPs, and a forged allowlisted `X-Forwarded-For` sent from one replica straight
+to another was refused (403). Microsoft reserves `100.100.0.0/17`,
+`100.100.128.0/19`, `100.100.160.0/19` and `100.100.192.0/19` there, but doesn't
+say which block Envoy uses, so the split is observed, not guaranteed. Never
+include the replica range. Consumption-only environments are untested and may
+differ. Confirm the peer range on staging with `edge.log_forwarded_for: true`.
+The sidecar (`litellm.proxy`) still defaults to the subnet, tracked in #229.
+
 **Validation errors** (all raised when the config loads):
 
 - `edge.enabled and litellm.proxy.enabled are both true`: set
@@ -205,6 +219,9 @@ while the same header from an untrusted peer got 403. Don't widen
   `litellm.admin_allowed_ips`. Public and health paths move to
   `litellm.public_paths` and `litellm.health_paths`, and `trusted_proxy_ips`,
   `rate_limit_average` and `rate_limit_burst` move to `edge.*`.
+- `edge.trusted_proxy_ips is required when the edge is on`: set it to the
+  Envoy peer range (see "What to set" above), never the replica range.
+- `edge.revision_suffix ... is too long`: shorten it to the stated maximum.
 - `<app>.hostname is not set`, or
   `<app>.hostname ... is not listed in edge.custom_domains`: every enabled
   backend needs a hostname that is also in `edge.custom_domains`.
@@ -228,8 +245,11 @@ false. They have no effect then, so turning the edge off (or never turning it
 on) leaves the admin surface unrestricted unless the sidecar or
 `litellm.ip_security_restrictions` does it. With the edge on, `edge.env_vars`
 and `edge.key_vault_secret_refs` must be empty (the edge ignores them),
-`edge.min_replicas` must be at least 1, and `edge.revision_suffix` must be 54
-characters or fewer. With the edge on, LiteLLM gets
+`edge.min_replicas` must be at least 1, `edge.trusted_proxy_ips` must be set,
+and a pinned `edge.revision_suffix` must fit the whole revision name,
+`<app>--<suffix>-p<8 hex>` (at most 54 characters). `<app>` is
+`<project.name>-<project.environment>-traefik-<env>`, and the error states the
+maximum suffix length (#228). With the edge on, LiteLLM gets
 `PROXY_BASE_URL=https://<litellm.hostname>` unless `litellm.env_vars` sets it,
 because Traefik sends LiteLLM its internal FQDN as `Host` and LiteLLM would
 otherwise redirect UI logins there.

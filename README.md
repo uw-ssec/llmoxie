@@ -352,7 +352,7 @@ edge:
   custom_domains: # every public hostname, bound to the Traefik app
     - { name: ai.example.org, certificate_name: ... }
     - { name: mlflow.example.org, certificate_name: ... }
-  trusted_proxy_ips: null # defaults to the Container Apps subnet
+  trusted_proxy_ips: [100.100.0.0/17] # required; see below
   rate_limit_average: 50
   rate_limit_burst: 100
 litellm:
@@ -361,6 +361,20 @@ litellm:
 mlflow:
   hostname: mlflow.example.org
 ```
+
+`edge.trusted_proxy_ips` is required and has no default: a missing or empty
+value is refused when the config loads. Set it to the range the environment's
+Envoy peers connect from. In the workload-profile environment observed in
+[#229](https://github.com/uw-ssec/llmoxie/issues/229) (ISS) that is
+`100.100.0.0/17`, which is not `networking.container_apps_subnet`. Don't include
+the replica range (`100.100.192.0/19` there): replicas must stay untrusted, or
+one workload could forge an allowlisted `X-Forwarded-For`. Consumption-only
+environments are untested, so find the peer range from the Traefik access log
+(`edge.log_forwarded_for: true`, `ClientAddr`) before relying on it. A pinned
+`edge.revision_suffix` is checked against the whole revision name
+(`<app>--<suffix>-p<8 hex>`, at most 54 characters, where `<app>` is
+`<project.name>-<project.environment>-traefik-<env>`); the error states how long
+the suffix may be.
 
 The deploy moves each hostname from its old app to Traefik and binds it to the
 existing managed certificate named in `edge.custom_domains`. Each hostname is
