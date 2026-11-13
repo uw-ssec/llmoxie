@@ -1,4 +1,5 @@
 ## 2026-11-13
+* **Update**: Updated concept `decisions/no-op-deploy-controls.md`.
 * **Update**: Updated concept `requirements/traefik-sidecar-allowlist-and-client-ip.md`.
 
 ## 2026-11-12
