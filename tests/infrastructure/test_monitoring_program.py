@@ -500,6 +500,10 @@ def test_llm_spend_hourly_and_daily_rules(tmp_path, monkeypatch):
     assert hourly.inputs["windowSize"] == "PT1H"
     assert hourly.inputs["evaluationFrequency"] == "PT1H"
     assert hourly.inputs["criteria"]["allOf"][0]["threshold"] == 5
+    for rule in rules.values():
+        assert rule.inputs["actions"]["customProperties"] == {
+            "investigate": monitoring.LLM_SPEND_INVESTIGATE
+        }
 
 
 def test_llm_spend_litellm_disabled_skips_with_warning(tmp_path, monkeypatch):
