@@ -190,11 +190,11 @@ mlflow:
 **Client IP and trust.** Traefik keeps `X-Forwarded-For` only from peers in
 `edge.trusted_proxy_ips`, which is required when the edge is on and has no
 default (a missing or empty value is a config error, issue #229). The admin
-allowlist and rate limiter read the rightmost entry of the header as
-received (`depth: 1`). That is safe only because every legitimate peer is the
-Container Apps Envoy, which appends the real client IP. Any other workload that
-can reach Traefik's port directly from inside the trusted range can forge an
-allowlisted IP. This was observed with the real binary: a forged
+allowlist and rate limiter read the rightmost entry of the header as received
+(`depth: 1`). That is safe only because every legitimate peer is the Container
+Apps Envoy, which appends the real client IP. Any other workload that can reach
+Traefik's port directly from inside the trusted range can forge an allowlisted
+IP. This was observed with the real binary: a forged
 `X-Forwarded-For: 203.0.113.7` from a trusted peer reached the backend (200),
 while the same header from an untrusted peer got 403. Don't widen
 `trusted_proxy_ips`.
@@ -219,8 +219,8 @@ The sidecar (`litellm.proxy`) still defaults to the subnet, tracked in #229.
   `litellm.admin_allowed_ips`. Public and health paths move to
   `litellm.public_paths` and `litellm.health_paths`, and `trusted_proxy_ips`,
   `rate_limit_average` and `rate_limit_burst` move to `edge.*`.
-- `edge.trusted_proxy_ips is required when the edge is on`: set it to the
-  Envoy peer range (see "What to set" above), never the replica range.
+- `edge.trusted_proxy_ips is required when the edge is on`: set it to the Envoy
+  peer range (see "What to set" above), never the replica range.
 - `edge.revision_suffix ... is too long`: shorten it to the stated maximum.
 - `<app>.hostname is not set`, or
   `<app>.hostname ... is not listed in edge.custom_domains`: every enabled
