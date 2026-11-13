@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openApp } from '@/test/open'
@@ -134,4 +134,41 @@ it('says in place why a key could not be made', async () => {
   await user.type(await screen.findByLabelText('Name for a new key'), 'third')
   await user.click(screen.getByRole('button', { name: 'Create key' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('you already have 2 keys')
+})
+
+it('keeps the page, and a key just made, when the reload after an action fails', async () => {
+  const user = userEvent.setup()
+  let loads = 0
+  serve({
+    ...me,
+    'GET /web-api/teams/t1': () => (++loads === 1 ? { json: TEAM } : { status: 502, text: 'upstream connect error' }),
+    'POST /web-api/teams/t1/my/keys': { json: { key: { name: 'desk', key: KEY }, rotated: false } },
+  })
+  await openApp('/teams/t1')
+  await user.type(await screen.findByLabelText('Name for a new key'), 'desk')
+  await user.click(screen.getByRole('button', { name: 'Create key' }))
+  // The key was made. Losing it to an error screen that says "Nothing was changed" would be wrong twice.
+  expect(await screen.findByLabelText('Your new key')).toHaveTextContent(KEY)
+  expect(await screen.findByText('That was done, but this page could not be refreshed. Reload it to see it as it is now.')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'API keys' })).toBeInTheDocument()
+  expect(loads).toBe(2)
+})
+
+it('still shows the error screen when the page cannot be loaded in the first place', async () => {
+  serve({ ...me, 'GET /web-api/teams/t1': { status: 502, text: 'upstream connect error' } })
+  await openApp('/teams/t1')
+  expect(await screen.findByRole('heading', { name: 'The console could not complete that. Nothing was changed.' })).toBeInTheDocument()
+})
+
+it('drops the key when the browser puts the page away, so Back cannot bring it out of a cache', async () => {
+  const user = userEvent.setup()
+  serve({ ...me, ...page(TEAM), 'POST /web-api/teams/t1/my/keys': { json: { key: { name: 'desk', key: KEY }, rotated: false } } })
+  await openApp('/teams/t1')
+  await user.type(await screen.findByLabelText('Name for a new key'), 'desk')
+  await user.click(screen.getByRole('button', { name: 'Create key' }))
+  await screen.findByLabelText('Your new key')
+  // What a browser fires when it leaves a page, including when it keeps the page to restore on Back.
+  act(() => { window.dispatchEvent(new Event('pagehide')) })
+  expect(screen.queryByLabelText('Your new key')).toBeNull()
+  expect(document.body.innerHTML).not.toContain(KEY)
 })

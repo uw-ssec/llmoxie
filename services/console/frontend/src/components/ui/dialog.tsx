@@ -52,35 +52,40 @@ function DialogContent({
   const { open, setOpen, titleId, descriptionId } = useDialog()
   const ref = React.useRef<HTMLDialogElement>(null)
 
+  // The element stays in the page and is opened and closed through its own methods. Its close() is
+  // what hands focus back to the button that opened it; removing the element instead would drop it.
   React.useEffect(() => {
-    if (!open) return
     const element = ref.current
-    if (element && !element.open) element.showModal()
+    if (!element) return
+    if (open && !element.open) element.showModal()
+    if (!open && element.open) element.close()
+    if (!open) return
     // The page behind must not scroll. A class, not a style: the policy allows one and not the other.
     document.documentElement.classList.add('overflow-hidden')
     return () => document.documentElement.classList.remove('overflow-hidden')
   }, [open])
 
-  if (!open) return null
   return (
     <dialog
       ref={ref}
+      hidden={!open}
       data-slot="dialog-content"
       role={alert ? 'alertdialog' : undefined}
-      aria-labelledby={titleId}
-      aria-describedby={descriptionId}
-      className={cn(
-        'm-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border bg-popover p-6 text-popover-foreground shadow-xl backdrop:bg-black/50',
-        className,
-      )}
+      aria-labelledby={open ? titleId : undefined}
+      aria-describedby={open ? descriptionId : undefined}
+      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border bg-popover p-0 text-popover-foreground shadow-xl backdrop:bg-black/50"
       onClose={() => setOpen(false)}
       onClick={(event) => {
-        // A click on the dialog element itself, not on anything in it, is a click on the backdrop.
+        // Everything visible is inside the body below, so a click on the element itself is on the backdrop.
         if (!alert && event.target === event.currentTarget) setOpen(false)
       }}
       {...props}
     >
-      {children}
+      {open && (
+        <div data-slot="dialog-body" className={cn('p-6', className)}>
+          {children}
+        </div>
+      )}
     </dialog>
   )
 }

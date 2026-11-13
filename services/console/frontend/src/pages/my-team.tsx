@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useLoaderData } from 'react-router'
 import { ActionButton } from '@/components/action-button'
 import { CodeBlock } from '@/components/code-block'
@@ -33,9 +33,17 @@ export function MyTeamPageView() {
   const [shown, setShown] = useState<Shown | null>(null)
   const live = team.status === 'active' && team.org_status === 'active'
   const agreed = consent?.terms_accepted === true
-  const show = (result: ActionResult | undefined) => {
-    if (result?.key) setShown({ ...result.key, rotated: result.rotated === true })
+  // Put on screen the moment it arrives, before the page reloads its data: nothing after this can lose it.
+  const show = (result: ActionResult) => {
+    if (result.key) setShown({ ...result.key, rotated: result.rotated === true })
+    return result
   }
+  // A browser may keep a page it has left, to bring back on Back. It must not keep this.
+  useEffect(() => {
+    const forget = () => setShown(null)
+    window.addEventListener('pagehide', forget)
+    return () => window.removeEventListener('pagehide', forget)
+  }, [])
   return (
     <>
       <PageHeader title={team.name} lede={team.org_name} />
@@ -149,7 +157,7 @@ function Terms({ view: { team, consent }, live }: { view: MyTeamPage; live: bool
   )
 }
 
-function Keys({ view: { team, keys }, live, show }: { view: MyTeamPage; live: boolean; show: (result: ActionResult | undefined) => void }) {
+function Keys({ view: { team, keys }, live, show }: { view: MyTeamPage; live: boolean; show: (result: ActionResult) => ActionResult }) {
   const create = useAction()
   const replace = useAction()
   return (
@@ -173,7 +181,7 @@ function Keys({ view: { team, keys }, live, show }: { view: MyTeamPage; live: bo
                       variant="ghost"
                       size="sm"
                       disabled={replace.pending}
-                      onClick={async () => show(await replace.run(() => post(`/teams/${team.id}/my/keys/${key.id}/rotate`)))}
+                      onClick={() => void replace.run(async () => show(await post(`/teams/${team.id}/my/keys/${key.id}/rotate`)))}
                     >
                       {key.waiting ? 'Get replacement key' : 'Rotate'}
                     </Button>
@@ -192,9 +200,8 @@ function Keys({ view: { team, keys }, live, show }: { view: MyTeamPage; live: bo
             event.preventDefault()
             const form = event.currentTarget
             const name = String(new FormData(form).get('name') ?? '').trim()
-            const made = await create.run(() => post(`/teams/${team.id}/my/keys`, { name }), { inline: true })
+            const made = await create.run(async () => show(await post(`/teams/${team.id}/my/keys`, { name })), { inline: true })
             if (made) form.reset()
-            show(made)
           }}
         >
           <Field label="Name for a new key">

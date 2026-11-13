@@ -17,10 +17,11 @@ export const notices = {
   list: () => items,
   clear: () => set([]),
   dismiss: (id: number) => set(items.filter((item) => item.id !== id)),
-  add(kind: Notice['kind'], message: string, lifetime = 7000) {
+  /** A success fades after a few seconds. A failure stays until it is dismissed: it must not be missed. */
+  add(kind: Notice['kind'], message: string) {
     const id = nextId++
     set([...items, { id, kind, message }])
-    if (lifetime) setTimeout(() => notices.dismiss(id), lifetime)
+    if (kind === 'good') setTimeout(() => notices.dismiss(id), 7000)
   },
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { useNavigate, useRevalidator } from 'react-router'
 import { ApiError, type ActionResult } from './api'
 import { notices } from './notices'
+import { reloadAfterAction } from './page-data'
 
 type Options = {
   /** Keep a refusal the user can fix (a taken name, a value out of range) in `error`, for the form to show. */
@@ -29,7 +30,7 @@ export function useAction() {
         const result = await call()
         if (result.message) notices.add('good', result.message)
         if (result.goto) await navigate(result.goto)
-        else await revalidate()
+        else await reloadAfterAction(revalidate)
         return result
       } catch (failure) {
         const message = failure instanceof ApiError ? failure.message : 'The console could not complete that. Nothing was changed.'

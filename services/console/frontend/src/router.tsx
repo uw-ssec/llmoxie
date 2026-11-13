@@ -1,5 +1,6 @@
 import { Outlet, redirect, type LoaderFunctionArgs, type RouteObject } from 'react-router'
 import { ApiError, get, loadSession } from '@/lib/api'
+import { pageData } from '@/lib/page-data'
 import { AdminOrgsPage } from '@/pages/admin-orgs'
 import { AuditPage } from '@/pages/audit'
 import { DataProtectionPage } from '@/pages/dlp'
@@ -17,7 +18,7 @@ function page(path: (args: Args) => string) {
   return async (args: Args) => {
     const session = await loadSession()
     if (!session.signed_in) throw redirect('/?next=' + encodeURIComponent(new URL(args.request.url).pathname))
-    return get(path(args))
+    return pageData(path(args))
   }
 }
 

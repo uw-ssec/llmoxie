@@ -56,5 +56,30 @@ it('asks before an action that cannot be undone, and does nothing on Cancel', as
   await user.click(confirm)
   expect(call).toHaveBeenCalledTimes(1)
   await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
-  expect(dialog).not.toBeInTheDocument()
+  expect(dialog).not.toBeVisible() // closed and hidden; the element itself stays, so focus can return to the button
+})
+
+it('closes only on a click outside it, not on one in its own margin, and closes through the element itself', async () => {
+  const user = userEvent.setup()
+  const close = vi.spyOn(HTMLDialogElement.prototype, 'close')
+  render(
+    <TypeToConfirmDialog trigger="Remove team" title="Remove Workshop" description="This cannot be undone."
+      prompt="Type the team's name" expected="Workshop" confirmLabel="Remove team" onConfirm={vi.fn()} />,
+  )
+  await user.click(screen.getByRole('button', { name: 'Remove team' }))
+  const dialog = screen.getByRole('dialog')
+  await user.type(screen.getByRole('textbox'), 'Works')
+  // The space around the dialog's content is still the dialog: a click there must not throw away what was typed.
+  fireEvent.click(dialog.querySelector('[data-slot="dialog-body"]')!)
+  expect(screen.getByRole('textbox')).toHaveValue('Works')
+  // The element's own close() is what hands focus back to the button that opened it.
+  close.mockClear()
+  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(close).toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  await user.click(screen.getByRole('button', { name: 'Remove team' }))
+  fireEvent.click(screen.getByRole('dialog')) // on the dialog element itself: the backdrop
+  expect(screen.queryByRole('dialog')).toBeNull()
+  close.mockRestore()
 })

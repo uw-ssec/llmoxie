@@ -13,7 +13,7 @@ const AlertDialogTitle = DialogTitle
 const AlertDialogDescription = DialogDescription
 
 function AlertDialogContent({ className, ...props }: React.ComponentProps<typeof DialogContent>) {
-  return <DialogContent alert className={cn('flex max-w-md flex-col gap-4', className)} {...props} />
+  return <DialogContent alert className={cn('flex flex-col gap-4', className)} {...props} />
 }
 
 function AlertDialogCancel(props: React.ComponentProps<typeof Button>) {

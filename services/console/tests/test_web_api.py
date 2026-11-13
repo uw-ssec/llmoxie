@@ -146,7 +146,11 @@ def test_unknown_api_paths_are_not_the_shell():
     assert Browser().get("/assets/nope.js").status_code == 404
 
 
-@pytest.mark.parametrize("next_value", ["//evil.example", "https:evil.example", "/\\evil", "/" + "a" * 300])
+# Browsers drop tabs and line breaks from an address before reading it, so "/<tab>/evil.example" in the
+# "Signed in" page's refresh would be read as "//evil.example": another site.
+@pytest.mark.parametrize("next_value", ["//evil.example", "https:evil.example", "/\\evil", "/" + "a" * 300,
+                                        "/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/ /evil.example",
+                                        "/teams/x\x00"])
 def test_a_crafted_next_lands_on_home(next_value):
     b = sign_in("alice", "alice123", start=("/login", {"next": next_value}))
     assert b.landed_path == "/"
@@ -164,3 +168,8 @@ def test_the_signed_in_page_is_the_only_html_the_server_writes():
     page = _submit_keycloak_login(b, page, "alice", "alice123")
     assert page.status_code == 200 and "Signed in" in page.text and 'http-equiv="refresh" content="0; url=/"' in page.text
     assert "<script" not in page.text and page.headers["content-security-policy"].startswith(CSP)
+
+
+def test_a_page_with_its_query_survives_sign_in():
+    b = sign_in("alice", "alice123", start=("/login", {"next": "/orgs/abc/knowledge?concept=facts%2Fdoor"}))
+    assert b.landed_path == "/orgs/abc/knowledge?concept=facts%2Fdoor"

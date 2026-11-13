@@ -9,6 +9,7 @@ checks the signed-in user's token itself.
 import hmac
 import html
 import os
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -95,10 +96,15 @@ def start_login(next_path: str = "/", invite: str | None = None) -> RedirectResp
     return response
 
 
+# A page address on this site: one leading slash, then only what such addresses are made of. No second
+# slash up front, no backslash, no colon, and no tab, line break or other control character: browsers
+# drop those before reading an address, which would turn "/<tab>/evil.example" into "//evil.example".
+LOCAL_PATH = re.compile(r"/(?!/)[A-Za-z0-9\-._~/%?=&]*")
+
+
 def local_path(value: str) -> str:
     """`value` if it is a plain path on this site, else the home page. Never somewhere else."""
-    plain = value.startswith("/") and not value.startswith("//") and "\\" not in value and ":" not in value
-    return value if plain and len(value) < 200 else "/"
+    return value if len(value) < 200 and LOCAL_PATH.fullmatch(value) else "/"
 
 
 def signed_in_page(target: str) -> HTMLResponse:
