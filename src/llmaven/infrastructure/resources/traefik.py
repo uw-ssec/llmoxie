@@ -59,6 +59,32 @@ _CLIENT_IP_STRATEGY = {"depth": 1}
 _NO_ADMIN_IPS = ["127.0.0.1/32"]
 
 
+LOGIN_COOKIE = {"mlflow": "_llmoxie_mlflow", "litellm": "_llmoxie_litellm"}
+
+# Every path a browser login or the UI touches on LiteLLM. These always need a
+# Keycloak session: the bearer-key route (an Authorization header from an
+# allowed IP) never serves them, whatever headers come with the request. Read
+# from uw-ssec/llmoxie-litellm, branch sso-enabled, commit
+# a20162ca8ab85c4ee0ce31f2afa9af64ee80eae5 (proxy_server.py, ui_sso.py,
+# discovery_endpoints/ui_discovery_endpoints.py):
+LITELLM_UI_PATHS: tuple[str, ...] = (
+    "/ui",  # StaticFiles mount of the dashboard; redirect target after login
+    "/_next",  # dashboard JS/CSS, mounted at the root
+    "/litellm-asset-prefix",  # the same assets under the asset prefix
+    "/login",  # master-key / username form POST
+    "/v2/login",  # form login through the API
+    "/v3/login",  # control-plane login, and /v3/login/exchange
+    "/fallback/login",  # fallback login page
+    "/sso",  # /sso/key/generate, /sso/callback, /sso/saml/*, /sso/cli/*, ...
+    "/onboarding",  # invitation links: get_token, claim_token
+    "/get_image",  # login page logo
+    "/get_logo_url",
+    "/get_favicon",
+    "/.well-known/litellm-ui-config",  # the dashboard's discovery document
+    "/litellm/.well-known/litellm-ui-config",
+)
+
+
 def _path_rule(paths: list[str]) -> str:
     return " || ".join(f"Path(`{path}`)" for path in paths)
 
@@ -179,11 +205,82 @@ def policy_digest(proxy: LiteLLMProxyConfig, dynamic_config: str) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+# Router priorities with a login: health 300 > public 200 > /oauth2/ > session
+# > bearer key > catch-all.
+_OAUTH2_PRIORITY = 150
+_SESSION_PRIORITY = 100
+_BEARER_PRIORITY = 50
+
+
+def _forward_auth(login_base_url: str) -> dict:
+    return {
+        "forwardAuth": {
+            "address": f"{login_base_url}/",
+            "trustForwardHeader": True,
+        }
+    }
+
+
+def _litellm_ui_rule() -> str:
+    # Each entry matches itself and its sub-paths, never a look-alike such as
+    # /loginx, so the exclusion is exact in both directions.
+    return " || ".join(f"Path(`{p}`) || PathPrefix(`{p}/`)" for p in LITELLM_UI_PATHS)
+
+
+def _add_litellm_login_routes(
+    routers: dict, middlewares: dict, services: dict, host: str, backends: dict
+) -> None:
+    """LiteLLM's host with the Keycloak login in front of the admin surface.
+
+    A request with the login cookie goes through ForwardAuth from any IP. A
+    bearer key with no cookie passes only from the admin IPs (LiteLLM checks the
+    key), and never on the UI paths. Anything else needs a session.
+    """
+    cookie = f"HeaderRegexp(`Cookie`, `(^|;\\s*){LOGIN_COOKIE['litellm']}=`)"
+    bearer = "HeaderRegexp(`Authorization`, `^Bearer `)"
+    routers["litellm-oauth2"] = {
+        "entryPoints": [ENTRYPOINT],
+        "rule": f"{host} && PathPrefix(`/oauth2/`)",
+        "priority": _OAUTH2_PRIORITY,
+        "service": "litellm-auth",
+    }
+    routers["litellm-session"] = {
+        "entryPoints": [ENTRYPOINT],
+        "rule": f"{host} && {cookie}",
+        "priority": _SESSION_PRIORITY,
+        "middlewares": ["litellm-login", "client-rate-limit"],
+        "service": "litellm",
+    }
+    routers["litellm-bearer"] = {
+        "entryPoints": [ENTRYPOINT],
+        "rule": f"{host} && {bearer} && !{cookie} && !({_litellm_ui_rule()})",
+        "priority": _BEARER_PRIORITY,
+        "middlewares": ["litellm-admin-ip-allowlist", "client-rate-limit"],
+        "service": "litellm",
+    }
+    routers["litellm-admin"] = {
+        "entryPoints": [ENTRYPOINT],
+        "rule": host,
+        "priority": 1,
+        "middlewares": ["litellm-login", "client-rate-limit"],
+        "service": "litellm",
+    }
+    middlewares["litellm-login"] = _forward_auth(backends["litellm-auth"])
+    services["litellm-auth"] = {
+        "loadBalancer": {
+            "servers": [{"url": backends["litellm-auth"]}],
+            "passHostHeader": False,
+            "responseForwarding": {"flushInterval": "100ms"},
+        }
+    }
+
+
 def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -> dict:
     """Build the edge's Traefik file-provider config, routed by Host.
 
     ``backends`` maps ``"litellm"`` / ``"mlflow"`` to a base URL, with a key
-    only for enabled backends.
+    only for enabled backends. With Keycloak on it may also carry ``"keycloak"``
+    and the login apps ``"mlflow-auth"`` / ``"litellm-auth"``.
     """
     edge = config.edge
     routers: dict[str, dict] = {}
@@ -198,6 +295,7 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
         }
     }
     services: dict[str, dict] = {}
+    keycloak_on = config.keycloak.enabled
 
     def _service(url: str) -> dict:
         return {
@@ -226,27 +324,68 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
                 if limited:
                     router["middlewares"] = ["client-rate-limit"]
                 routers[name] = router
-        routers["litellm-admin"] = {
-            "entryPoints": [ENTRYPOINT],
-            "rule": host,
-            "priority": 1,
-            "middlewares": ["litellm-admin-ip-allowlist", "client-rate-limit"],
-            "service": "litellm",
-        }
-        middlewares["litellm-admin-ip-allowlist"] = {
+        allowlist = {
             "ipAllowList": {
                 "sourceRange": litellm.admin_allowed_ips or _NO_ADMIN_IPS,
                 "ipStrategy": dict(_CLIENT_IP_STRATEGY),
             }
         }
+        middlewares["litellm-admin-ip-allowlist"] = allowlist
+        if keycloak_on and litellm.login.enabled:
+            _add_litellm_login_routes(routers, middlewares, services, host, backends)
+        else:
+            routers["litellm-admin"] = {
+                "entryPoints": [ENTRYPOINT],
+                "rule": host,
+                "priority": 1,
+                "middlewares": ["litellm-admin-ip-allowlist", "client-rate-limit"],
+                "service": "litellm",
+            }
         services["litellm"] = _service(backends["litellm"])
     if "mlflow" in backends:
+        mlflow_host = f"Host(`{config.mlflow.hostname}`)"
         routers["mlflow"] = {
             "entryPoints": [ENTRYPOINT],
-            "rule": f"Host(`{config.mlflow.hostname}`)",
+            "rule": mlflow_host,
             "service": "mlflow",
         }
+        if keycloak_on and config.mlflow.login.enabled:
+            routers["mlflow"]["priority"] = 1
+            routers["mlflow"]["middlewares"] = ["mlflow-login"]
+            routers["mlflow-oauth2"] = {
+                "entryPoints": [ENTRYPOINT],
+                "rule": f"{mlflow_host} && PathPrefix(`/oauth2/`)",
+                "priority": _OAUTH2_PRIORITY,
+                "service": "mlflow-auth",
+            }
+            middlewares["mlflow-login"] = _forward_auth(backends["mlflow-auth"])
+            services["mlflow-auth"] = _service(backends["mlflow-auth"])
         services["mlflow"] = _service(backends["mlflow"])
+    if keycloak_on and "keycloak" in backends:
+        kc_host = f"Host(`{config.keycloak.hostname}`)"
+        for name, prefix in (
+            ("keycloak-realms", "/realms/"),
+            ("keycloak-resources", "/resources/"),
+        ):
+            routers[name] = {
+                "entryPoints": [ENTRYPOINT],
+                "rule": f"{kc_host} && PathPrefix(`{prefix}`)",
+                "middlewares": ["client-rate-limit"],
+                "service": "keycloak",
+            }
+        routers["keycloak-admin"] = {
+            "entryPoints": [ENTRYPOINT],
+            "rule": f"{kc_host} && PathPrefix(`/admin/`)",
+            "middlewares": ["keycloak-admin-ip-allowlist", "client-rate-limit"],
+            "service": "keycloak",
+        }
+        middlewares["keycloak-admin-ip-allowlist"] = {
+            "ipAllowList": {
+                "sourceRange": config.keycloak.admin_allowed_ips or _NO_ADMIN_IPS,
+                "ipStrategy": dict(_CLIENT_IP_STRATEGY),
+            }
+        }
+        services["keycloak"] = _service(backends["keycloak"])
 
     return {
         "http": {"routers": routers, "middlewares": middlewares, "services": services}
