@@ -1172,6 +1172,21 @@ class LLMavenConfig(BaseModel):
             )
         if edge.port == edge.ping_port:
             raise ValueError("edge.port and edge.ping_port must differ")
+        if edge.env_vars or edge.key_vault_secret_refs:
+            raise ValueError(
+                "edge.env_vars and edge.key_vault_secret_refs must be empty: the "
+                "edge builds its own configuration and ignores them"
+            )
+        if edge.min_replicas < 1:
+            raise ValueError(
+                "edge.min_replicas must be at least 1: the edge is the front "
+                "door and must not scale to zero"
+            )
+        if edge.revision_suffix and len(edge.revision_suffix) > 54:
+            raise ValueError(
+                f"edge.revision_suffix {edge.revision_suffix!r} is too long to "
+                "carry the policy digest: keep it at 54 characters or fewer"
+            )
         if edge.trusted_proxy_ips is None:
             edge.trusted_proxy_ips = [self.networking.container_apps_subnet]
 

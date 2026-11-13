@@ -196,3 +196,83 @@ def test_prod_edge_with_one_replica_warns(tmp_path, capsys):
 def test_prod_edge_with_two_replicas_does_not_warn(tmp_path, capsys):
     _run_validate(tmp_path, min_replicas=2, strict=False)
     assert "edge.min_replicas" not in capsys.readouterr().out
+
+
+def _validate_data(tmp_path: Path, data: dict, strict: bool = False) -> None:
+    data["azure"] = {
+        "subscription_id": "00000000-0000-0000-0000-000000000000",
+        "tenant_id": "00000000-0000-0000-0000-000000000000",
+        "resource_group": "rg-test",
+    }
+    data["litellm"] = {
+        **data.get("litellm", {}),
+        "config_file": str(REPO_ROOT / "docker" / "config.yaml"),
+    }
+    path = tmp_path / "llmaven-config.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with (
+        patch.object(validate_mod, "check_azure_cli", return_value=(True, "ok")),
+        patch.object(
+            validate_mod, "check_subscription_access", return_value=(True, "ok")
+        ),
+        patch.object(
+            validate_mod, "check_required_providers", return_value=(True, "ok")
+        ),
+        patch.object(validate_mod, "check_secrets", return_value=(True, [])),
+        patch.object(
+            validate_mod,
+            "check_config_for_hardcoded_secrets",
+            return_value=(True, []),
+        ),
+    ):
+        validate_config(path, strict=strict)
+
+
+@pytest.mark.parametrize(
+    "litellm, mlflow, field",
+    [
+        ({"hostname": LITELLM_HOST}, {}, "litellm.hostname"),
+        ({"admin_allowed_ips": ["203.0.113.0/24"]}, {}, "litellm.admin_allowed_ips"),
+        ({}, {"hostname": MLFLOW_HOST}, "mlflow.hostname"),
+    ],
+)
+def test_edge_only_settings_without_the_edge_warn(
+    tmp_path, capsys, litellm, mlflow, field
+):
+    data = {**EXISTING_STACK, "litellm": litellm, "mlflow": mlflow}
+    _validate_data(tmp_path, data)
+    assert f"{field} is set but edge.enabled is false" in capsys.readouterr().out
+
+    with pytest.raises(ValidationError):
+        _validate_data(tmp_path, {**data}, strict=True)
+
+
+def test_edge_only_settings_with_the_edge_do_not_warn(tmp_path, capsys):
+    _validate_data(tmp_path, _data())
+    assert "edge.enabled is false" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "edge",
+    [
+        {"env_vars": {"A": "b"}},
+        {"key_vault_secret_refs": {"A": "b"}},
+        {"min_replicas": 0},
+        {"revision_suffix": "x" * 55},
+    ],
+)
+def test_edge_rejects_settings_it_ignores_or_cannot_honour(edge):
+    with pytest.raises(PydanticValidationError):
+        _config(edge=edge)
+
+
+def test_edge_accepts_a_suffix_at_the_limit_and_one_replica():
+    config = _config(edge={"revision_suffix": "x" * 54, "min_replicas": 1})
+    assert config.edge.min_replicas == 1
+
+
+def test_disabled_edge_ignores_those_checks():
+    config = LLMavenConfig.model_validate(
+        {"edge": {"enabled": False, "env_vars": {"A": "b"}, "min_replicas": 0}}
+    )
+    assert config.edge.enabled is False
