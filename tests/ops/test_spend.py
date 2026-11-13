@@ -6,7 +6,14 @@ from datetime import date
 
 import pytest
 
-from llmaven.ops.spend import GroupBy, aggregate, group_label, record_day
+from llmaven.ops.spend import (
+    GroupBy,
+    aggregate,
+    baseline_window,
+    compare,
+    group_label,
+    record_day,
+)
 
 HASHED_KEY = "a" * 64
 
@@ -109,3 +116,54 @@ class TestAggregate:
             self._record(self.START, spend=1.0),
         ]
         assert aggregate(records, GroupBy.user, self.START, self.END) == {"alice": 1.0}
+
+
+class TestBaselineWindow:
+    @pytest.mark.parametrize(
+        ("start", "end", "expected"),
+        [
+            # A seven-day report window looks back at the seven days before it.
+            (date(2026, 3, 8), date(2026, 3, 14), (date(2026, 3, 1), date(2026, 3, 7))),
+            # A single day looks back at the day before.
+            (date(2026, 3, 8), date(2026, 3, 8), (date(2026, 3, 7), date(2026, 3, 7))),
+        ],
+    )
+    def test_baseline_window(self, start, end, expected):
+        assert baseline_window(start, end) == expected
+
+
+class TestCompare:
+    def test_compare_flags(self):
+        current = {
+            "spiker": 20.0,  # exactly threshold * prior
+            "newcomer": 15.0,  # no baseline spend
+            "steady": 12.0,  # below threshold
+            "quiet": 0.0,  # no spend, no prior: not "new"
+        }
+        baseline = {"spiker": 10.0, "steady": 11.0, "gone": 50.0}
+
+        rows = compare(current, baseline, threshold=2.0)
+
+        # Rows come only from current, sorted by spend descending.
+        assert [row.label for row in rows] == ["spiker", "newcomer", "steady", "quiet"]
+        assert [row.flag for row in rows] == ["spike", "new", "", ""]
+        assert [row.prior for row in rows] == [10.0, 0.0, 11.0, 0.0]
+        assert rows[0].ratio == 2.0
+        assert rows[1].ratio is None  # prior == 0, so no ratio
+        assert rows[2].ratio == pytest.approx(12.0 / 11.0)
+        assert rows[3].ratio is None
+
+    def test_compare_sorts_ties_by_label(self):
+        current = {"beta": 5.0, "alpha": 5.0, "gamma": 9.0}
+        rows = compare(current, {}, threshold=2.0)
+        assert [row.label for row in rows] == ["gamma", "alpha", "beta"]
+
+    def test_compare_blank_baseline(self):
+        rows = compare({"alice": 10.0, "bob": 0.0}, None, threshold=2.0)
+        assert [row.label for row in rows] == ["alice", "bob"]
+        assert all(row.prior is None for row in rows)
+        assert all(row.ratio is None for row in rows)
+        assert all(row.flag == "" for row in rows)
+
+    def test_compare_empty_current(self):
+        assert compare({}, {"alice": 1.0}, threshold=2.0) == []

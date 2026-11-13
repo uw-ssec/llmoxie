@@ -12,7 +12,8 @@ prefix of it is used.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 
 # How much of the hashed api_key goes into a label when the key has no alias.
@@ -126,3 +127,54 @@ def aggregate(
         label = group_label(record, by)
         totals[label] = totals.get(label, 0.0) + _record_spend(record)
     return totals
+
+
+@dataclass(frozen=True)
+class SpendRow:
+    """One label's spend in the report window, set against its baseline.
+
+    ``prior`` and ``ratio`` are None when there is nothing to compare against:
+    no baseline data at all, or no baseline spend for this label.
+    """
+
+    label: str
+    spend: float
+    prior: float | None
+    ratio: float | None
+    flag: str
+
+
+def baseline_window(start: date, end: date) -> tuple[date, date]:
+    """Return the window of the same length ending the day before ``start``."""
+    n_days = (end - start).days + 1
+    return start - timedelta(days=n_days), start - timedelta(days=1)
+
+
+def compare(
+    current: dict[str, float],
+    baseline: dict[str, float] | None,
+    threshold: float,
+) -> list[SpendRow]:
+    """Flag each label in ``current`` against its baseline spend.
+
+    ``baseline=None`` means no baseline data was available, so every row comes
+    back unflagged with blank comparison columns. Otherwise a label is ``new``
+    when it spent in the report window and nothing in the baseline, and
+    ``spike`` when its spend is at least ``threshold`` times its baseline
+    spend. Rows come only from ``current``, sorted by spend descending and then
+    by label.
+    """
+    rows: list[SpendRow] = []
+    for label, spend in current.items():
+        if baseline is None:
+            rows.append(SpendRow(label, spend, None, None, ""))
+            continue
+        prior = baseline.get(label, 0.0)
+        ratio: float | None = spend / prior if prior > 0 else None
+        if ratio is None:
+            flag = "new" if spend > 0 else ""
+        else:
+            flag = "spike" if ratio >= threshold else ""
+        rows.append(SpendRow(label, spend, prior, ratio, flag))
+    rows.sort(key=lambda row: (-row.spend, row.label))
+    return rows
