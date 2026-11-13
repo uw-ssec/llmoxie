@@ -240,10 +240,11 @@ AlertName = Literal[
     "db_cpu",
     "backup_job_failures",
     "cloud_budget",
+    "llm_spend",
 ]
 ALL_ALERTS: tuple[AlertName, ...] = get_args(AlertName)
 # Alerts that query Log Analytics, so they need monitoring.enable_log_analytics.
-LOG_BASED_ALERTS: frozenset[AlertName] = frozenset({"backup_job_failures"})
+LOG_BASED_ALERTS: frozenset[AlertName] = frozenset({"backup_job_failures", "llm_spend"})
 # Evaluation window sizes (minutes) Azure Monitor metric alerts accept.
 ALLOWED_WINDOW_MINUTES = (1, 5, 15, 30, 60, 360, 720, 1440)
 
@@ -339,6 +340,41 @@ class CloudBudgetAlert(BaseModel):
         return v
 
 
+class LlmSpendAlert(BaseModel):
+    """LLM spend alert on hourly and/or daily cost thresholds (USD)."""
+
+    max_usd_per_hour: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        description="Max LLM spend per hour (USD); null to skip",
+    )
+    max_usd_per_day: float | None = Field(
+        default=50,
+        gt=0,
+        allow_inf_nan=False,
+        description="Max LLM spend per day (USD); null to skip",
+    )
+
+    @model_validator(mode="after")
+    def _at_least_one_threshold(self) -> "LlmSpendAlert":
+        """Reject an alert with no threshold, since it could never fire."""
+        if self.max_usd_per_hour is None and self.max_usd_per_day is None:
+            raise ValueError(
+                "llm_spend needs max_usd_per_hour or max_usd_per_day (or both)"
+            )
+        return self
+
+    def thresholds(self) -> dict[str, float]:
+        """Non-null thresholds keyed by window: {"hourly": x, "daily": y}."""
+        result: dict[str, float] = {}
+        if self.max_usd_per_hour is not None:
+            result["hourly"] = self.max_usd_per_hour
+        if self.max_usd_per_day is not None:
+            result["daily"] = self.max_usd_per_day
+        return result
+
+
 class AlertsConfig(BaseModel):
     """Alert rules and who is notified. Alerting is off unless enabled_alerts is set."""
 
@@ -357,6 +393,7 @@ class AlertsConfig(BaseModel):
         default_factory=BackupJobFailuresAlert
     )
     cloud_budget: CloudBudgetAlert = Field(default_factory=CloudBudgetAlert)
+    llm_spend: LlmSpendAlert = Field(default_factory=LlmSpendAlert)
 
     @field_validator("email_receivers")
     @classmethod

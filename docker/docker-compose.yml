@@ -104,6 +104,7 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml
       - ../src/llmaven/infrastructure/resources/adl_logger.py:/app/adl_logger.py
+      - ../src/llmaven/infrastructure/resources/spend_logger.py:/app/spend_logger.py
     command:
       - --config
       - /app/config.yaml

@@ -13,6 +13,7 @@ from llmaven.infrastructure.config.schema import (
     AlertsConfig,
     CloudBudgetAlert,
     GatewayErrorsAlert,
+    LlmSpendAlert,
     LLMavenConfig,
     MonitoringConfig,
 )
@@ -127,3 +128,43 @@ def test_budget_limit_counts_distinct_values():
     # _cloud_budget generates one notification per distinct percentage.
     budget = CloudBudgetAlert(notify_at_percent=[50, 60, 70, 80, 90, 90])
     assert len(set(budget.notify_at_percent)) == 5
+
+
+def test_llm_spend_defaults_to_daily_threshold_only():
+    spend = LlmSpendAlert()
+    assert (spend.max_usd_per_hour, spend.max_usd_per_day) == (None, 50)
+    assert spend.thresholds() == {"daily": 50}
+
+
+def test_llm_spend_both_thresholds_are_reported():
+    spend = LlmSpendAlert(max_usd_per_hour=5, max_usd_per_day=50)
+    assert spend.thresholds() == {"hourly": 5, "daily": 50}
+
+
+def test_llm_spend_needs_at_least_one_threshold():
+    with pytest.raises(ValidationError, match="max_usd_per"):
+        LlmSpendAlert(max_usd_per_hour=None, max_usd_per_day=None)
+
+
+@pytest.mark.parametrize("field", ["max_usd_per_hour", "max_usd_per_day"])
+@pytest.mark.parametrize("value", [0, -1])
+def test_llm_spend_thresholds_must_be_positive(field, value):
+    with pytest.raises(ValidationError):
+        LlmSpendAlert(**{field: value})
+
+
+def test_llm_spend_needs_log_analytics():
+    with pytest.raises(ValueError, match="enable_log_analytics"):
+        LLMavenConfig(
+            monitoring={
+                "enable_log_analytics": False,
+                "alerts": {
+                    "enabled_alerts": ["llm_spend"],
+                    "email_receivers": ["a@b.org"],
+                },
+            }
+        )
+
+
+def test_llm_spend_is_a_known_alert():
+    assert "llm_spend" in ALL_ALERTS

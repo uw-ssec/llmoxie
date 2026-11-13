@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -83,6 +84,7 @@ def _run(
     def fake_create_app(**kwargs):
         return SimpleNamespace(
             id=pulumi.Output.from_input(f"{kwargs['app_name']}-id"),
+            name=pulumi.Output.from_input(kwargs["app_name"]),
             configuration=pulumi.Output.from_input(None),
         )
 
@@ -347,10 +349,18 @@ FULL = {
 }
 
 
+def _rules_named(resources, prefix):
+    return [
+        r
+        for r in _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+        if r.name.startswith(prefix)
+    ]
+
+
 def test_backup_failure_rule_targets_workspace(tmp_path, monkeypatch):
     monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
     resources, _, _ = _run(tmp_path, monkeypatch, FULL)
-    [rule] = _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+    [rule] = _rules_named(resources, "alert-backup-job-failures")
     assert rule.name == "alert-backup-job-failures"
     assert rule.inputs["scopes"] == ["log-analytics-id"]
     assert rule.inputs["actions"]["actionGroups"] == ["alerts-action-group-id"]
@@ -359,7 +369,7 @@ def test_backup_failure_rule_targets_workspace(tmp_path, monkeypatch):
 def test_backup_failure_rule_query_and_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
     resources, _, _ = _run(tmp_path, monkeypatch, FULL)
-    [rule] = _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+    [rule] = _rules_named(resources, "alert-backup-job-failures")
     assert rule.inputs["kind"] == "LogAlert"
     assert rule.inputs["severity"] == 1
     assert rule.inputs["evaluationFrequency"] == "PT1H"
@@ -391,7 +401,7 @@ def test_backup_failure_rule_query_and_settings(tmp_path, monkeypatch):
 def test_backup_disabled_skips_rule_with_warning(tmp_path, monkeypatch):
     cfg = {**FULL, "backup_job": {"enabled": False}}
     resources, _, warnings = _run(tmp_path, monkeypatch, cfg)
-    assert not _by_type(resources, "azure-native:monitor:ScheduledQueryRule")
+    assert not _rules_named(resources, "alert-backup-job-failures")
     assert any("backup_job_failures" in w for w in warnings)
 
 
@@ -446,3 +456,66 @@ def test_budget_scope_requires_subscription_and_resource_group(
     )
     with pytest.raises(ValueError, match=missing):
         _cloud_budget(ctx)
+
+
+def test_llm_spend_daily_rule_from_default_threshold(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
+    resources, _, _ = _run(tmp_path, monkeypatch, FULL)
+    [rule] = _rules_named(resources, "alert-llm-spend-")
+    assert rule.name == "alert-llm-spend-daily"
+    assert rule.inputs["kind"] == "LogAlert"
+    assert rule.inputs["severity"] == 2
+    assert rule.inputs["scopes"] == ["log-analytics-id"]
+    assert rule.inputs["windowSize"] == "P1D"
+    assert rule.inputs["evaluationFrequency"] == "PT1H"
+    assert rule.inputs["autoMitigate"] is True
+    assert rule.inputs["skipQueryValidation"] is True
+    assert rule.inputs["actions"]["actionGroups"] == ["alerts-action-group-id"]
+    [condition] = rule.inputs["criteria"]["allOf"]
+    assert condition["timeAggregation"] == "Total"
+    assert condition["metricMeasureColumn"] == "spend"
+    assert condition["operator"] == "GreaterThan"
+    assert condition["threshold"] == 50
+    assert "llmaven-dev-litellm" in condition["query"]
+    assert "substring(Log_s, 14)" in condition["query"]
+    assert "{" not in condition["query"]
+
+
+def test_llm_spend_hourly_and_daily_rules(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
+    cfg = {
+        **FULL,
+        "monitoring": {
+            **FULL["monitoring"],
+            "alerts": {
+                **FULL["monitoring"]["alerts"],
+                "llm_spend": {"max_usd_per_hour": 5, "max_usd_per_day": 50},
+            },
+        },
+    }
+    resources, _, _ = _run(tmp_path, monkeypatch, cfg)
+    rules = {r.name: r for r in _rules_named(resources, "alert-llm-spend-")}
+    assert set(rules) == {"alert-llm-spend-hourly", "alert-llm-spend-daily"}
+    hourly = rules["alert-llm-spend-hourly"]
+    assert hourly.inputs["windowSize"] == "PT1H"
+    assert hourly.inputs["evaluationFrequency"] == "PT1H"
+    assert hourly.inputs["criteria"]["allOf"][0]["threshold"] == 5
+
+
+def test_llm_spend_litellm_disabled_skips_with_warning(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLMAVEN_SECRETS_BACKUP_STORAGE_CONNECTION_STRING", "x")
+    resources, _, warnings = _run(
+        tmp_path, monkeypatch, {**FULL, "litellm": {"enabled": False}}
+    )
+    assert not _rules_named(resources, "alert-llm-spend-")
+    assert "monitoring: llm_spend skipped, litellm app is not deployed" in warnings
+
+
+def test_llm_spend_query_prefix_matches_spend_logger():
+    logger_text = (
+        REPO_ROOT / "src/llmaven/infrastructure/resources/spend_logger.py"
+    ).read_text()
+    [logger_prefix] = re.findall(r'^SPEND_LINE_PREFIX = "(.*)"$', logger_text, re.M)
+    [query_prefix] = re.findall(r'startswith "(.*?)"', monitoring.LLM_SPEND_QUERY)
+    assert query_prefix == logger_prefix
+    assert f"substring(Log_s, {len(logger_prefix)})" in monitoring.LLM_SPEND_QUERY
