@@ -11,6 +11,7 @@ prefix of it is used.
 
 from __future__ import annotations
 
+import io
 import json
 import zipfile
 from collections.abc import Iterable, Iterator
@@ -222,8 +223,14 @@ def iter_extract_records(path: Path) -> Iterator[dict]:
                 if not name.endswith(".jsonl"):
                     continue
                 with archive.open(name) as entry:
-                    text = entry.read().decode("utf-8")
-                yield from _iter_jsonl_lines(text.splitlines())
+                    # Iterate a text handle rather than decoding the whole
+                    # entry and calling str.splitlines(): splitlines() also
+                    # splits on U+2028/U+2029/U+0085, which extract writes raw
+                    # inside record strings, which would break the JSON and
+                    # silently drop the record.
+                    yield from _iter_jsonl_lines(
+                        io.TextIOWrapper(entry, encoding="utf-8")
+                    )
         return
     if path.suffix == ".jsonl":
         with path.open(encoding="utf-8") as handle:

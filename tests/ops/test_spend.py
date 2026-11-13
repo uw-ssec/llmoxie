@@ -280,3 +280,33 @@ class TestIterExtractRecords:
         path.write_text("label,spend\n", encoding="utf-8")
         with pytest.raises(ValueError):
             list(iter_extract_records(path))
+
+    @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+    def test_iter_extract_records_keeps_unicode_line_separators(
+        self, tmp_path: Path, separator: str
+    ):
+        """All three input shapes keep records whose content holds U+2028/9/85.
+
+        `infra extract` writes with `ensure_ascii=False`, so these characters
+        land raw inside strings. `str.splitlines()` would split on them, break
+        the JSON and silently drop the record (and its spend).
+        """
+        record = {
+            "startTime": "2026-03-01T01:00:00Z",
+            "spend": 1.0,
+            "model": "gpt-4o",
+            "messages": f"line one{separator}line two",
+        }
+        payload = f"{json.dumps(record, ensure_ascii=False)}\n"
+
+        directory = tmp_path / "extract"
+        directory.mkdir()
+        single = directory / "litellm_spend_logs_2026-03-01.jsonl"
+        single.write_text(payload, encoding="utf-8", newline="")
+        archive = tmp_path / "llmaven_litellm_spend_logs.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr(single.name, payload)
+
+        assert list(iter_extract_records(archive)) == [record]
+        assert list(iter_extract_records(directory)) == [record]
+        assert list(iter_extract_records(single)) == [record]
