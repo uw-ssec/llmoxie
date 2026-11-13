@@ -188,3 +188,7 @@ logs/*.jsonl
 
 # LLMaven Configs
 llmaven-config*.yaml
+
+# Working files of the Impeccable design skill: its brief, token file and review screenshots.
+# What matters from them is in knowledge/decisions/console-design-direction.md.
+.impeccable/

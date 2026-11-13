@@ -1,0 +1,8 @@
+# The image needs only console_app/, init_admin_key.py, the requirements files, tests/ and the
+# front end's source. Its packages and its build are made inside the image, not copied in.
+.git
+.pixi
+frontend/node_modules
+console_app/web/dist
+**/__pycache__
+tests/.env

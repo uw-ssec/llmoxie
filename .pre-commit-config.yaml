@@ -1,4 +1,5 @@
-exclude: '\.csv$'
+# services/console/ was imported as-is and is not formatted to these hooks
+exclude: '\.csv$|^services/console/'
 
 ci:
   autoupdate_commit_msg: "chore: update pre-commit hooks"

@@ -1,0 +1,46 @@
+[workspace]
+# Project metadata and basic configuration
+authors = ["University of Washington Scientific Software Engineering Center"] # Project authors
+channels = ["https://prefix.dev/conda-forge"] # Conda channels for dependencies
+name = "llmoxie-console" # Project name
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"] # Supported platforms for development and deployment
+version = "0.1.0" # Project version
+
+# The project dependencies
+[dependencies]
+nodejs = ">=24,<25" # builds and checks the front end; the same major as the Dockerfile's build stage
+
+# The project dependencies from PyPI
+[pypi-dependencies]
+
+# The main project tasks. They call the `docker` CLI on this machine; Pixi does not provide it.
+[tasks]
+image = { cmd = "docker build --target app -t llmoxie-console:dev .", description = "Build the console image (web, broker and init)" }
+test-image = { cmd = "docker build --target tests -t llmoxie-console-tests:dev .", description = "Build the image that holds the test suite" }
+
+[tasks.test]
+args = [{ arg = "network" }, { arg = "env_file", default = "tests/.env" }]
+cmd = "docker run --rm --network {{ network }} --env-file {{ env_file }} llmoxie-console-tests:dev pytest -q -x -p no:cacheprovider tests"
+depends-on = ["test-image"]
+description = "Run the test suite against a running stack, from a container on that stack's Docker network"
+
+# The front end (frontend/): a React application that console-web serves from console_app/web/dist.
+[tasks.ui-install]
+cmd = "npm ci"
+cwd = "frontend"
+description = "Install the front end's packages from its lock file"
+
+[tasks.ui-build]
+cmd = "npm run build"
+cwd = "frontend"
+description = "Build the front end into console_app/web/dist"
+
+[tasks.ui-watch]
+cmd = "npm run build -- --watch"
+cwd = "frontend"
+description = "Rebuild the front end whenever a source file changes"
+
+[tasks.ui-check]
+cmd = "npm run check"
+cwd = "frontend"
+description = "Lint, type-check and test the front end"
