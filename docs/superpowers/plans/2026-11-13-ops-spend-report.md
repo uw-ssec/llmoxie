@@ -102,9 +102,10 @@ never print a raw key prefix.
 | 4   | Does a log alert's `actions.customProperties` appear in the common-schema alert email? | Yes, under "Custom properties"                                 | Azure docs "Log search alert rule – custom properties"                                               |
 | 5   | Is `custom_properties` on `monitor.ActionsArgs` in `pulumi-azure-native` 3.29.0?       | Yes (already confirmed in `_inputs.py` of the installed SDK)   | Already checked                                                                                      |
 
-- [ ] **Step 1: Answer each row** in `## Verified facts`. If an answer
+- [x] **Step 1: Answer each row** in `## Verified facts`. If an answer
       contradicts an assumption, stop and update the affected task first.
-- [ ] **Step 2: Commit.**
+      Row 4 is contradicted — see the concern noted in the task 1 report.
+- [x] **Step 2: Commit.**
       `git commit -m "docs(cli): verify facts for the ops spend-report plan"`
 
 ---
@@ -412,8 +413,8 @@ Command flow:
 
 | #   | Answer                                                  | Source                                             |
 | --- | ------------------------------------------------------- | -------------------------------------------------- |
-| 1   |                                                         |                                                    |
-| 2   |                                                         |                                                    |
-| 3   |                                                         |                                                    |
-| 4   |                                                         |                                                    |
+| 1   | Confirmed: `LiteLLM_SpendLogs.team_id String?` is a top-level column; the display name is `metadata.user_api_key_team_alias`. `get_logging_payload` sets `team_id=metadata.get("user_api_key_team_id", "") or ""` | litellm `v1.108.6`: `schema.prisma` (`model LiteLLM_SpendLogs`), `litellm/proxy/_types.py` (`class SpendLogsMetadata`), `litellm/proxy/spend_tracking/spend_tracking_utils.py` (`get_logging_payload`, ~L847) |
+| 2   | Confirmed: SHA-256 hex, never `sk-...`. Schema comment: `// Hashed API Token. Not the actual Virtual Key.` `_redact_logged_api_key` strips `bearer ` and returns `hash_token(...)`, which is `hashlib.sha256(token.encode()).hexdigest()` | litellm `v1.108.6`: `schema.prisma` (`api_key` column), `litellm/proxy/spend_tracking/spend_tracking_utils.py` (`_redact_logged_api_key`, L~139), `litellm/proxy/utils.py` (`hash_token`, L8026) |
+| 3   | Effectively no. The filter is `startTime: {gte: start, lte: end}`, but `end_date` is parsed as `strptime(end, "%Y-%m-%d").replace(tzinfo=utc)` — midnight — so only records at exactly `00:00:00Z` on the end day match. (Route is `[DEPRECATED]` in favour of `/spend/logs/v2` and caps at 10,000 rows.) Task 5 filters by day either way, so the assumption holds | litellm `v1.108.6`: `litellm/proxy/spend_tracking/spend_management_endpoints.py` (`view_spend_logs`, L3511) |
+| 4   | **Contradicted.** Custom properties are added only to webhook / Logic Apps / Azure Functions / Automation runbook payloads. Verbatim: "They aren't included in email, SMS, or push notifications, and they don't appear in the alert details page in the Azure portal." The common schema does define a top-level `customProperties` object, but only for webhook notifications | [Create Azure Monitor log search alert rules](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-create-log-alert-rule) (Custom properties note); [Common alert schema](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-common-schema) (Custom properties fields) |
 | 5   | Yes: `ActionsArgs.custom_properties: Mapping[str, str]` | installed `pulumi_azure_native/monitor/_inputs.py` |
