@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Organizations · LLMoxie console{% endblock %}
+{% block main %}
+<h1>Organizations</h1>
+<p class="lede">Create organizations, set their budget ceilings and appoint their leads.</p>
+<section>
+  {% if orgs %}
+  <div class="scroll"><table>
+    <tr><th>Organization</th><th>Short name</th><th class="num">Budget ceiling</th><th class="num">Leads</th><th class="num">Teams</th><th></th></tr>
+    {% for org in orgs %}
+    <tr><td><a href="/orgs/{{ org.id }}">{{ org.name }}</a></td><td><code>{{ org.slug }}</code></td>
+      <td class="num">${{ "%.2f"|format(org.budget_ceiling|float) }}</td><td class="num">{{ org.leads }}</td>
+      <td class="num">{{ org.teams }}</td>
+      <td>{% if org.status != "active" %}<span class="tag">{{ org.status }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">No organizations yet.</p>{% endif %}
+</section>
+<section><h2>New organization</h2>
+  <form class="stack" method="post" action="/admin/orgs">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Name <input name="name" required minlength="2" maxlength="80"></label>
+    <div class="row">
+      <label>Short name, used as the model prefix
+        <input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,30}" placeholder="e.g. uw-ess"></label>
+      <label>Budget ceiling (USD) <input name="budget_ceiling" type="number" min="0" step="0.01" required></label>
+    </div>
+    <button>Create organization</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 General question / discussion
+    url: https://github.com/uw-ssec/project-template/discussions
+    about: Please ask questions in Discussions instead of opening an issue.
+issue_templates:
+  - name: Bug report
+    id: bug_report
+    description: File a reproducible problem with the software.
+    labels: [bug]
+    body: bug_report.yml
+  - name: Feature request
+    id: feature_request
+    description: Suggest an idea or enhancement.
+    labels: [enhancement]
+    body: feature_request.yml
+  - name: Documentation gap
+    id: documentation
+    description: Report missing / confusing documentation.
+    labels: [documentation]
+    body: documentation.yml
+  - name: Performance issue
+    id: performance_issue
+    description: Report slowness or excessive resource use.
+    labels: [performance]
+    body: performance_issue.yml
+  - name: Onboard a new contributor
+    id: onboard_contributor
+    description: Onboard a new contributor to the project.
+    labels: [onboarding]
+    body: onboard.yml

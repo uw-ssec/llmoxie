@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="center">
+  <h1>LLMoxie console</h1>
+  <p class="lede">Manage your organization's teams, models and API keys.</p>
+  <form method="post" action="/login"><input type="hidden" name="next" value="{{ next or '/' }}"><button>Sign in</button></form>
+</div>
+{% endblock %}

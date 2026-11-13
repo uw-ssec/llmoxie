@@ -1,0 +1,74 @@
+name: "🐞 Bug report"
+description: "File a reproducible problem with the software."
+title: "[Bug]: <short summary>"
+labels: ["bug", "triage"]
+assignees:
+  - ""
+body:
+  - type: checkboxes
+    attributes:
+      label: Pre-flight checklist
+      description: Please confirm before submitting
+      options:
+        - label: I have searched the existing issues
+          required: true
+        - label: I have read the contributing guidelines
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+      placeholder: "When I ..., I expected ..., but ..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal, complete, and verifiable reproduction.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output / screenshots
+      description:
+        Please paste logs or drag-and-drop screenshots. Remove any sensitive
+        data!
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Software version
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Environment
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other (specify below)
+  - type: input
+    id: platform_other
+    attributes:
+      label: Other environment details
+  - type: markdown
+    attributes:
+      value: "Thank you for helping us improve! 🙏"

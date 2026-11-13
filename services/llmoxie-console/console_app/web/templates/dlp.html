@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Data protection · LLMoxie console{% endblock %}
+{% block main %}
+<h1>Data protection</h1>
+<p class="lede">Sensitive data found in requests to models, and what was done about it. Values are never recorded,
+  here or anywhere else; a request id leads to the request in the logs.</p>
+
+{% if not enabled %}
+<section><p class="muted">This console is not connected to the data-protection log.</p></section>
+{% else %}
+<section><h2>Totals</h2>
+  {% if totals %}
+  <div class="scroll"><table><tr><th>Kind of data</th><th>What was done</th><th class="num">Times</th></tr>
+    {% for t in totals %}
+    <tr><td><code>{{ t.kind }}</code></td><td>{{ actions.get(t.action, t.action) }}</td><td class="num">{{ t.count }}</td></tr>
+    {% endfor %}</table></div>
+  <p class="muted">Over the latest {{ read }} events.</p>
+  {% else %}<p class="muted">Nothing has been found yet.</p>{% endif %}
+</section>
+
+<section><h2>Latest events</h2>
+  <p class="muted">Up to {{ shown }}, newest first. A refused request is one line, naming each kind of data that caused it.</p>
+  <div class="scroll"><table>
+    <tr><th>When (UTC)</th><th>Kind of data</th><th>What was done</th><th class="num">Found</th><th>Who</th><th>Request</th></tr>
+    {% for e in events %}
+    <tr><td>{{ e.at[:19]|replace("T", " ") }}</td>
+      <td>{% for k in e.kinds %}<code>{{ k }}</code>{{ ", " if not loop.last }}{% endfor %}</td>
+      <td>{% if e.blocked %}<span class="tag state-missing">request refused</span>{% else %}{{ actions.get(e.action, e.action) }}{% endif %}
+        {% if e.source == "response" %}<span class="muted">in the reply</span>{% endif %}
+        {% if e.mode == "observe" %}<span class="muted">(observe mode)</span>{% endif %}</td>
+      <td class="num">{{ e.count or "" }}</td>
+      <td>{{ e.email or e.user_id or "a service" }}</td>
+      <td><code>{{ e.request_id[:8] }}</code></td></tr>
+    {% else %}<tr><td colspan="6" class="muted">Nothing has been found yet.</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

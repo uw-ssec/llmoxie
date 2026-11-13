@@ -1,0 +1,82 @@
+name: "👋 Onboard a new contributor"
+description: "Help a new contributor get started with the project."
+labels: ["onboarding"]
+body:
+  - type: textarea
+    id: onboarding-instructions
+    attributes:
+      label: Onboarding instructions
+      description: Instructions for the new contributor to get started.
+      value: |
+        ## Welcome to the project!
+
+        We're excited to have you on board! This issue is designed to help you get started
+        with contributing to our project. Please follow the steps below to set up your development
+        environment and familiarize yourself with the project.
+
+        Not following these steps may result in errors when trying to run or contribute code
+        later on down the line.
+
+        ### Onboarding checklist
+
+        Instructions for the following steps are provided below. Please check them off as you complete them!
+
+        - [ ] Pixi installed
+        - [ ] Onboarding run successfully
+        - [ ] First PR opened
+
+        ### Pre-requisites
+
+        #### Install Pixi!
+
+        Pixi is used in this project to manage dependencies and environments and to set
+        up some convenient ways to run code and tools within those environments.
+
+        To get started, install [Pixi](https://pixi.sh/latest/) using either the
+        [instructions on their website](https://pixi.sh/latest/#installation), or the
+        commands below:
+
+        **macOS/Linux:**
+
+        ```bash
+        curl -fsSL https://pixi.sh/install.sh | sh
+        ```
+
+        **Windows:**
+
+        ```powershell
+        powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex"
+        ```
+
+        (These steps are also available in CONTRIBUTING.md if you need to set up on a new machine later)
+
+        ### Onboarding Steps
+
+        - [ ] Clone the repository and navigate into it
+        - [ ] Run the following command to set up your environment, install dependencies and get the project ready to go
+
+          ```bash
+          pixi run onboard
+          ```
+
+        - [ ] Validate that the all steps have been completed by making your first commit and first pull request!
+
+        ```bash
+        git checkout -b onboarding-<your-name>
+        git add --update
+        git commit --message "chore: complete onboarding for <your-name>"
+        gh pr create --title "Onboarding: <your-name>" --body "This is my first PR" --label "onboarding" --web
+        ```
+
+        ### Resources
+
+        Here are some useful links to help you get started:
+
+        - [Contribution guidelines](./CONTRIBUTING.md)
+        - [Code of Conduct](./CODE_OF_CONDUCT.md)
+  - type: textarea
+    id: comments
+    attributes:
+      label: Comments
+      description: Anything your onboardee should know?
+      placeholder: "Feel free to add comments here!"

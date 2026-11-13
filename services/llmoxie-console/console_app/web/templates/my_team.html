@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} · LLMoxie console{% endblock %}
+{% block main %}
+{% set live = team.status == "active" and team.org_status == "active" %}
+{% set agreed = consent and consent.terms_accepted %}
+<h1>{{ team.name }}</h1>
+<p class="lede">{{ team.org_name }}</p>
+{% if not live %}<p class="note">This team is closed. Its keys no longer work.</p>{% endif %}
+
+{% if new_key %}
+<section><h2>{{ "Your replacement key" if rotated else "Your new key" }}: {{ new_key.name }}</h2>
+  <p>Copy it now. It will not be shown again.{% if rotated %} The key it replaces no longer works.{% endif %}</p>
+  <code class="key">{{ new_key.key }}</code>
+</section>
+{% endif %}
+
+<section><h2>Terms and research use</h2>
+  <div class="consent">{{ team.consent_text }}</div>
+  {% if live %}
+  <form class="stack" method="post" action="/teams/{{ team.id }}/my/consent">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="check"><input type="checkbox" name="terms_accepted" value="yes" {{ "checked" if agreed }}>
+      I accept these terms. Without this you cannot have a key.</label>
+    <label class="check"><input type="checkbox" name="research_use" value="yes" {{ "checked" if consent and consent.research_use }}>
+      My usage may also be used for research. This is optional.</label>
+    <button>Save my choices</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if agreed %}
+<section><h2>API keys</h2>
+  <p class="muted">{{ keys|length }} of {{ team.key_limit }} · ${{ "%.2f"|format(team.key_budget|float) }} per key ·
+    expire after {{ team.key_expiry_days }} days</p>
+  {% if keys %}
+  <table>{% for k in keys %}
+    <tr><td>{{ k.name }}</td>
+      <td class="muted">{% if k.waiting %}rotated by your lead; the old key no longer works{% else %}created {{ k.created_at[:10] }}{% endif %}</td>
+      <td>{% if live %}<form class="inline" method="post" action="/teams/{{ team.id }}/my/keys/{{ k.id }}/rotate">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="quiet">{{ "Get replacement key" if k.waiting else "Rotate" }}</button></form>{% endif %}
+        <form class="inline" method="post" action="/teams/{{ team.id }}/my/keys/{{ k.id }}/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet">Delete</button></form></td></tr>
+  {% endfor %}</table>
+  {% endif %}
+  {% if live and keys|length < team.key_limit %}
+  <form class="stack" method="post" action="/teams/{{ team.id }}/my/keys">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Name for a new key <input name="name" required maxlength="60" placeholder="e.g. laptop"></label>
+    <button>Create key</button>
+  </form>
+  {% endif %}
+</section>
+
+<section><h2>How to connect</h2>
+  <dl><dt>Base URL</dt><dd><code>{{ gateway_url }}/v1</code></dd>
+    <dt>Models</dt><dd>{% for m in models %}<code>{{ m }}</code>{{ ", " if not loop.last }}{% else %}<span class="muted">none yet</span>{% endfor %}</dd></dl>
+  <h2>Shared knowledge</h2>
+  <p>{{ team.org_name }} has one knowledge base, shared by all its teams. Add it to an MCP client as a
+    streamable HTTP server and send your key as the bearer token. Its tools are named
+    <code>{{ knowledge_tools }}-okf_search</code>, <code>{{ knowledge_tools }}-okf_create</code> and so on.</p>
+  <dl><dt>MCP URL</dt><dd><code>{{ gateway_url }}/mcp</code></dd></dl>
+</section>
+
+<section><h2>Your usage</h2>
+  <dl><dt>Requests</dt><dd>{{ usage.requests }}</dd><dt>Tokens</dt><dd>{{ usage.tokens }}</dd>
+    <dt>Spend</dt><dd>${{ "%.4f"|format(usage.spend) }}</dd></dl>
+</section>
+{% endif %}
+{% endblock %}

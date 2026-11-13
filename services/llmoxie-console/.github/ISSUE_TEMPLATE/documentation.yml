@@ -1,0 +1,17 @@
+name: "📚 Documentation gap"
+description: "Report missing or confusing docs."
+title: "[Docs]: <short summary>"
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Location of the issue
+      description: Link to the page or section.
+      placeholder: "docs/usage.md #Configuration"
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix or improvement

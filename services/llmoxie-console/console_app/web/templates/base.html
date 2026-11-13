@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LLMoxie console{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% if me %}
+<header class="top">
+  <a class="brand" href="/">LLMoxie console</a>
+  {% if me.is_admin %}<a href="/admin">Organizations</a><a href="/admin/audit">Audit log</a><a href="/admin/dlp">Data protection</a>
+  {% if litellm_admin_url %}<a href="{{ litellm_admin_url }}/ui/" rel="noopener">LiteLLM UI</a>{% endif %}{% endif %}
+  <span class="muted">{{ me.email or "signed in" }}</span>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="quiet">Sign out</button></form>
+</header>
+{% endif %}
+<main>
+  {% if flash %}<p class="flash {{ flash.kind }}" role="status">{{ flash.message }}</p>{% endif %}
+  {% block main %}{% endblock %}
+</main>
+</body>
+</html>

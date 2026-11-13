@@ -1,0 +1,12 @@
+# Extra locked versions for the test image (pytest, azure-storage-blob).
+azure-core==1.41.0
+azure-storage-blob==12.31.1
+charset-normalizer==3.5.2
+iniconfig==2.3.1
+isodate==0.7.2
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0
+pytest==9.2.0
+requests==2.34.2
+urllib3==2.8.0

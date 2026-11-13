@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="center">
+  <h1>You are not invited yet</h1>
+  <p class="lede">You are signed in{% if me.email %} as {{ me.email }}{% endif %}, but this account is not part of any
+    organization or team. Open the invitation link from your email, or ask your organization's lead to invite this address.</p>
+</div>
+{% endblock %}

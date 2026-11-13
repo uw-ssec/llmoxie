@@ -1,0 +1,35 @@
+# Builds the console image and its test image, so a change that breaks the build
+# (a dependency that no longer installs, a file the Dockerfile cannot find) fails here.
+# The test suite itself needs a running stack and is not run in CI.
+
+name: Image build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the test image (includes the console image)
+        run: docker build --target tests -t llmoxie-console-tests:ci .
+
+      - name: Check that every module parses
+        run: >-
+          docker run --rm llmoxie-console-tests:ci python -c "import ast,
+          pathlib; [ast.parse(p.read_text(), str(p)) for p in
+          pathlib.Path('.').rglob('*.py')]"

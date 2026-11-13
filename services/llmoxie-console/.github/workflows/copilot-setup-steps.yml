@@ -1,0 +1,54 @@
+# Environment setup for the GitHub Copilot cloud coding agent.
+#
+# Copilot runs the `copilot-setup-steps` job below before it starts working on
+# a task, so the agent lands in a repo where pixi is installed, the default
+# environment is solved from pixi.lock, and the pre-commit hook environments
+# are already warm. That makes the required quality gate
+# (`pixi run pre-commit-all`) work without further setup.
+#
+# Copilot discovers AGENTS.md and the skills under .agents/skills/ on its own;
+# nothing here needs to point at them.
+#
+# Constraints from GitHub: the job must be named exactly `copilot-setup-steps`,
+# the file must live on the default branch, and only `steps`, `permissions`,
+# `runs-on`, `services`, `snapshot`, and `timeout-minutes` are honored.
+
+name: Copilot setup steps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/copilot-setup-steps.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/copilot-setup-steps.yml"
+
+permissions: {}
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Keep pixi-version in sync with PIXI_VERSION in .devcontainer/Dockerfile.
+      - name: Install pixi and the default environment
+        uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          pixi-version: v0.81.0
+          cache: true
+          locked: true
+          activate-environment: true
+
+      - name: Pre-warm pre-commit hook environments
+        run: pre-commit install-hooks

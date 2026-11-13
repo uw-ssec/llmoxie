@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Welcome</h1>
+<p class="lede">{{ me.email }}</p>
+{% if me.is_admin %}
+<section><h2>SSEC admin</h2>
+  <p><a href="/admin">Organizations</a> · <a href="/admin/audit">Audit log</a>
+    {% if litellm_admin_url %}· <a href="{{ litellm_admin_url }}/ui/" rel="noopener">LiteLLM UI</a>{% endif %}</p></section>
+{% endif %}
+{% if me.lead_orgs %}
+<section><h2>Organizations you lead</h2>
+  <table>{% for org in me.lead_orgs %}
+    <tr><td><a href="/orgs/{{ org.id }}">{{ org.name }}</a></td>
+      <td>{% if org.status != "active" %}<span class="tag">{{ org.status }}</span>{% endif %}</td></tr>
+  {% endfor %}</table></section>
+{% endif %}
+{% if me.teams %}
+<section><h2>Your teams</h2>
+  <table>{% for team in me.teams %}
+    <tr><td><a href="/teams/{{ team.id }}">{{ team.name }}</a></td><td class="muted">{{ team.org_name }}</td>
+      <td>{% if team.status != "active" %}<span class="tag">{{ team.status }}</span>{% endif %}</td></tr>
+  {% endfor %}</table></section>
+{% endif %}
+{% endblock %}

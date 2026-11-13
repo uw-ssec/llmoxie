@@ -1,0 +1,10 @@
+# The image needs only console_app/, init_admin_key.py, the requirements files and tests/.
+.git
+.pixi
+.github
+.agents
+.claude
+.devcontainer
+knowledge
+**/__pycache__
+tests/.env

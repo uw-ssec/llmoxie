@@ -1,0 +1,33 @@
+name: "✨ Feature request"
+description: "Suggest an idea or enhancement."
+title: "[Feature]: <short summary>"
+labels: ["enhancement", "triage"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I have searched the existing issues
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What pain point or limitation does this feature address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution or API
+      description: If you have a design or API in mind, describe it here.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing work-arounds or third-party tools?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, screenshots, mock-ups, etc.

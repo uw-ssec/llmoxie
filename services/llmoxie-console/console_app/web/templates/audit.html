@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Audit log · LLMoxie console{% endblock %}
+{% block main %}
+<h1>Audit log</h1>
+<p class="lede">The latest 300 console actions, newest first. Entries cannot be changed or removed.</p>
+<section><div class="scroll"><table>
+  <tr><th>When (UTC)</th><th>Who</th><th>Action</th><th>Result</th><th>Organization</th><th>Team</th></tr>
+  {% for e in events %}
+  <tr><td>{{ e.at[:19]|replace("T", " ") }}</td><td>{{ e.actor_email or "—" }} <span class="muted">{{ e.actor_role or "" }}</span></td>
+    <td><code>{{ e.action }}</code></td><td>{{ e.result }}</td><td>{{ e.org_name or "—" }}</td><td>{{ e.team_name or "—" }}</td></tr>
+  {% endfor %}
+</table></div></section>
+{% endblock %}

@@ -1,0 +1,20 @@
+name: "🐢 Performance issue"
+description: "Report slowness, excessive memory, etc."
+title: "[Perf]: <short summary>"
+labels: ["performance", "triage"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the performance problem
+      description:
+        Include metrics if possible (e.g., benchmark numbers, CPU usage).
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps / workload to reproduce
+  - type: input
+    id: version
+    attributes:
+      label: Software version
+      placeholder: "v1.2.3"
