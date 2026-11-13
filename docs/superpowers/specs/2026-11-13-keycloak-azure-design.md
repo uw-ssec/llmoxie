@@ -194,9 +194,10 @@ new revision, same dynamic config mounted as a secret volume):
   stay per replica, as today.
 - Routes are by host. Each backend gets a `hostname` in its own config section
   and Traefik sends that host to the backend's internal address
-  (`https://<app>.internal.<environment default domain>`), preserving the `Host`
-  header the backend expects or rewriting it, whichever the backend needs (the
-  builder checks LiteLLM's and MLflow's behavior).
+  (`https://<app>.internal.<environment default domain>`). Traefik does not pass
+  the public `Host` through (`passHostHeader: false`). The environment's
+  internal Envoy routes by `Host`, and the public hostnames are no longer bound
+  to the backends.
 - The client IP is the rightmost `X-Forwarded-For` entry (`depth: 1`), kept only
   from `trusted_proxy_ips`, exactly as the sidecar does today.
 
@@ -219,16 +220,19 @@ LiteLLM and MLflow get `ingress_external=False`. Their platform FQDNs stop
 answering from the internet, and their `custom_domains` must be empty (a
 validation error otherwise; the hostnames now live on Traefik).
 
-- The LiteLLM sidecar goes away: `litellm.proxy` is removed from the schema, and
-  a config that still has `litellm.proxy.enabled: true` fails validation with a
-  message saying where each setting moved. Its settings move to the new `edge`
-  section and `litellm.hostname` (below).
+- The LiteLLM sidecar stays while `edge` is off, so prod and ISS configs keep
+  deploying unchanged. `edge.enabled` with `litellm.proxy.enabled: true` is a
+  validation error naming the new fields (`edge.*`, `litellm.hostname`,
+  `litellm.admin_allowed_ips`, `litellm.public_paths`, `litellm.health_paths`).
+  The sidecar and `litellm.proxy` are removed in a follow-up after every
+  environment has moved.
 - `litellm.ip_security_restrictions` applies to the whole app's ingress, which
   now only Traefik reaches, so it must be empty; per-host IP rules are Traefik's
   job. Validation error otherwise.
-- The `mlflow-tracking-uri` secret becomes MLflow's internal address, so LiteLLM
-  logs to MLflow without going through Traefik (and, in stage 2, without the
-  login). This changes the LiteLLM revision once.
+- The `mlflow-tracking-uri` secret is built from MLflow's ingress FQDN, which is
+  the internal one once its ingress is internal, so it changes with no code
+  change. Operators running `infra extract --source mlflow` set the public
+  MLflow hostname in their env file.
 - Monitoring alerts target the apps' own metrics, which still see every request;
   the builder checks that `monitoring.py` needs no change and adds Traefik's
   restarts to the replica-restart alert.
