@@ -31,6 +31,7 @@ from .key_vault import (
     grant_key_vault_access,
     transform_env_var_to_secret_name,
 )
+from .keycloak import REALM_DIGEST_ENV, create_keycloak_app, create_realm_job
 from .monitoring import create_monitoring
 from .redis import (
     REDIS_ENV_VARS,
@@ -67,6 +68,10 @@ __all__ = [
     "create_container_apps_environment",
     "create_container_app_with_key_vault_secrets",
     "create_backup_job",
+    # Keycloak resources
+    "create_keycloak_app",
+    "create_realm_job",
+    "REALM_DIGEST_ENV",
     # Key Vault resources
     "create_key_vault",
     "create_secret",
