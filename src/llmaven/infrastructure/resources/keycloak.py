@@ -1,12 +1,15 @@
 """The Keycloak Container App and the Container Apps Job that imports its realm."""
 
 import hashlib
+from typing import Literal
 
 import pulumi
 import pulumi_azure_native as azure_native
 
 from ..config.schema import (
     KEYCLOAK_APP_SUFFIX,
+    LITELLM_LOGIN_APP_SUFFIX,
+    MLFLOW_LOGIN_APP_SUFFIX,
     LLMavenConfig,
     container_app_environment,
     realm_job_name,
@@ -14,6 +17,7 @@ from ..config.schema import (
 from .container_apps import create_container_app_with_key_vault_secrets
 from .keycloak_realm import CLIENT_SECRET_ENV, render_realm_document
 from .secrets_manager import KEYCLOAK_SECRET_NAMES
+from .traefik import LOGIN_COOKIE
 
 KEYCLOAK_HTTP_PORT = 8080
 # Keycloak serves health on its management port, not the application port.
@@ -42,6 +46,26 @@ _CLIENT_SECRET_KEY = {
     "llmaven-cli": "client_llmaven_cli",
     "litellm-gate": "client_litellm_gate",
     "litellm": "client_litellm",
+}
+
+OAUTH2_PROXY_PORT = 4180
+OAUTH2_PROXY_PING_PATH = "/ping"
+_OIDC_PATH = "protocol/openid-connect"
+# kind -> (app suffix, gate client id, Key Vault key of its client secret,
+# Key Vault key of its cookie secret).
+_LOGIN_APPS = {
+    "mlflow": (
+        MLFLOW_LOGIN_APP_SUFFIX,
+        "mlflow-gate",
+        "client_mlflow_gate",
+        "cookie_mlflow",
+    ),
+    "litellm": (
+        LITELLM_LOGIN_APP_SUFFIX,
+        "litellm-gate",
+        "client_litellm_gate",
+        "cookie_litellm",
+    ),
 }
 
 
@@ -111,6 +135,112 @@ def create_keycloak_app(
         refresh_trigger=kc.refresh_trigger,
         health_probe_port=KEYCLOAK_MANAGEMENT_PORT,
         health_probe_path=KEYCLOAK_HEALTH_PATH,
+        opts=opts,
+    )
+
+
+def create_login_app(
+    kind: Literal["mlflow", "litellm"],
+    resource_group_name: pulumi.Input[str],
+    location: str,
+    container_env_id: pulumi.Input[str],
+    key_vault: azure_native.keyvault.Vault,
+    config: LLMavenConfig,
+    keycloak_fqdn: pulumi.Input[str],
+    managed_identity_id: pulumi.Input[str],
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+) -> azure_native.app.ContainerApp:
+    """Create the oauth2-proxy app that answers Traefik's ForwardAuth for ``kind``.
+
+    Traefik sends each request to ``https://<this app>/``; with no session the
+    proxy answers 401 and the edge sends the browser through ``/oauth2/`` on
+    the app's own host. Ingress is internal. The browser-facing URLs use the
+    public Keycloak host; the token and key fetches go straight to Keycloak's
+    internal FQDN. Discovery is skipped because the issuer (public) and the
+    back-channel host differ.
+
+    Role check (oauth2-proxy v7.15.6, read at that tag): ``OAUTH2_PROXY_ALLOWED_ROLES``
+    is the ``allowed_roles`` option (pkg/apis/options/options.go, flag
+    ``allowed-role``; the plural env form is the one that is read) and
+    ``KeycloakOIDCProvider.addAllowedRoles`` puts each into the provider's
+    allowed groups as ``role:<name>`` (providers/keycloak_oidc.go:40-47). It
+    applies to bearer tokens too: with ``--skip-jwt-bearer-tokens`` the session
+    chain loads sessions through ``provider.CreateSessionFromToken``
+    (oauthproxy.go:412-420), the Keycloak override of which calls
+    ``extractRoles`` and so adds the token's roles to ``Groups``
+    (providers/keycloak_oidc.go:49-61, 86-100), and ``Proxy`` then runs
+    ``getAuthenticatedSession``, which calls ``provider.Authorize`` for every
+    session, bearer or cookie (oauthproxy.go:1078, 1192;
+    providers/provider_default.go:129-141). Task 13 confirms it at runtime.
+
+    The skip-auth switches (SKIP_AUTH_ROUTES, SKIP_AUTH_PREFLIGHT,
+    SKIP_AUTH_REGEX, TRUSTED_IPS) are never set: Traefik forwards with
+    ``trustForwardHeader``, so a client can send ``X-Forwarded-*`` headers that
+    reach this proxy.
+    """
+    suffix, client_id, client_secret_key, cookie_secret_key = _LOGIN_APPS[kind]
+    app_config = getattr(config, kind)
+    kc = config.keycloak
+    base_name = f"{config.project.name}-{config.project.environment}-{suffix}"
+    realm = kc.realm.name
+    realm_url = f"https://{kc.hostname}/realms/{realm}"
+
+    env_vars: dict[str, pulumi.Input[str]] = {
+        "OAUTH2_PROXY_PROVIDER": "keycloak-oidc",
+        "OAUTH2_PROXY_CLIENT_ID": client_id,
+        "OAUTH2_PROXY_ALLOWED_ROLES": app_config.login.role,
+        "OAUTH2_PROXY_OIDC_ISSUER_URL": realm_url,
+        "OAUTH2_PROXY_SKIP_OIDC_DISCOVERY": "true",
+        "OAUTH2_PROXY_LOGIN_URL": f"{realm_url}/{_OIDC_PATH}/auth",
+        "OAUTH2_PROXY_REDEEM_URL": pulumi.Output.concat(
+            "https://", keycloak_fqdn, f"/realms/{realm}/{_OIDC_PATH}/token"
+        ),
+        "OAUTH2_PROXY_OIDC_JWKS_URL": pulumi.Output.concat(
+            "https://", keycloak_fqdn, f"/realms/{realm}/{_OIDC_PATH}/certs"
+        ),
+        "OAUTH2_PROXY_REDIRECT_URL": f"https://{app_config.hostname}/oauth2/callback",
+        "OAUTH2_PROXY_CODE_CHALLENGE_METHOD": "S256",
+        "OAUTH2_PROXY_REVERSE_PROXY": "true",
+        "OAUTH2_PROXY_UPSTREAMS": "static://202",
+        "OAUTH2_PROXY_COOKIE_SECURE": "true",
+        # Traefik's session-cookie rule matches this name (and its split
+        # `<name>_<n>` form), so it must not change.
+        "OAUTH2_PROXY_COOKIE_NAME": LOGIN_COOKIE[kind],
+        "OAUTH2_PROXY_EMAIL_DOMAINS": "*",
+        "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
+        "OAUTH2_PROXY_WHITELIST_DOMAINS": app_config.hostname,
+        "OAUTH2_PROXY_HTTP_ADDRESS": f"0.0.0.0:{OAUTH2_PROXY_PORT}",
+    }
+    if kind == "mlflow":
+        # `infra extract` calls MLflow with a Keycloak access token. LiteLLM's
+        # bearer keys are not Keycloak tokens, so its proxy never verifies any.
+        env_vars["OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS"] = "true"
+
+    return create_container_app_with_key_vault_secrets(
+        app_name=base_name,
+        resource_group_name=resource_group_name,
+        location=location,
+        managed_environment_id=container_env_id,
+        key_vault_uri=key_vault.properties.vault_uri,
+        container_image=kc.oauth2_proxy_image,
+        container_port=OAUTH2_PROXY_PORT,
+        cpu=0.25,
+        memory="0.5Gi",
+        min_replicas=1,
+        max_replicas=1,
+        env_vars=env_vars,
+        key_vault_secret_refs={
+            "OAUTH2_PROXY_CLIENT_SECRET": KEYCLOAK_SECRET_NAMES[client_secret_key],
+            "OAUTH2_PROXY_COOKIE_SECRET": KEYCLOAK_SECRET_NAMES[cookie_secret_key],
+        },
+        managed_identity_id=managed_identity_id,
+        environment=container_app_environment(base_name),
+        tags=tags,
+        enable_ingress=True,
+        ingress_external=False,
+        health_probe_port=OAUTH2_PROXY_PORT,
+        health_probe_path=OAUTH2_PROXY_PING_PATH,
         opts=opts,
     )
 
