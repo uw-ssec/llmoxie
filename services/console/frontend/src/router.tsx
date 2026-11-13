@@ -5,6 +5,7 @@ import { AuditPage } from '@/pages/audit'
 import { DataProtectionPage } from '@/pages/dlp'
 import { Frame, Landing, NotBuilt } from '@/pages/frame'
 import { ErrorScreen, InvitationPage, InvitationResult } from '@/pages/messages'
+import { OrgPageView } from '@/pages/org'
 
 type Args = LoaderFunctionArgs
 
@@ -39,7 +40,7 @@ export const routes: RouteObject[] = [
           { path: 'admin', loader: page(() => '/admin/orgs'), element: <AdminOrgsPage /> },
           { path: 'admin/audit', loader: page(() => '/admin/audit'), element: <AuditPage /> },
           { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <DataProtectionPage /> },
-          { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <NotBuilt /> },
+          { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <OrgPageView /> },
           { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <NotBuilt /> },
           { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <NotBuilt /> },
           {
