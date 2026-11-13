@@ -8,12 +8,13 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
 from llmaven.cli import app
 from llmaven.ops import build_ops_app
-from llmaven.ops.spend import SpendFetchError
+from llmaven.ops.spend import SpendFetchError, fetch_spend_records
 
 HASHED_KEY = "a" * 64
 
@@ -126,7 +127,7 @@ def test_spend_report_start_after_end_fails(monkeypatch, runner):
         ["ops", "spend-report", "--start", "2026-03-04", "--end", "2026-03-03"],
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
 
 
 def test_spend_report_rejects_non_positive_top(runner):
@@ -166,6 +167,83 @@ def test_spend_report_fetch_error_exits_1(monkeypatch, runner):
     assert result.exit_code == 1
     assert "✗" in result.stderr
     assert "sk-secret" not in result.output
+
+
+def test_spend_report_transport_error_never_prints_the_key(monkeypatch, runner):
+    """A transport error quoting the Authorization header is never echoed."""
+    secret = "sk-SECRET\n"
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise httpx.ConnectError(f"Illegal header value b'Bearer {secret}'")
+
+    def fetch(base_url, api_key, start, end):
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            yield from fetch_spend_records(
+                base_url, api_key, start, end, client=client, sleep=lambda _: None
+            )
+
+    monkeypatch.setattr("llmaven.ops.fetch_spend_records", fetch)
+    ops_app = build_ops_app(lambda env_file: ("https://litellm.test", secret))
+
+    result = runner.invoke(
+        ops_app,
+        ["spend-report", "--start", "2026-03-03", "--end", "2026-03-04"],
+    )
+
+    assert result.exit_code == 1
+    assert "✗" in result.stderr
+    assert "sk-SECRET" not in result.output
+
+
+def test_spend_report_csv_path_with_brackets_is_verbatim(tmp_path, runner):
+    """Square brackets in a path are not read as Rich markup on stderr."""
+    archive = _write_zip(
+        tmp_path / "extract.zip",
+        [_record(date(2026, 3, 3), "alpha", 5.0)],
+    )
+    csv_path = tmp_path / "rows[x].csv"
+
+    result = runner.invoke(
+        app,
+        [
+            "ops",
+            "spend-report",
+            "--start",
+            "2026-03-03",
+            "--end",
+            "2026-03-04",
+            "--from-zip",
+            str(archive),
+            "--csv",
+            str(csv_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "rows[x].csv" in result.stderr
+
+
+def test_spend_report_failure_message_keeps_brackets(tmp_path, runner):
+    """A path with markup-like text survives the ✗ error line intact."""
+    archive = tmp_path / "extract[x].zip"
+    archive.write_bytes(b"not a zip file at all")
+
+    result = runner.invoke(
+        app,
+        [
+            "ops",
+            "spend-report",
+            "--start",
+            "2026-03-03",
+            "--end",
+            "2026-03-04",
+            "--from-zip",
+            str(archive),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "extract[x].zip" in result.stderr
 
 
 def test_spend_report_unreadable_source_exits_1(tmp_path, runner):

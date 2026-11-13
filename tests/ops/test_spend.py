@@ -492,6 +492,25 @@ class TestFetchSpendRecords:
         assert API_KEY not in message
         assert str(day) in message
 
+    def test_fetch_transport_error_never_names_the_key(self):
+        """A transport error's own text may quote the header; it is not shown."""
+        day = date(2026, 3, 1)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError(f"Illegal header value b'Bearer {API_KEY}'")
+
+        with self._client(handler) as client, pytest.raises(SpendFetchError) as excinfo:
+            list(
+                fetch_spend_records(
+                    BASE_URL, API_KEY, day, day, client=client, sleep=lambda _: None
+                )
+            )
+
+        message = str(excinfo.value)
+        assert API_KEY not in message
+        assert "ConnectError" in message
+        assert str(day) in message
+
     def test_fetch_4xx_raises_without_retry(self):
         day = date(2026, 3, 1)
         requests: list[httpx.Request] = []

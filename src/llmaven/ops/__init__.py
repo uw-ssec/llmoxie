@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from llmaven.ops.spend import (
     GroupBy,
@@ -63,7 +64,10 @@ def build_ops_app(
         """
 
     def _fail(message: str) -> typer.Exit:
-        console_err.print(f"[red]✗[/red] {message}")
+        # ``message`` carries paths and exception text, so it is escaped before
+        # it reaches rich: a bare "[x]" in a path would otherwise be swallowed
+        # as markup and "[/x]" would raise MarkupError.
+        console_err.print(f"[red]✗[/red] {escape(message)}")
         return typer.Exit(code=1)
 
     @ops_app.command("spend-report")
@@ -177,6 +181,10 @@ def build_ops_app(
             except OSError as exc:
                 raise _fail(f"Could not write {csv_path}: {exc}") from exc
             # soft_wrap keeps a long path on one line so it stays greppable.
-            console_err.print(f"Wrote {len(rows)} row(s) to {csv_path}", soft_wrap=True)
+            console_err.print(
+                f"Wrote {len(rows)} row(s) to {csv_path}",
+                soft_wrap=True,
+                markup=False,
+            )
 
     return ops_app

@@ -367,7 +367,11 @@ def _fetch_page(
                 headers=headers,
             )
         except httpx.HTTPError as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
+            # Only the exception's class name. Its message can quote the
+            # request headers verbatim -- httpx.LocalProtocolError does for a
+            # key with a stray newline -- which would put the master key in
+            # the error the CLI prints (okf ``cli-output-data-safety``).
+            last_error = type(exc).__name__
         else:
             if response.status_code < 400:
                 break
