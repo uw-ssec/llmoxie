@@ -119,9 +119,7 @@ def test_keycloak_db_url_is_jdbc(mocks):
 def test_generated_secrets_have_no_special_characters(mocks):
     _, resources = _create(mocks)
     passwords = [
-        r
-        for r in resources
-        if r.typ == "random:index/randomPassword:RandomPassword"
+        r for r in resources if r.typ == "random:index/randomPassword:RandomPassword"
     ]
     assert passwords
     for r in passwords:
