@@ -224,10 +224,10 @@ below 2. Rate limits stay per replica.
 
 `llmaven infra validate` also warns when `litellm.hostname`,
 `litellm.admin_allowed_ips` or `mlflow.hostname` is set while `edge.enabled` is
-false. They have no effect then, so turning the edge off (or never turning it on)
-leaves the admin surface unrestricted unless the sidecar or
-`litellm.ip_security_restrictions` does it. With the edge on, `edge.env_vars` and
-`edge.key_vault_secret_refs` must be empty (the edge ignores them),
+false. They have no effect then, so turning the edge off (or never turning it
+on) leaves the admin surface unrestricted unless the sidecar or
+`litellm.ip_security_restrictions` does it. With the edge on, `edge.env_vars`
+and `edge.key_vault_secret_refs` must be empty (the edge ignores them),
 `edge.min_replicas` must be at least 1, and `edge.revision_suffix` must be 54
 characters or fewer. With the edge on, LiteLLM gets
 `PROXY_BASE_URL=https://<litellm.hostname>` unless `litellm.env_vars` sets it,
@@ -241,8 +241,8 @@ internal addresses without passing either. LiteLLM still requires its key and
 MLflow has no login. The sidecar guarded in-environment callers too; the edge
 does not. Whether to add in-replica protection is an open owner decision.
 
-**Pin `edge.refresh_trigger`.** Unpinned, it defaults to the deploy timestamp and
-rolls a new Traefik revision on every deploy. That fails
+**Pin `edge.refresh_trigger`.** Unpinned, it defaults to the deploy timestamp
+and rolls a new Traefik revision on every deploy. That fails
 `--expect-no-changes` and can cut long streams on the single entry point. A
 pinned `litellm.revision_suffix` must change in the same deploy that removes the
 sidecar, because the template changes.
@@ -254,30 +254,30 @@ owner's to run; nothing here is run by an agent. Per environment, staging first:
    platform FQDN and move them to the public hostnames. They break at the deploy
    in step 2, which flips both apps to internal ingress.
 1. Staging must rehearse what ISS and prod do. First deploy staging in the prod
-   shape: edge off, sidecar on, hostnames and certificates bound on the backends.
-   Then turn the edge on. Before turning it on, check that MLflow accepts the
-   internal FQDN as `Host`. MLflow 3.5 and later answers 403 for a `Host`
-   outside `MLFLOW_SERVER_ALLOWED_HOSTS` (or `--allowed-hosts`). This repo sets
-   neither: `docker/dockerfiles/mlflow.dockerfile` is `mlflow server` on
-   `ghcr.io/mlflow/mlflow:v3.6.0`, and `MLflowConfig.env_vars` defaults to
+   shape: edge off, sidecar on, hostnames and certificates bound on the
+   backends. Then turn the edge on. Before turning it on, check that MLflow
+   accepts the internal FQDN as `Host`. MLflow 3.5 and later answers 403 for a
+   `Host` outside `MLFLOW_SERVER_ALLOWED_HOSTS` (or `--allowed-hosts`). This
+   repo sets neither: `docker/dockerfiles/mlflow.dockerfile` is `mlflow server`
+   on `ghcr.io/mlflow/mlflow:v3.6.0`, and `MLflowConfig.env_vars` defaults to
    `MLFLOW_HOST=0.0.0.0` only (compose passes `--allowed-hosts "*"`, the
    deployed app does not). So MLflow uses its default host policy, and whether
    that covers `<app>.internal.<domain>` is unverified. On staging, request
-   `https://<mlflow-app>.internal.<domain>/` through the edge. If it returns 403,
-   set `MLFLOW_SERVER_ALLOWED_HOSTS` in `mlflow.env_vars` to include the
+   `https://<mlflow-app>.internal.<domain>/` through the edge. If it returns
+   403, set `MLFLOW_SERVER_ALLOWED_HOSTS` in `mlflow.env_vars` to include the
    internal FQDN (and the public hostname) before enabling the edge.
 2. Deploy with `edge.enabled: true`. The deploy moves each hostname from its old
-   app to Traefik and binds it (SNI) to the existing managed certificate named in
-   `edge.custom_domains`, so that certificate must already exist in the
+   app to Traefik and binds it (SNI) to the existing managed certificate named
+   in `edge.custom_domains`, so that certificate must already exist in the
    environment. Do the manual `az containerapp hostname add` and
    `az containerapp hostname bind` (see
    `knowledge/facts/custom-domains-declarative-certificate-manual.md`) only for
    a hostname whose managed certificate doesn't exist yet. Whether Azure accepts
    a hostname on Traefik in the same deploy that removes it from the old app is
    unverified and is checked on staging first. If it refuses, re-running the
-   deploy is the expected fix, but that is also unverified. Each hostname is down
-   from its removal until it is bound, so plan the window and announce it on ISS
-   and prod.
+   deploy is the expected fix, but that is also unverified. Each hostname is
+   down from its removal until it is bound, so plan the window and announce it
+   on ISS and prod.
 3. DNS. Each hostname's CNAME points at the old app's platform FQDN. Repoint it
    to the Traefik app's FQDN (`edge_url`), or confirm on staging that Azure
    accepts the bind and later renews the managed certificate with the old

@@ -374,10 +374,11 @@ LiteLLM and MLflow are reachable from inside the environment without passing
 Traefik's allowlist. Deploys and hostname binds change live infrastructure and
 are the owner's to run. Rehearse staging in the prod shape (edge off, sidecar
 on, hostnames bound) before turning the edge on, check that MLflow accepts its
-internal hostname (`MLFLOW_SERVER_ALLOWED_HOSTS`), and pin `edge.refresh_trigger`.
-Don't enable the edge in prod until the staging client-IP checks there
-pass. With the edge on, run `llmaven infra extract --source mlflow` with the
-public MLflow hostname set in your env file.
+internal hostname (`MLFLOW_SERVER_ALLOWED_HOSTS`), and pin
+`edge.refresh_trigger`. Don't enable the edge in prod until the staging
+client-IP checks there pass. With the edge on, run
+`llmaven infra extract --source mlflow` with the public MLflow hostname set in
+your env file.
 
 #### Sidecar (stacks without the edge)
 
