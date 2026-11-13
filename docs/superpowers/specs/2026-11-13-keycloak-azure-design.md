@@ -189,7 +189,8 @@ new revision, same dynamic config mounted as a secret volume):
 
 - Its own Container App, `<stack>-traefik`, external ingress, the only one in
   the stack. All public hostnames are bound to it (`edge.custom_domains`). Its
-  own platform FQDN answers 404 for everything except a health path.
+  own platform FQDN answers 404 for everything. Health is on a separate ping
+  port (`edge.ping_port`), which the platform probes use.
 - At least two replicas in prod (it is now in front of everything); rate limits
   stay per replica, as today.
 - Routes are by host. Each backend gets a `hostname` in its own config section
@@ -283,8 +284,9 @@ Per environment, starting with a new `staging` stack (new config in
    port directly and forge an allowlisted `X-Forwarded-For`. Also check
    streaming responses through Traefik, and that LiteLLM's and MLflow's platform
    FQDNs no longer answer from outside.
-3. Anyone still calling LiteLLM at its platform FQDN breaks at this step; find
-   and move them before ISS and prod.
+3. Anyone still calling LiteLLM or MLflow at a platform FQDN breaks at step 1,
+   when the deploy flips both apps to internal ingress, not at a later step.
+   Find and move them before that deploy, on staging, ISS and prod alike.
 
 ## Stage 2: Keycloak and the logins
 
