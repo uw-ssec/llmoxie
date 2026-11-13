@@ -236,7 +236,8 @@ def _add_litellm_login_routes(
     bearer key with no cookie passes only from the admin IPs (LiteLLM checks the
     key), and never on the UI paths. Anything else needs a session.
     """
-    cookie = f"HeaderRegexp(`Cookie`, `(^|;\\s*){LOGIN_COOKIE['litellm']}=`)"
+    # oauth2-proxy splits a large session into <name>_0, <name>_1, ...
+    cookie = f"HeaderRegexp(`Cookie`, `(^|;\\s*){LOGIN_COOKIE['litellm']}(_\\d+)?=`)"
     bearer = "HeaderRegexp(`Authorization`, `^Bearer `)"
     routers["litellm-oauth2"] = {
         "entryPoints": [ENTRYPOINT],
@@ -253,7 +254,13 @@ def _add_litellm_login_routes(
     }
     routers["litellm-bearer"] = {
         "entryPoints": [ENTRYPOINT],
-        "rule": f"{host} && {bearer} && !{cookie} && !({_litellm_ui_rule()})",
+        # The routing path keeps a reserved character (%2F, %25, ...) encoded,
+        # which the backend would decode, so a path with a '%' is never a
+        # bearer-key request: it needs a session.
+        "rule": (
+            f"{host} && {bearer} && !{cookie} && !PathRegexp(`%`) "
+            f"&& !({_litellm_ui_rule()})"
+        ),
         "priority": _BEARER_PRIORITY,
         "middlewares": ["litellm-admin-ip-allowlist", "client-rate-limit"],
         "service": "litellm",
@@ -361,7 +368,7 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
             middlewares["mlflow-login"] = _forward_auth(backends["mlflow-auth"])
             services["mlflow-auth"] = _service(backends["mlflow-auth"])
         services["mlflow"] = _service(backends["mlflow"])
-    if keycloak_on and "keycloak" in backends:
+    if keycloak_on:
         kc_host = f"Host(`{config.keycloak.hostname}`)"
         for name, prefix in (
             ("keycloak-realms", "/realms/"),
@@ -410,6 +417,18 @@ def build_edge_static_args(edge: EdgeConfig) -> list[str]:
         f"--entryPoints.{ENTRYPOINT}.address=:{edge.port}",
         f"--entryPoints.{ENTRYPOINT}.forwardedHeaders.trustedIPs={trusted}",
         f"--entryPoints.{ENTRYPOINT}.transport.respondingTimeouts.readTimeout=300s",
+        # Traefik routes on the path with these still encoded (so /ui%2F does
+        # not match /ui) while the backends decode them; v3.7 allows them by
+        # default. Reject them with a 400 so no encoded form can dodge a rule.
+        *(
+            f"--entryPoints.{ENTRYPOINT}.http.encodedCharacters.{name}=false"
+            for name in (
+                "allowEncodedSlash",
+                "allowEncodedBackSlash",
+                "allowEncodedNullCharacter",
+                "allowEncodedPercent",
+            )
+        ),
         f"--entryPoints.{EDGE_PING_ENTRYPOINT}.address=:{edge.ping_port}",
         "--ping=true",
         f"--ping.entryPoint={EDGE_PING_ENTRYPOINT}",

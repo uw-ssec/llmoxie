@@ -27,7 +27,7 @@ BACKENDS = {
     "mlflow-auth": "https://ml-auth.internal.env.test",
     "litellm-auth": "https://li-auth.internal.env.test",
 }
-LITELLM_COOKIE_RULE = "HeaderRegexp(`Cookie`, `(^|;\\s*)_llmoxie_litellm=`)"
+LITELLM_COOKIE_RULE = "HeaderRegexp(`Cookie`, `(^|;\\s*)_llmoxie_litellm(_\\d+)?=`)"
 BEARER_RULE = "HeaderRegexp(`Authorization`, `^Bearer `)"
 
 
@@ -65,8 +65,17 @@ def _tokens(rule: str) -> list[str]:
     return out
 
 
-def _evaluate(rule: str, host: str, path: str, headers: dict[str, str]) -> bool:
+def _evaluate(rule: str, host: str, path: str, headers: dict) -> bool:
+    """``headers`` maps a name to one value or a list (a repeated header).
+
+    Names are case-insensitive and a regexp matches if any value does, as in
+    Traefik. ``path`` is the routing path (reserved characters stay encoded).
+    """
     tokens, pos = _tokens(rule), 0
+    folded: dict[str, list[str]] = {}
+    for name, value in headers.items():
+        values = [value] if isinstance(value, str) else list(value)
+        folded.setdefault(name.lower(), []).extend(values)
 
     def peek():
         return tokens[pos] if pos < len(tokens) else None
@@ -117,7 +126,10 @@ def _evaluate(rule: str, host: str, path: str, headers: dict[str, str]) -> bool:
         if name == "PathPrefix":
             return path.startswith(args[0])
         if name == "HeaderRegexp":
-            return re.search(args[1], headers.get(args[0], "")) is not None
+            values = folded.get(args[0].lower(), [])
+            return any(re.search(args[1], v) for v in values)
+        if name == "PathRegexp":
+            return re.search(args[0], path) is not None
         raise AssertionError(f"unsupported matcher {name}")
 
     value = or_expr()
@@ -366,3 +378,93 @@ def test_logins_off_render_stage_1_exactly():
     assert build_edge_dynamic_config(off, BACKENDS) == expected
     assert build_edge_dynamic_config(off, stage_1_backends) == expected
     assert "keycloak" not in str(expected)
+
+
+# --- fix round 1 ----------------------------------------------------------------
+
+SPLIT_COOKIE = f"{LOGIN_COOKIE['litellm']}_0=aaa; {LOGIN_COOKIE['litellm']}_1=bbb"
+
+
+def test_split_session_cookie_counts_as_a_session():
+    http = _http()
+    hits = _winner(
+        http, LITELLM_HOST, "/key/list", Cookie=SPLIT_COOKIE, Authorization="Bearer k"
+    )
+    assert hits == "litellm-session"
+    # a look-alike name is not a session
+    for fake in ("x_llmoxie_litellm_0=1", f"{LOGIN_COOKIE['litellm']}_x=1"):
+        assert (
+            _winner(
+                http, LITELLM_HOST, "/key/list", Cookie=fake, Authorization="Bearer k"
+            )
+            == "litellm-bearer"
+        )
+
+
+def test_header_names_are_case_insensitive():
+    http = _http()
+    assert _winner(http, LITELLM_HOST, "/key/list", authorization="Bearer k") == (
+        "litellm-bearer"
+    )
+    assert _winner(http, LITELLM_HOST, "/key/list", COOKIE=COOKIE) == "litellm-session"
+
+
+def test_repeated_cookie_headers_any_value_counts():
+    http = _http()
+    cookies = ["a=b", COOKIE]
+    assert _winner(
+        http, LITELLM_HOST, "/key/list", Cookie=cookies, Authorization="Bearer k"
+    ) == ("litellm-session")
+
+
+@pytest.mark.parametrize("path", ["/ui%2F", "/ui%2f", "/v2%2Flogin", "/a%25b"])
+def test_encoded_reserved_characters_never_use_the_bearer_route(path):
+    """The routing path keeps %2F/%25 encoded while LiteLLM decodes them."""
+    http = _http()
+    hits = _matching(http, LITELLM_HOST, path, Authorization="Bearer x")
+    assert hits
+    assert "litellm-bearer" not in hits
+    for name in hits:
+        assert _carries(http, name, "litellm-login"), name
+
+
+def test_edge_rejects_encoded_slashes_backslashes_nulls_and_percents():
+    from llmaven.infrastructure.resources.traefik import build_edge_static_args
+
+    args = build_edge_static_args(_config().edge)
+    for name in (
+        "allowEncodedSlash",
+        "allowEncodedBackSlash",
+        "allowEncodedNullCharacter",
+        "allowEncodedPercent",
+    ):
+        assert f"--entryPoints.web.http.encodedCharacters.{name}=false" in args
+
+
+def test_keycloak_on_with_litellm_login_off_leaves_litellm_as_stage_1():
+    on = _http(_config(litellm_login=False))
+    plain = _data(litellm={"admin_allowed_ips": ["203.0.113.0/24"]})
+    plain["edge"]["custom_domains"].append(
+        {"name": KEYCLOAK_HOST, "certificate_name": "cert-kc"}
+    )
+    stage_1 = build_edge_dynamic_config(
+        LLMavenConfig.model_validate(plain),
+        {k: BACKENDS[k] for k in ("litellm", "mlflow")},
+    )["http"]
+    for kind in ("routers", "services"):
+        for name, value in stage_1[kind].items():
+            if name.startswith("litellm"):
+                assert on[kind][name] == value
+    assert not [
+        n
+        for n in on["routers"]
+        if n.startswith("litellm-")
+        and n not in ("litellm-health", "litellm-public", "litellm-admin")
+    ]
+    assert "litellm-login" not in on["middlewares"]
+
+
+def test_missing_keycloak_backend_raises():
+    backends = {k: v for k, v in BACKENDS.items() if k != "keycloak"}
+    with pytest.raises(KeyError, match="keycloak"):
+        _http(backends=backends)
