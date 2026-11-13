@@ -13,6 +13,7 @@ from .database import (
     get_connection_string,
 )
 from .helpers import (
+    create_edge_app,
     create_litellm_app,
     create_log_analytics_workspace,
     create_mlflow_app,
@@ -91,6 +92,7 @@ __all__ = [
     "create_log_analytics_workspace",
     "create_postgres_flexible_server",
     "create_mlflow_app",
+    "create_edge_app",
     "create_litellm_app",
     "create_user_assigned_managed_identity",
 ]

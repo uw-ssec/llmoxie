@@ -10,16 +10,24 @@ from ..config.schema import (
     CustomDomainConfig,
     IPSecurityRestrictionConfig,
     LiteLLMProxyConfig,
+    LLMavenConfig,
 )
 from .container_apps import create_container_app_with_key_vault_secrets
 from .redis import apply_redis_router_settings
 from .traefik import (
+    EDGE_PING_PATH,
+    POLICY_DIGEST_ENV,
+    TRAEFIK_CONFIG_DIR,
     TRAEFIK_DYNAMIC_SECRET,
+    TRAEFIK_VOLUME_NAME,
+    build_edge_static_args,
     build_traefik_container,
     build_traefik_volume,
+    edge_policy_digest,
     policy_digest,
     policy_revision_suffix,
     render_dynamic_config,
+    render_edge_dynamic_config,
 )
 
 
@@ -494,5 +502,94 @@ def create_litellm_app(
         if proxy_enabled
         else "/health/liveliness",
         ip_security_restrictions=ip_security_restrictions,
+        opts=opts,
+    )
+
+
+def create_edge_app(
+    name: str,
+    resource_group_name: Output[str],
+    location: str,
+    container_env_id: Output[str],
+    config: LLMavenConfig,
+    backends: dict[str, pulumi.Input[str]],
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+) -> azure_native.app.ContainerApp:
+    """Create the standalone Traefik edge Container App.
+
+    The edge is the stack's only public entry point. It routes by Host to the
+    backends, which take internal ingress.
+
+    Args:
+        name: Container app name
+        resource_group_name: Resource group name
+        location: Azure region
+        container_env_id: Container Apps Environment ID
+        config: Full stack config (the edge, LiteLLM and MLflow sections)
+        backends: Backend FQDNs keyed "litellm" / "mlflow", for enabled backends
+            only. They become https:// URLs in the rendered Traefik config.
+        tags: Resource tags
+        opts: Pulumi resource options
+
+    Returns:
+        ContainerApp resource
+    """
+    edge = config.edge
+
+    environment = "dev"
+    for part in name.split("-"):
+        if part in ["dev", "staging", "prod", "test"]:
+            environment = part
+            break
+
+    def render(fqdns: dict[str, str]) -> dict[str, str]:
+        dynamic_config = render_edge_dynamic_config(
+            config, {key: f"https://{fqdn}" for key, fqdn in fqdns.items()}
+        )
+        return {
+            "dynamic": dynamic_config,
+            "digest": edge_policy_digest(edge, dynamic_config),
+        }
+
+    rendered = Output.all(**backends).apply(render)
+    digest = rendered.apply(lambda r: r["digest"])
+    revision_suffix = (
+        digest.apply(lambda d: policy_revision_suffix(edge.revision_suffix, d))
+        if edge.revision_suffix
+        else None
+    )
+
+    return create_container_app_with_key_vault_secrets(
+        app_name=name,
+        resource_group_name=resource_group_name,
+        location=location,
+        managed_environment_id=container_env_id,
+        # The edge holds no Key Vault secrets, so the URI is never read.
+        key_vault_uri=Output.from_input(""),
+        container_image=edge.image,
+        container_port=edge.port,
+        cpu=edge.cpu,
+        memory=edge.memory,
+        min_replicas=edge.min_replicas,
+        max_replicas=edge.max_replicas,
+        env_vars={POLICY_DIGEST_ENV: digest},
+        inline_secrets={TRAEFIK_DYNAMIC_SECRET: rendered.apply(lambda r: r["dynamic"])},
+        command_args=build_edge_static_args(edge),
+        volumes=[build_traefik_volume()],
+        volume_mounts=[
+            azure_native.app.VolumeMountArgs(
+                volume_name=TRAEFIK_VOLUME_NAME, mount_path=TRAEFIK_CONFIG_DIR
+            )
+        ],
+        environment=environment,
+        tags=tags,
+        enable_ingress=True,
+        ingress_external=True,
+        revision_suffix=revision_suffix,
+        refresh_trigger=edge.refresh_trigger,
+        custom_domains=edge.custom_domains,
+        health_probe_port=edge.ping_port,
+        health_probe_path=EDGE_PING_PATH,
         opts=opts,
     )
