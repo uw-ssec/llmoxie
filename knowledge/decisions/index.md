@@ -1,5 +1,5 @@
 # Decisions
-* [The repo is the LiteLLM and MLflow platform only; RAG lives in llmoxie-rag](platform-only-scope.md) - The Sunset RAG milestone removed the REST API, UI, agentic RAG and Qdrant, and tests/test_platform_scope.py fails if they return.
+* [The repo is the LiteLLM and MLflow platform and its console; RAG lives in llmoxie-rag](platform-only-scope.md) - Sunset RAG removed the REST API, Streamlit UI, agentic RAG and Qdrant; the console in services/console is in scope since 2026-11-12, outside what tests/test_platform_scope.py checks.
 * [New data-pipeline features belong in llmoxie-analysis, not src/llmaven/data](data-pipeline-moves-to-llmoxie-analysis.md) - The source-adapter PRs were closed because the data pipeline is moving to uw-ssec/llmoxie-analysis; src/llmaven/data still ships on main.
 * [The llmoxie rebrand must not rename identifiers that carry live state](rebrand-keeps-deployed-identifiers.md) - Pulumi project, project.name, Postgres names, blob containers and the compose volume identify live resources; renaming them orphans state or replaces data.
 * [Making a deploy a true no-op: revisions, probes and the preview gate](no-op-deploy-controls.md) - deploy --expect-no-changes previews first because Pulumi's own flag errors only after applying; REFRESH_TRIGGER defaults to the current time, and only LiteLLM can pin it.

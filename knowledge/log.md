@@ -1,3 +1,6 @@
+## 2026-11-13
+* **Update**: Updated concept `decisions/platform-only-scope.md`.
+
 ## 2026-11-12
 * **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
 * **Update**: Updated concept `bugs/failed-pg-dump-can-consume-retention.md`.
