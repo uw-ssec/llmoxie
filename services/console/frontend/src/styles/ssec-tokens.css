@@ -1,0 +1,363 @@
+/*
+ * Vendored, unmodified below this comment. Do not edit here; re-copy from the source to update.
+ *
+ * Source:  https://github.com/uw-ssec/uw-ssec.github.io
+ * Path:    design-system/01-tokens.css
+ * Branch:  staging, at commit d3f017b (2026-09-11)
+ *
+ * The SSEC design system is marked `version: alpha`, so this copy is pinned on purpose.
+ * What the console overrides (font family names, the theme mapping) is in ../index.css.
+ */
+
+/* =============================================================================
+   SSEC Design System — Token Architecture
+   Scientific Software Engineering Center, University of Washington
+
+   Three-tier token system:
+     Tier 1: Global tokens (raw values — never used directly in components)
+     Tier 2: Alias tokens (semantic meaning — what components reference)
+     Tier 3: Component tokens (scoped overrides — defined per component)
+
+   All colors comply with UW Brand Guidelines.
+   All text combinations meet WCAG 2.2 AA contrast requirements.
+   ============================================================================= */
+
+:root {
+
+  /* =========================================================================
+     TIER 1: GLOBAL TOKENS — Raw Values
+     ========================================================================= */
+
+  /* ---------------------------------------------------------------------------
+     Colors — UW Primary Palette
+     Source: https://www.washington.edu/brand/graphic-elements/primary-color/
+     --------------------------------------------------------------------------- */
+  --color-purple-950: #1a0038;   /* Custom dark — derived from Husky Purple */
+  --color-purple-900: #32006e;   /* Husky Purple (PMS 2685) */
+  --color-purple-800: #3d1a7a;   /* Interpolated */
+  --color-purple-700: #4b2e83;   /* Spirit Purple (PMS 266) — PRIMARY */
+  --color-purple-600: #5a3d94;   /* Interpolated */
+  --color-purple-500: #6b4fa6;   /* Interpolated */
+  --color-purple-400: #8b74be;   /* Interpolated */
+  --color-purple-300: #a899d0;   /* Interpolated */
+  --color-purple-200: #c5b4e3;   /* UW Accent Lavender (PMS 2635) */
+  --color-purple-100: #e0d7f0;   /* Interpolated */
+  --color-purple-50:  #f0ecf7;   /* Interpolated */
+
+  /* ---------------------------------------------------------------------------
+     Colors — UW Gold Palette
+     --------------------------------------------------------------------------- */
+  --color-gold-900: #5a4a2e;     /* Deep gold — derived */
+  --color-gold-800: #6e5d3a;     /* Derived */
+  --color-gold-700: #85754d;     /* Heritage Gold (PMS 871) */
+  --color-gold-600: #9e8d63;     /* Interpolated */
+  --color-gold-500: #b7a57a;     /* Husky Gold (PMS 7502) */
+  --color-gold-400: #c9bb96;     /* Interpolated */
+  --color-gold-300: #dbd1b4;     /* Interpolated */
+  --color-gold-200: #e8e3d3;     /* Husky Light Gold (web) */
+  --color-gold-100: #f2efe6;     /* Interpolated */
+  --color-gold-50:  #f9f7f2;     /* Interpolated */
+
+  /* ---------------------------------------------------------------------------
+     Colors — UW Accent Palette (max 15% coverage per brand guidelines)
+     --------------------------------------------------------------------------- */
+  --color-teal-600: #1fb8b0;     /* Darker teal for text */
+  --color-teal-500: #2ad2c9;     /* UW Accent Teal (PMS 3252) */
+  --color-teal-400: #5cddd6;     /* Lighter teal */
+  --color-teal-300: #8fe9e4;     /* Light teal */
+  --color-teal-200: #c2f3f0;     /* Very light teal */
+  --color-teal-100: #e6faf9;     /* Near-white teal */
+
+  --color-green-600: #8ab818;    /* Darker green */
+  --color-green-500: #aadb1e;    /* UW Accent Green (PMS 2290) */
+  --color-green-400: #bce44e;    /* Lighter green */
+  --color-green-300: #d1ed85;    /* Light green */
+
+  --color-pink-600: #d4289a;     /* Darker pink */
+  --color-pink-500: #e93cac;     /* UW Accent Pink (PMS 232) */
+  --color-pink-400: #ee66bf;     /* Lighter pink */
+
+  --color-spirit-gold: #ffc700;  /* UW Spirit Gold (PMS 7408) — high-energy accent */
+
+  /* ---------------------------------------------------------------------------
+     Colors — Neutrals
+     --------------------------------------------------------------------------- */
+  --color-neutral-950: #0d0f10;  /* Near black */
+  --color-neutral-900: #1a1d1f;  /* Primary dark */
+  --color-neutral-800: #2a2e31;  /* Dark surface */
+  --color-neutral-700: #373a3c;  /* UW Nearly Black */
+  --color-neutral-600: #555a5e;  /* Secondary text */
+  --color-neutral-500: #72777c;  /* Muted text */
+  --color-neutral-400: #9a9fa4;  /* Disabled / placeholder */
+  --color-neutral-300: #c2c6ca;  /* Borders */
+  --color-neutral-200: #d5d8de;  /* UW Gray — light borders */
+  --color-neutral-100: #eceef0;  /* Light surface */
+  --color-neutral-50:  #f6f7f8;  /* Near-white surface */
+
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* ---------------------------------------------------------------------------
+     Typography — Font Families
+     Source: https://www.washington.edu/brand/graphic-elements/typography/
+     --------------------------------------------------------------------------- */
+  --font-display: "Encode Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-compressed: "Encode Sans Compressed", "Encode Sans", -apple-system, sans-serif;
+  --font-body: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Source Code Pro", "Consolas", monospace;
+
+  /* ---------------------------------------------------------------------------
+     Typography — Font Sizes (fluid clamp scale)
+     --------------------------------------------------------------------------- */
+  --text-xs:   clamp(0.75rem, 0.7rem + 0.25vw, 0.8125rem);     /* 12–13px */
+  --text-sm:   clamp(0.875rem, 0.825rem + 0.25vw, 0.9375rem);   /* 14–15px */
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.0625rem);        /* 16–17px */
+  --text-lg:   clamp(1.125rem, 1.05rem + 0.375vw, 1.25rem);     /* 18–20px */
+  --text-xl:   clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);         /* 20–24px */
+  --text-2xl:  clamp(1.5rem, 1.3rem + 1vw, 2rem);               /* 24–32px */
+  --text-3xl:  clamp(1.875rem, 1.6rem + 1.375vw, 2.5rem);       /* 30–40px */
+  --text-4xl:  clamp(2.25rem, 1.85rem + 2vw, 3rem);             /* 36–48px */
+  --text-5xl:  clamp(2.75rem, 2.2rem + 2.75vw, 3.75rem);        /* 44–60px */
+
+  /* ---------------------------------------------------------------------------
+     Typography — Font Weights
+     --------------------------------------------------------------------------- */
+  --font-light: 300;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  /* ---------------------------------------------------------------------------
+     Typography — Line Heights
+     --------------------------------------------------------------------------- */
+  --leading-none: 1;
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+  --leading-loose: 1.8;
+
+  /* ---------------------------------------------------------------------------
+     Typography — Letter Spacing
+     --------------------------------------------------------------------------- */
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.015em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+  --tracking-widest: 0.1em;
+
+  /* ---------------------------------------------------------------------------
+     Spacing — 4px base unit scale
+     --------------------------------------------------------------------------- */
+  --space-px: 1px;
+  --space-0: 0;
+  --space-0-5: 0.125rem;   /* 2px */
+  --space-1:  0.25rem;      /* 4px */
+  --space-1-5: 0.375rem;    /* 6px */
+  --space-2:  0.5rem;       /* 8px */
+  --space-2-5: 0.625rem;    /* 10px */
+  --space-3:  0.75rem;      /* 12px */
+  --space-4:  1rem;         /* 16px */
+  --space-5:  1.25rem;      /* 20px */
+  --space-6:  1.5rem;       /* 24px — UW block gap */
+  --space-8:  2rem;         /* 32px */
+  --space-10: 2.5rem;       /* 40px */
+  --space-12: 3rem;         /* 48px */
+  --space-16: 4rem;         /* 64px */
+  --space-20: 5rem;         /* 80px */
+  --space-24: 6rem;         /* 96px */
+  --space-32: 8rem;         /* 128px */
+
+  /* ---------------------------------------------------------------------------
+     Border Radius
+     --------------------------------------------------------------------------- */
+  --radius-none: 0;          /* UW buttons use sharp corners */
+  --radius-sm: 0.25rem;      /* 4px — subtle rounding */
+  --radius-md: 0.5rem;       /* 8px — cards, inputs */
+  --radius-lg: 0.75rem;      /* 12px — larger containers */
+  --radius-xl: 1rem;         /* 16px — feature cards */
+  --radius-2xl: 1.5rem;      /* 24px — hero elements */
+  --radius-full: 9999px;     /* Pill shapes */
+
+  /* ---------------------------------------------------------------------------
+     Shadows — UW-derived elevation scale
+     --------------------------------------------------------------------------- */
+  --shadow-xs:  0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md:  0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-lg:  0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+  --shadow-xl:  0 20px 25px rgba(0, 0, 0, 0.1), 0 8px 10px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.2);
+
+  /* Purple-tinted glow for AI/tech accents */
+  --shadow-glow-sm: 0 0 10px rgba(75, 46, 131, 0.15);
+  --shadow-glow-md: 0 0 20px rgba(75, 46, 131, 0.2);
+  --shadow-glow-lg: 0 0 40px rgba(75, 46, 131, 0.25);
+
+  /* Teal-tinted glow for AI highlights */
+  --shadow-glow-teal-sm: 0 0 10px rgba(42, 210, 201, 0.15);
+  --shadow-glow-teal-md: 0 0 20px rgba(42, 210, 201, 0.2);
+
+  /* ---------------------------------------------------------------------------
+     Z-Index Scale
+     --------------------------------------------------------------------------- */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-overlay: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+
+  /* ---------------------------------------------------------------------------
+     Transitions
+     --------------------------------------------------------------------------- */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------------------------------------------------------------------------
+     Layout
+     --------------------------------------------------------------------------- */
+  --width-content: 960px;      /* UW content width */
+  --width-wide: 1140px;        /* UW wide width */
+  --width-full: 1400px;        /* SSEC max width for hero sections */
+
+  --angle-brand: 15deg;        /* UW brand angle — used in Boundless elements */
+
+
+  /* =========================================================================
+     TIER 2: ALIAS TOKENS — Semantic Meaning
+     ========================================================================= */
+
+  /* ---------------------------------------------------------------------------
+     Surface Colors
+     --------------------------------------------------------------------------- */
+  --surface-primary: var(--color-white);
+  --surface-secondary: var(--color-gold-50);
+  --surface-tertiary: var(--color-neutral-50);
+  --surface-inverse: var(--color-purple-900);
+  --surface-brand: var(--color-purple-700);
+  --surface-dark: var(--color-purple-950);
+
+  /* AI/Tech surfaces — subtle, distinctive */
+  --surface-code: var(--color-neutral-900);
+  --surface-terminal: var(--color-purple-950);
+  --surface-data: var(--color-gold-100);
+
+  /* ---------------------------------------------------------------------------
+     Text Colors
+     --------------------------------------------------------------------------- */
+  --text-primary: var(--color-neutral-900);
+  --text-secondary: var(--color-neutral-600);
+  --text-tertiary: #767676;
+  --text-disabled: #767676;
+  --text-inverse: var(--color-white);
+  --text-brand: var(--color-purple-700);
+  --text-link: var(--color-purple-700);
+  --text-link-hover: var(--color-purple-900);
+  --text-code: #0f8a83;                        /* Darker teal — 4.5:1 on light backgrounds */
+
+  /* ---------------------------------------------------------------------------
+     Border Colors
+     --------------------------------------------------------------------------- */
+  --border-default: var(--color-neutral-200);
+  --border-strong: var(--color-neutral-300);
+  --border-brand: var(--color-purple-700);
+  --border-focus: var(--color-purple-500);
+  --border-accent: var(--color-teal-500);
+
+  /* ---------------------------------------------------------------------------
+     Interactive Colors
+     --------------------------------------------------------------------------- */
+  --interactive-primary: var(--color-purple-700);
+  --interactive-primary-hover: var(--color-purple-900);
+  --interactive-primary-active: var(--color-purple-800);
+
+  --interactive-secondary: var(--color-gold-500);
+  --interactive-secondary-hover: var(--color-gold-700);
+
+  --interactive-ghost-hover: var(--color-purple-50);
+  --interactive-ghost-active: var(--color-purple-100);
+
+  /* ---------------------------------------------------------------------------
+     Semantic / Status Colors
+     --------------------------------------------------------------------------- */
+  --color-success: #2e7d32;
+  --color-success-light: #e8f5e9;
+  --color-warning: #f57c00;
+  --color-warning-light: #fff3e0;
+  --color-error: #c62828;
+  --color-error-light: #ffebee;
+  --color-info: var(--color-purple-600);
+  --color-info-light: var(--color-purple-50);
+
+  /* ---------------------------------------------------------------------------
+     Focus Ring
+     UW Brand: 0.2rem shadow with rgba(75, 46, 131, 0.5)
+     --------------------------------------------------------------------------- */
+  --focus-ring: 0 0 0 0.2rem rgba(75, 46, 131, 0.5);
+  --focus-ring-offset: 2px;
+
+  /* ---------------------------------------------------------------------------
+     Semantic Spacing
+     --------------------------------------------------------------------------- */
+  --space-inline-xs: var(--space-1);
+  --space-inline-sm: var(--space-2);
+  --space-inline-md: var(--space-4);
+  --space-inline-lg: var(--space-6);
+
+  --space-stack-xs: var(--space-1);
+  --space-stack-sm: var(--space-2);
+  --space-stack-md: var(--space-4);
+  --space-stack-lg: var(--space-8);
+  --space-stack-xl: var(--space-12);
+
+  --space-section-sm: var(--space-12);
+  --space-section-md: var(--space-16);
+  --space-section-lg: var(--space-24);
+
+  /* ---------------------------------------------------------------------------
+     Semantic Typography
+     --------------------------------------------------------------------------- */
+  --font-heading: var(--font-display);
+  --font-ui: var(--font-compressed);
+  --font-reading: var(--font-body);
+}
+
+
+/* =============================================================================
+   Dark Context — for inverse/hero sections
+   Applied via class="dark" or on dark background containers
+   ============================================================================= */
+
+.dark,
+[data-theme="dark"] {
+  --surface-primary: var(--color-purple-950);
+  --surface-secondary: var(--color-purple-900);
+  --surface-tertiary: var(--color-neutral-800);
+
+  --text-primary: var(--color-white);
+  --text-secondary: var(--color-gold-200);
+  --text-tertiary: var(--color-neutral-400);
+  --text-brand: var(--color-gold-500);
+  --text-link: var(--color-teal-400);
+  --text-link-hover: var(--color-teal-300);
+
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.2);
+
+  --interactive-primary: var(--color-teal-500);
+  --interactive-primary-hover: var(--color-teal-400);
+  --interactive-ghost-hover: rgba(255, 255, 255, 0.08);
+  --interactive-ghost-active: rgba(255, 255, 255, 0.12);
+}

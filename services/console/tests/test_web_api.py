@@ -5,7 +5,10 @@ shares: the session report, the one error shape, the CSRF header and what a resp
 """
 
 import json
+import re
 import uuid
+
+import pytest
 
 from .helpers import CONSOLE, Browser, sign_in
 
@@ -109,3 +112,55 @@ def test_creating_an_org_answers_with_a_message_and_where_to_go():
     removed = alice.api_post(f"/admin/orgs/{org_id}/remove", {"confirm_slug": f"wa-{RUN}"})
     assert removed.status_code == 200 and removed.json()["goto"] == "/admin"
     assert removed.json()["message"].startswith("Organization removed:")
+
+
+# ── The application shell ───────────────────────────────────────────────────
+
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+       "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' ")
+
+
+@pytest.mark.parametrize("path", ["/", "/admin", "/orgs/abc", "/teams/abc/manage", "/invite/" + "x" * 30, "/nope"])
+def test_every_page_url_serves_the_shell(path):
+    r = Browser().get(path)
+    assert r.status_code == 200 and '<div id="root">' in r.text
+    assert r.headers["content-security-policy"].startswith(CSP)
+    assert "unsafe" not in r.headers["content-security-policy"]
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_the_shell_loads_only_its_own_files():
+    html = Browser().get("/").text
+    urls = re.findall(r'(?:src|href)="([^"]+)"', html)
+    assert urls and all(u.startswith("/assets/") for u in urls), urls
+    assert "<script>" not in html and "style=" not in html
+    for url in urls:
+        asset = Browser().get(url)
+        assert asset.status_code == 200 and asset.headers["x-content-type-options"] == "nosniff", url
+
+
+def test_unknown_api_paths_are_not_the_shell():
+    missing = Browser().api_get("/nope")
+    assert missing.status_code == 404 and missing.json() == {"error": {"status": 404, "message": "That does not exist."}}
+    assert Browser().get("/api/v1/nope").status_code in (404, 405)
+    assert Browser().get("/assets/nope.js").status_code == 404
+
+
+@pytest.mark.parametrize("next_value", ["//evil.example", "https:evil.example", "/\\evil", "/" + "a" * 300])
+def test_a_crafted_next_lands_on_home(next_value):
+    b = sign_in("alice", "alice123", start=("/login", {"next": next_value}))
+    assert b.landed_path == "/"
+
+
+def test_a_failed_sign_in_returns_to_the_sign_in_screen():
+    r = Browser().get("/auth/callback?code=x&state=y", follow=False)
+    assert r.status_code == 303 and r.headers["location"] == "/?signin=failed"
+
+
+def test_the_signed_in_page_is_the_only_html_the_server_writes():
+    b = Browser()
+    page = b.post("/login", {})
+    from .helpers import _submit_keycloak_login
+    page = _submit_keycloak_login(b, page, "alice", "alice123")
+    assert page.status_code == 200 and "Signed in" in page.text and 'http-equiv="refresh" content="0; url=/"' in page.text
+    assert "<script" not in page.text and page.headers["content-security-policy"].startswith(CSP)

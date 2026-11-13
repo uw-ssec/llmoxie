@@ -1,0 +1,142 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/encode-sans/wdth.css";
+@import "@fontsource-variable/open-sans";
+@import "@fontsource-variable/jetbrains-mono";
+@import "./styles/ssec-tokens.css";
+
+/* Light theme only. Keeping this variant tied to a class nothing sets stops the components'
+   `dark:` styles from following the operating system's setting. */
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn's theme names, pointed at the SSEC design tokens (./styles/ssec-tokens.css). */
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
+  --font-ui: var(--font-compressed);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* The design system's own surfaces, under names of their own. */
+  --color-nav: var(--surface-inverse);
+  --color-nav-foreground: var(--color-gold-200);
+  --color-signature: var(--color-teal-500);
+  --color-terminal: var(--surface-terminal);
+  --color-terminal-foreground: var(--color-teal-500);
+  --color-terminal-muted: var(--color-gold-500);
+  --color-good: var(--color-success);
+  --color-good-surface: var(--color-success-light);
+  --color-caution: var(--color-warning);
+  --color-caution-surface: var(--color-warning-light);
+  --color-bad-surface: var(--color-error-light);
+
+  /* The design system's corner scale: 4, 8, 12, 16, 24px. Buttons have none; see components/ui/button.tsx. */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 1.5rem;
+}
+
+:root {
+  /* The bundled fonts are variable fonts, whose family names end in "Variable". Encode Sans carries its
+     widths in one file, so the compressed face is the same family at 75% width (see .font-ui below). */
+  --font-display: "Encode Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-compressed: "Encode Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body: "Open Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Fira Code", "Source Code Pro", Consolas, monospace;
+
+  --background: var(--surface-primary);
+  --foreground: var(--text-primary);
+  --card: var(--surface-primary);
+  --card-foreground: var(--text-primary);
+  --popover: var(--surface-primary);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--color-purple-700);
+  --primary-hover: var(--color-purple-900);
+  --primary-foreground: var(--color-white);
+  --secondary: var(--color-purple-50);
+  --secondary-foreground: var(--color-purple-900);
+  --muted: var(--surface-tertiary);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--color-purple-50);
+  --accent-foreground: var(--color-purple-900);
+  --destructive: var(--color-error);
+  --border: var(--border-default);
+  --input: var(--border-default);
+  --ring: var(--color-purple-700); /* at 50% this is the UW focus ring, rgba(75, 46, 131, 0.5) */
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-base leading-relaxed text-foreground;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading text-primary;
+  }
+  h1 {
+    @apply text-3xl leading-tight font-extrabold tracking-tight;
+  }
+  h2 {
+    @apply text-xl leading-snug font-semibold;
+  }
+  h3 {
+    @apply text-lg leading-snug font-semibold;
+  }
+  a {
+    @apply text-primary underline-offset-4 hover:text-primary-hover hover:underline;
+  }
+  code {
+    @apply font-mono text-sm font-medium;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Encode Sans Compressed, for buttons, navigation, labels and tags. */
+@utility font-ui {
+  font-family: var(--font-compressed);
+  font-stretch: 75%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

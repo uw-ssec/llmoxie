@@ -1,4 +1,4 @@
-"""Where to draw each concept of a knowledge graph. No script runs in the browser, so the page is laid out here.
+"""Where to draw each concept of a knowledge graph. Laid out here, so the page only has to draw it.
 
 A spring layout: linked concepts pull together, all concepts push apart. It starts from a circle and
 runs a fixed number of steps, so the same bundle always gives the same picture.
@@ -55,7 +55,7 @@ def layout(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[floa
 
 
 def picture(concepts: list[dict], edges: list[dict], selected: str | None) -> dict:
-    """What the template draws: nodes with a place and a colour class, and lines between them."""
+    """What the page draws: nodes with a place and a colour class, and lines between them."""
     degree = {c["id"]: 0 for c in concepts}
     for edge in edges:
         degree[edge["source"]] += 1

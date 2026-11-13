@@ -13,7 +13,7 @@ from fastapi import APIRouter, Form, Request, UploadFile
 from pydantic import BaseModel
 
 from . import graph, markdown, shapes
-from .visit import ApiError, Visit, broker_plain
+from .visit import NOT_FOUND, ApiError, Visit, broker_plain
 
 GATEWAY_URL = os.environ["GATEWAY_PUBLIC_URL"]
 LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", "")
@@ -455,3 +455,11 @@ def my_key_delete(request: Request, team_id: str, key_id: str):
     visit.require("my.key.delete", team_id=team_id)
     visit.broker("POST", f"/my/teams/{quote(team_id)}/keys/{quote(key_id)}/delete")
     return {"message": "Key deleted."}
+
+
+# ── Anything else under /web-api/ ───────────────────────────────────────────
+# Declared last. Without it an address that matches nothing would fall through to the application's page.
+
+@router.api_route("/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+def nowhere(rest: str):
+    raise ApiError(404, NOT_FOUND)

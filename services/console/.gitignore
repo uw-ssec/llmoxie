@@ -10,5 +10,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# The front end: its packages, and the build that console-web serves
+frontend/node_modules/
+console_app/web/dist/
+
 # Settings for `pixi run test` (see tests/env.example); holds the test stack's secrets
 tests/.env
