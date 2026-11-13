@@ -20,7 +20,7 @@ One image runs three services; the command picks which.
 
 | Service          | Command                                                         | Role                                                                                                                                                                                                               |
 | ---------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `console-web`    | `uvicorn console_app.web.app:app --host 0.0.0.0 --port 8200`    | Public pages. Signs people in (authorization code + PKCE), keeps sessions, turns forms into broker calls. Holds no LiteLLM credential; its database role can read only its session table.                          |
+| `console-web`    | `uvicorn console_app.web.app:app --host 0.0.0.0 --port 8200`    | The pages. Serves the React application that draws them (`frontend/`), signs people in (authorization code + PKCE), keeps sessions, and turns the application's calls into broker calls. Holds no LiteLLM credential; its database role can read only its session table.                          |
 | `console-broker` | `uvicorn console_app.broker.app:app --host 0.0.0.0 --port 8100` | Internal. Holds the LiteLLM admin key and all organization data. Offers fixed operations only (`console_app/broker/app.py`), each building its LiteLLM request from a template in `console_app/broker/litellm.py`. |
 | `console-init`   | `python init_admin_key.py`                                      | One-shot. Creates the broker's key as a `proxy_admin` user's key and writes it to a file the broker reads, so the broker never has the master key.                                                                 |
 
@@ -39,15 +39,55 @@ default. Three layers apply it:
 
 ## Getting started
 
-This project uses [Pixi](https://pixi.sh) for its tasks, and the `docker` CLI to
-build and test the image.
+This project uses [Pixi](https://pixi.sh) for its tasks and for Node, and the
+`docker` CLI to build and test the image.
 
 ```bash
-pixi run image # build llmoxie-console:dev
+pixi run image      # build llmoxie-console:dev, front end included
+pixi run ui-install # the front end's packages, for working on it locally
+pixi run ui-check   # lint, type-check and test the front end
+pixi run ui-build   # build it into console_app/web/dist, where console-web serves it
 ```
 
 The image installs the locked versions in `requirements.txt`; the test image
 adds `requirements-test.txt`.
+
+## The front end
+
+The pages are a React application in [`frontend/`](frontend/): Vite, TypeScript,
+React Router and Tailwind, with [shadcn/ui](https://ui.shadcn.com/) components
+copied into `frontend/src/components/ui/`. It is styled to the
+[SSEC design system](https://github.com/uw-ssec/uw-ssec.github.io/blob/staging/design-system/DESIGN.md):
+`frontend/src/styles/ssec-tokens.css` is a pinned, unmodified copy of that
+system's tokens, and `frontend/src/index.css` points shadcn's theme at them.
+
+`console-web` serves the built application for every page address. The
+application reads the address and asks `console-web` for that page's data
+through the browser API under `/web-api/` (`console_app/web/api.py`). That API
+is for the console's own pages and reads the session cookie; `/api/v1/` is the
+separate API for connected services. Signing in, signing out and accepting an
+invitation are plain form posts, because each ends at the identity provider.
+
+Three rules shape the front end:
+
+- **The browser is given only what a page shows.** The broker's replies hold
+  more than that, such as each person's `participant_id` beside their email.
+  `console_app/web/shapes.py` builds every response field by field, so a lead
+  never learns which `participant_id` is whose, and a field the broker adds
+  later stays on the server until it is listed there.
+- **Nothing inline, nothing from elsewhere.** The content security policy is
+  `default-src 'none'` plus the console's own script, styles, fonts, images and
+  API calls. A component that adds a `<style>` element at run time is refused
+  by it, so dialogs are built on the browser's `<dialog>` element and the one
+  dropdown is a native select, where shadcn's Radix versions would have needed
+  inline styles. Fonts are bundled, not loaded from a font service.
+- **A key is held in memory only.** A new or replacement key arrives in the
+  answer to the call that made it and lives in that screen's state. It is never
+  written to storage, the address or the session, so leaving or reloading the
+  page loses it.
+
+What a page hides is a courtesy. The server applies the policy to every call
+whatever the page shows.
 
 ## What the console needs
 
@@ -227,8 +267,10 @@ key from inside the environment (a device-login command), which is not built.
   by name, with expiry, last use and spend. They never see a key itself or any
   prompt or response content.
 - The session cookie is `__Host-Http-console`: Secure, HttpOnly,
-  SameSite=Strict. Forms carry a per-session token and cross-site posts are
-  refused. The console's pages run no script.
+  SameSite=Strict. Every post carries a per-session token (a header on the
+  application's calls, a field on the three plain forms) and cross-site posts
+  are refused. The pages run one script, the console's own; see
+  [The front end](#the-front-end).
 
 Left out, compared with the design: MFA and re-authentication for sensitive
 actions, monitoring alerts, dormant-account cleanup, consent-filtered exports
@@ -304,8 +346,9 @@ part of LiteLLM's configuration, not the console's.
 
 ## Tests
 
-The suite in `tests/` is end to end: it signs in through Keycloak, clicks
-through the console as admin, lead and participant, reads invitations from a
+The suite in `tests/` is end to end: it signs in through Keycloak, works
+through the console as admin, lead and participant by calling the browser API
+the pages call, reads invitations from a
 [Mailpit](https://mailpit.axllent.org) inbox, and sends requests through the
 gateway. It covers the gateway's path list, the full organization → team →
 participant → archive flow, every out-of-scope call being denied, connected
@@ -329,4 +372,14 @@ suite expects of the stack under test:
   with ceil-dlp as a guardrail
 
 It creates organizations, teams and accounts with a random suffix on every run
-and leaves them in place. CI builds the image and does not run the suite.
+and leaves them in place.
+
+Two parts need no stack. `tests/test_shapes.py` checks what each response may
+carry and runs with any `pytest`. The front end's own tests
+(`pixi run ui-check`) run each screen against a stand-in for `console-web`;
+they cover what the pages show to whom, that a key is kept nowhere, and that no
+dialog adds a style element.
+
+The suite does not drive a browser. After a change to the pages, walk each
+role's main flow in a real browser with the developer console open, and check
+that the content security policy blocked nothing.

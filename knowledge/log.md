@@ -1,4 +1,6 @@
 ## 2026-11-13
+* **Update**: Linked `decisions/console-react-front-end.md` to `decisions/platform-only-scope.md` (The console this front end belongs to is in the repo's scope by that decision).
+* **Creation**: Documented concept `decisions/console-react-front-end.md` (The console's pages are a React application served by console-web, under a policy that allows nothing inline).
 * **Update**: Updated concept `decisions/platform-only-scope.md`.
 
 ## 2026-11-12
