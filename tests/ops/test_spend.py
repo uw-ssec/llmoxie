@@ -321,6 +321,19 @@ class TestIterExtractRecords:
         assert list(iter_extract_records(directory)) == [record]
         assert list(iter_extract_records(single)) == [record]
 
+    def test_zip_skips_macos_metadata_entries(self, tmp_path):
+        """Finder-made archives carry AppleDouble entries that are not UTF-8."""
+        record = {"startTime": "2026-03-01T01:00:00Z", "spend": 1.0}
+        archive = tmp_path / "extract.zip"
+        junk = b"\x00\x05\x16\x07\xff\xfe\x80 not utf-8"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("__MACOSX/._spend.jsonl", junk)
+            zf.writestr("__MACOSX/spend/other.jsonl", junk)
+            zf.writestr("spend/._litellm.jsonl", junk)
+            zf.writestr("spend/litellm.jsonl", _jsonl([record]))
+
+        assert list(iter_extract_records(archive)) == [record]
+
 
 API_KEY = "sk-fetch-test-secret"
 BASE_URL = "https://litellm.example.test"
@@ -529,6 +542,64 @@ class TestFetchSpendRecords:
         assert len(requests) == 1
         assert API_KEY not in str(excinfo.value)
 
+    def test_fetch_invalid_base_url_raises_without_the_key(self):
+        """httpx.InvalidURL is not an HTTPError; it must not escape raw."""
+        day = date(2026, 3, 1)
+
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            raise AssertionError("no request should be sent")
+
+        with self._client(handler) as client, pytest.raises(SpendFetchError) as excinfo:
+            list(
+                fetch_spend_records(
+                    "https://litellm.example.test:notaport",
+                    API_KEY,
+                    day,
+                    day,
+                    client=client,
+                    sleep=lambda _: None,
+                )
+            )
+
+        message = str(excinfo.value)
+        assert API_KEY not in message
+        assert "notaport" not in message
+        assert "invalid LiteLLM base URL" in message
+
+    def test_fetch_stops_at_page_cap(self, monkeypatch):
+        """A server that never returns a short page cannot loop forever."""
+        monkeypatch.setattr(spend_module, "PAGE_SIZE", 2)
+        day = date(2026, 3, 1)
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200, json={"data": [_record(day, 0), _record(day, 1)]}
+            )
+
+        with self._client(handler) as client, pytest.raises(SpendFetchError) as excinfo:
+            list(
+                fetch_spend_records(
+                    BASE_URL,
+                    API_KEY,
+                    day,
+                    day,
+                    client=client,
+                    sleep=lambda _: None,
+                    max_pages_per_day=3,
+                )
+            )
+
+        assert len(requests) == 3
+        message = str(excinfo.value)
+        assert str(day) in message
+        assert "3" in message
+        assert API_KEY not in message
+
+    def test_default_page_cap(self):
+        assert spend_module.MAX_PAGES_PER_DAY == 1000
+
 
 class TestWriteCsv:
     def test_write_csv_columns_and_blanks(self, tmp_path):
@@ -556,6 +627,32 @@ class TestWriteCsv:
         text = path.read_text(encoding="utf-8")
         assert HASHED_KEY not in text
         assert HASHED_KEY[:8] in text
+
+    @pytest.mark.parametrize(
+        "label",
+        ['=HYPERLINK("x")', "+1", "-1", "@SUM(A1)", "\tcmd", "\rcmd"],
+    )
+    def test_csv_neutralises_formula_labels(self, tmp_path, label):
+        path = tmp_path / "spend.csv"
+
+        write_csv([SpendRow(label, -1.5, -2.0, 0.75, "")], path)
+
+        with path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.reader(handle))
+        # Only the text label is prefixed; numeric cells stay plain numbers.
+        assert rows[1] == [f"'{label}", "-1.5", "-2.0", "0.75", ""]
+
+    def test_csv_raw_key_label_is_unhashed_placeholder(self, tmp_path):
+        """The sk- mapping happens in group_label, before write_csv sees it."""
+        raw = "sk-raw-secret-key"
+        label = group_label({"api_key": raw, "spend": 1.0}, GroupBy.key)
+        path = tmp_path / "spend.csv"
+
+        write_csv([SpendRow(label, 1.0, None, None, "")], path)
+
+        text = path.read_text(encoding="utf-8")
+        assert raw not in text
+        assert "(unhashed key)" in text
 
 
 class TestRenderTable:
@@ -617,3 +714,14 @@ class TestRenderTable:
 
         assert "alpha" not in text
         assert "3.00" in text
+
+    def test_render_table_strips_control_characters_from_labels(self):
+        rows = [SpendRow("\x1b]0;evil\x07alias", 1.0, None, None, "")]
+        console = Console(record=True, width=120)
+
+        console.print(render_table(rows, title="Spend", top=None))
+        text = console.export_text(styles=False)
+
+        assert "\x1b" not in text
+        assert "\x07" not in text
+        assert "]0;evilalias" in text

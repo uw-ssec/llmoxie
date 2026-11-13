@@ -17,6 +17,7 @@ import csv
 import io
 import json
 import time
+import unicodedata
 import zipfile
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -34,6 +35,14 @@ KEY_LABEL_PREFIX_LEN = 8
 # The server caps ``page_size`` at 1000 (``ge=1, le=1000``); asking for more is
 # a 422. A page shorter than this is the only reliable end-of-day signal.
 PAGE_SIZE = 1000
+
+# Upper bound on pages fetched for one day, so a server that never returns a
+# short page cannot keep the report paging forever.
+MAX_PAGES_PER_DAY = 1000
+
+# A CSV cell starting with one of these is read as a formula by spreadsheet
+# apps; labels come from user data, so such a label is prefixed with "'".
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 class SpendFetchError(Exception):
@@ -212,7 +221,8 @@ def write_csv(rows: list[SpendRow], path: Path) -> None:
     A ``None`` comparison value is written as an empty cell rather than the
     string "None". Spend and ratio are written as plain numbers so the file
     stays machine-readable; the labels are the same ones the table shows, so
-    no raw api key reaches the file (okf ``cli-output-data-safety``).
+    no raw api key reaches the file (okf ``cli-output-data-safety``). A label
+    that a spreadsheet would read as a formula is prefixed with ``'``.
     """
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
@@ -220,13 +230,22 @@ def write_csv(rows: list[SpendRow], path: Path) -> None:
         for row in rows:
             writer.writerow(
                 [
-                    row.label,
+                    _csv_safe_label(row.label),
                     row.spend,
                     "" if row.prior is None else row.prior,
                     "" if row.ratio is None else row.ratio,
                     row.flag,
                 ]
             )
+
+
+def _csv_safe_label(label: str) -> str:
+    return f"'{label}" if label.startswith(_CSV_FORMULA_PREFIXES) else label
+
+
+def _strip_control_chars(text: str) -> str:
+    """Drop control characters so a label cannot carry terminal escapes."""
+    return "".join(char for char in text if unicodedata.category(char) != "Cc")
 
 
 def _money(value: float) -> str:
@@ -245,6 +264,8 @@ def render_table(rows: list[SpendRow], *, title: str, top: int | None) -> Table:
     aliases — so both are wrapped in ``Text`` and render verbatim. Left as
     plain strings, rich would read square brackets as markup: ``model[beta]``
     would print as ``model`` and ``team[/x]`` would raise ``MarkupError``.
+    Control characters are stripped from labels so an alias cannot smuggle
+    terminal escape sequences into the operator's terminal.
     """
     table = Table(title=Text(title), show_header=True, header_style="bold")
     table.add_column("Label")
@@ -256,7 +277,7 @@ def render_table(rows: list[SpendRow], *, title: str, top: int | None) -> Table:
     shown = rows if top is None else rows[:top]
     for row in shown:
         table.add_row(
-            Text(row.label),
+            Text(_strip_control_chars(row.label)),
             _money(row.spend),
             "" if row.prior is None else _money(row.prior),
             "" if row.ratio is None else f"{row.ratio:.2f}",
@@ -310,6 +331,12 @@ def iter_extract_records(path: Path) -> Iterator[dict]:
         with zipfile.ZipFile(path) as archive:
             for name in sorted(archive.namelist()):
                 if not name.endswith(".jsonl"):
+                    continue
+                # macOS Finder adds AppleDouble metadata entries that share
+                # the .jsonl suffix but are binary, not UTF-8 JSONL.
+                if name.startswith("__MACOSX/") or name.rsplit("/", 1)[-1].startswith(
+                    "._"
+                ):
                     continue
                 with archive.open(name) as entry:
                     # Iterate a text handle rather than decoding the whole
@@ -372,6 +399,10 @@ def _fetch_page(
             # key with a stray newline -- which would put the master key in
             # the error the CLI prints (okf ``cli-output-data-safety``).
             last_error = type(exc).__name__
+        except httpx.InvalidURL:
+            # Not an HTTPError subclass. Its message quotes the URL, so it is
+            # replaced, and no retry can fix a malformed URL.
+            raise SpendFetchError("invalid LiteLLM base URL.") from None
         else:
             if response.status_code < 400:
                 break
@@ -414,6 +445,7 @@ def fetch_spend_records(
     client: httpx.Client | None = None,
     sleep: Callable[[float], None] = time.sleep,
     attempts: int = 3,
+    max_pages_per_day: int = MAX_PAGES_PER_DAY,
 ) -> Iterator[dict]:
     """Yield spend-log records for every UTC day in ``[start, end]``.
 
@@ -421,7 +453,8 @@ def fetch_spend_records(
     paging until a page comes back shorter than ``PAGE_SIZE``. The ``total``
     and ``total_pages`` fields stop counting at 10,000 records, so they never
     drive the loop. Only records whose own day matches the day being fetched
-    are yielded.
+    are yielded. More than ``max_pages_per_day`` full pages for one day raises
+    ``SpendFetchError`` rather than paging forever.
     """
     owned = client is None
     http = client if client is not None else httpx.Client(timeout=30.0)
@@ -438,6 +471,12 @@ def fetch_spend_records(
                         yield record
                 if len(records) < PAGE_SIZE:
                     break
+                if page >= max_pages_per_day:
+                    raise SpendFetchError(
+                        f"Stopped fetching spend logs for day {day} after "
+                        f"{max_pages_per_day} full pages; the server never "
+                        "returned a short page."
+                    )
                 page += 1
             day += timedelta(days=1)
     finally:

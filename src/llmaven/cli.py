@@ -31,6 +31,7 @@ app = typer.Typer(
     name="llmaven",
     help="LLMaven - CLI for Scientific Discovery",
     add_completion=False,
+    pretty_exceptions_show_locals=False,
 )
 
 # Create subcommand for infrastructure management
@@ -38,6 +39,7 @@ infra_app = typer.Typer(
     name="infra",
     help="Infrastructure deployment and management commands",
     add_completion=False,
+    pretty_exceptions_show_locals=False,
 )
 app.add_typer(infra_app)
 
@@ -46,6 +48,7 @@ backup_infra_app = typer.Typer(
     name="backup-infra",
     help="Backup storage infrastructure commands",
     add_completion=False,
+    pretty_exceptions_show_locals=False,
 )
 app.add_typer(backup_infra_app)
 

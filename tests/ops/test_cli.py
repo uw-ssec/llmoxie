@@ -195,6 +195,49 @@ def test_spend_report_transport_error_never_prints_the_key(monkeypatch, runner):
     assert "sk-SECRET" not in result.output
 
 
+def test_spend_report_invalid_base_url_never_prints_the_key(runner):
+    """A malformed base URL fails cleanly and the key never reaches output."""
+    secret = "sk-SECRET-master-key"
+    ops_app = build_ops_app(lambda env_file: ("https://litellm.test:notaport", secret))
+
+    result = runner.invoke(
+        ops_app,
+        ["spend-report", "--start", "2026-03-03", "--end", "2026-03-04"],
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "✗" in result.stderr
+    assert secret not in result.output
+
+
+def test_typer_apps_hide_traceback_locals():
+    """Pretty tracebacks must not dump frame locals such as api_key."""
+    from llmaven.cli import backup_infra_app, infra_app
+
+    ops_app = build_ops_app(lambda env_file: ("https://litellm.test", "k"))
+    for typer_app in (app, infra_app, backup_infra_app, ops_app):
+        assert typer_app.pretty_exceptions_show_locals is False
+
+
+def test_spend_report_rejects_threshold_below_one(runner):
+    """``--threshold 0`` would flag every row; it is a usage error."""
+    result = runner.invoke(
+        app,
+        [
+            "ops",
+            "spend-report",
+            "--start",
+            "2026-03-03",
+            "--end",
+            "2026-03-04",
+            "--threshold",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 2
+
+
 def test_spend_report_csv_path_with_brackets_is_verbatim(tmp_path, runner):
     """Square brackets in a path are not read as Rich markup on stderr."""
     archive = _write_zip(

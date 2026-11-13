@@ -51,6 +51,7 @@ def build_ops_app(
         name="ops",
         help="Operator reports for a deployed LLMaven platform",
         add_completion=False,
+        pretty_exceptions_show_locals=False,
     )
     console = Console()
     console_err = Console(stderr=True)
@@ -93,6 +94,7 @@ def build_ops_app(
             2.0,
             "--threshold",
             help="Flag a row as a spike at this multiple of its baseline spend",
+            min=1.0,
         ),
         top: int | None = typer.Option(
             None,
@@ -103,7 +105,12 @@ def build_ops_app(
         from_zip: Path | None = typer.Option(
             None,
             "--from-zip",
-            help="Read records from `llmaven infra extract` output instead of LiteLLM",
+            help=(
+                "Read records from `llmaven infra extract` output instead of "
+                "LiteLLM. Inherits extract's limits: it reads the deprecated "
+                "/spend/logs endpoint, which may truncate at ~10k rows per "
+                "day, so totals may be incomplete"
+            ),
             exists=True,
             readable=True,
             resolve_path=True,
