@@ -7,13 +7,15 @@
 
 **Goal:** Add `llmaven ops spend-report`. It shows which key, user, model or
 team drove LLM spend in a date range, flags rows against the window before it,
-and is named in the `llm_spend` alert email through an `investigate` custom
-property.
+and is named in the `llm_spend` alert payload through an `investigate` custom
+property. Verified fact 4 says custom properties reach webhook, Logic App, Azure
+Function and Automation runbook receivers only, so an operator who gets the
+alert by email does not see the hint.
 
 **Architecture:** A new package, `src/llmaven/ops/`, that imports nothing from
 `llmaven.cli` or `llmaven.data`.
 
-- `spend.py` holds pure functions and its own `/spend/logs` fetch loop.
+- `spend.py` holds pure functions and its own `/spend/logs/v2` fetch loop.
 - `__init__.py` holds `build_ops_app(get_credentials)`, which returns the Typer
   group.
 - `cli.py` registers the group once and passes in a callback that returns
@@ -54,6 +56,13 @@ stdlib `zipfile`/`json`/`csv`, and Pulumi `pulumi-azure-native` 3.29.0.
 - **Spec correction:** in `pulumi-azure-native`, `custom_properties` is a field
   of `monitor.ActionsArgs`, not of `ScheduledQueryRule`. It is set there and
   shows up as `rule.inputs["actions"]["customProperties"]`.
+- **Spec correction:** custom properties do not reach email, SMS or push
+  recipients, and do not show on the portal alert details page (verified fact
+  4). Nothing in this plan may claim the alert email names the command. The
+  property is still set, because it does reach webhook, Logic App, Azure
+  Function and Automation runbook receivers.
+- **Spec correction:** `/spend/logs` is deprecated and truncates at 10,000 rows
+  (verified facts 3 and 6). Task 5 calls `/spend/logs/v2` and paginates.
 - **Commits:**
   - Conventional format with scope `cli` (Tasks 2–7, 9) or `infra` (Task 8).
   - Add an `Assisted-by: <harness>:<model>` trailer.
@@ -63,24 +72,32 @@ stdlib `zipfile`/`json`/`csv`, and Pulumi `pulumi-azure-native` 3.29.0.
 
 ## Review Focus
 
-1. **Day-boundary double counting.** Each per-day request sends
-   `end_date=day+1`, as the extract does. If LiteLLM treats that bound as
-   inclusive, consecutive days overlap. `fetch_spend_records` keeps only the
+1. **Day boundaries.** `/spend/logs/v2` compares `startTime` with `>=` against
+   `start_date` and `<=` against `end_date`, and parses a bare `YYYY-MM-DD` as
+   midnight UTC (verified fact 6). A per-day request must therefore send
+   `end_date="<day> 23:59:59"`, or it returns only the records at exactly
+   `00:00:00Z`. Both bounds being inclusive also means neighbouring days can
+   overlap at the second boundary, so `fetch_spend_records` keeps only the
    records whose `startTime` falls on the requested day. Test in Task 5.
 2. **`startTime` formats.** A trailing `Z`, a `+00:00` or other offset, and a
    naive timestamp must all land on the right UTC day. A missing or unparsable
    value is dropped and never crashes. Test in Task 2.
 3. **Missing or `None` spend.** A missing or `None` `spend` counts as `0.0` and
    never raises. Test in Task 2.
-4. **Non-list response body.** This is an error naming the day; the report does
-   not silently skip the day and under-report. The CLI exits 1 with `✗`, and the
-   message never contains the key. Test in Task 5 (error) and Task 7 (exit
-   code).
+4. **Unexpected response body.** A body that is not a mapping with a list `data`
+   is an error naming the day; the report does not silently skip the day and
+   under-report. The CLI exits 1 with `✗`, and the message never contains the
+   key. Test in Task 5 (error) and Task 7 (exit code).
 5. **Key leaks.** The full `api_key` value never appears in a label or CSV. An
    `api_key` that looks raw (`sk-` prefix) is labelled `(unhashed key)`, not by
    its prefix. Test in Tasks 2 and 6.
 
-Items 4 and 5 go beyond the spec, which says nothing about non-list bodies or
+6. **Truncated pages.** `total` and `total_pages` from `/spend/logs/v2` stop
+   counting at 10,000 records (verified fact 6), so they cannot drive the
+   pagination loop. `fetch_spend_records` pages until a page comes back shorter
+   than `page_size`. Test in Task 5.
+
+Items 4 and 5 go beyond the spec, which says nothing about unexpected bodies or
 raw keys. They are deliberate choices: fail loudly rather than under-report, and
 never print a raw key prefix.
 
@@ -101,10 +118,14 @@ never print a raw key prefix.
 | 3   | Is `/spend/logs` `end_date` inclusive?                                                 | It may be. Task 5 filters by day either way                    | `litellm/proxy/spend_tracking/spend_management_endpoints.py` (`view_spend_logs`)                     |
 | 4   | Does a log alert's `actions.customProperties` appear in the common-schema alert email? | Yes, under "Custom properties"                                 | Azure docs "Log search alert rule – custom properties"                                               |
 | 5   | Is `custom_properties` on `monitor.ActionsArgs` in `pulumi-azure-native` 3.29.0?       | Yes (already confirmed in `_inputs.py` of the installed SDK)   | Already checked                                                                                      |
+| 6   | What does `/spend/logs/v2` require and return?                                         | Added after row 3 showed `/spend/logs` is deprecated           | `spend_management_endpoints.py` (`ui_view_spend_logs`) at the pinned image tag                       |
 
 - [x] **Step 1: Answer each row** in `## Verified facts`. If an answer
-      contradicts an assumption, stop and update the affected task first.
-      Row 4 is contradicted — see the concern noted in the task 1 report.
+      contradicts an assumption, stop and update the affected task first. Row 4
+      is contradicted: custom properties never reach email, SMS or push
+      recipients, so the Goal, Task 8 and the spec were rewritten to say "alert
+      payload" and to name the receivers that do see it. Row 3 sent Task 5 to
+      `/spend/logs/v2`, which row 6 then covers.
 - [x] **Step 2: Commit.**
       `git commit -m "docs(cli): verify facts for the ops spend-report plan"`
 
@@ -137,14 +158,20 @@ and returns `None` for a missing or bad value. Key fallback order:
 3. `key:<first 8 chars>` if `api_key` is set
 4. `(no key)`
 
+Team labels follow verified fact 1: `team_id` is a top-level column, and
+`get_logging_payload` writes `""` when a request has no team. `group_label`
+therefore treats `""` exactly like a missing value and falls back to
+`metadata.user_api_key_team_alias`, then to `(no team)`.
+
 - [ ] **Step 1: Write failing tests.**
   - `test_record_day_formats`: parametrized over `"2026-03-01T23:30:00Z"`,
     `"2026-03-01T23:30:00+00:00"`, `"2026-03-02T01:30:00+02:00"` and
     `"2026-03-01T23:30:00"`. Each gives `date(2026, 3, 1)`. `None`, `""` and
     `"garbage"` give `None`.
   - `test_group_label`: parametrized over every `--by` and every fallback (spec
-    table plus the two key fallbacks). Asserts the full 64-char hash is not in
-    the label.
+    table plus the two key fallbacks). Covers `team_id: ""`, which must fall
+    back rather than become an empty label. Asserts the full 64-char hash is not
+    in the label.
   - `test_aggregate_window_and_missing_spend`: records on `start - 1`, `start`,
     `end` and `end + 1`. Only the middle two count. `spend: None` and a missing
     `spend` add `0.0`. A record with no `startTime` is dropped.
@@ -232,20 +259,34 @@ dict objects. Any other kind of path raises `ValueError`.
 
 **Interfaces:**
 
-- Consumes: LiteLLM `GET {base_url}/spend/logs`.
+- Consumes: LiteLLM `GET {base_url}/spend/logs/v2`.
 - Produces:
   - `class SpendFetchError(Exception)`
+  - `PAGE_SIZE = 1000`
   - `def fetch_spend_records(base_url: str, api_key: str, start: date, end: date, *, client: httpx.Client | None = None, sleep: Callable[[float], None] = time.sleep, attempts: int = 3) -> Iterator[dict]`
 
-For each day from `start` to `end`:
+`/spend/logs` is deprecated and silently truncates at 10,000 rows (verified
+facts 3 and 6), so this uses `/spend/logs/v2`.
 
-- Send `params={"start_date": day, "end_date": day + 1, "summarize": "false"}`
-  with the header `Authorization: Bearer <api_key>`.
+For each day from `start` to `end`, page from `page = 1`:
+
+- Send
+  `params={"start_date": f"{day} 00:00:00", "end_date": f"{day} 23:59:59", "page": page, "page_size": PAGE_SIZE}`
+  with the header `Authorization: Bearer <api_key>`. Both date bounds are
+  inclusive and a bare `YYYY-MM-DD` parses as midnight UTC, so the explicit
+  `23:59:59` is what makes the day whole (verified fact 6).
+- Read the page from `body["data"]`. Stop the day when `len(data) < PAGE_SIZE`,
+  otherwise increment `page`. Do **not** use `total` or `total_pages`: both are
+  capped at 10,000 records and under-report a busy day (Review Focus 6).
 - Retry transport errors and 5xx up to `attempts`, sleeping `2 ** attempt`
-  seconds.
-- Raise `SpendFetchError` on a 4xx, on exhausted retries, or on a non-list body.
-  The message names the day and the status, never the key.
+  seconds. A retry re-sends the same page.
+- Raise `SpendFetchError` on a 4xx, on exhausted retries, or on a body that is
+  not a mapping with a list under `data`. The message names the day and the
+  page, never the key.
 - Yield only the records where `record_day(record) == day`.
+
+`PAGE_SIZE` is 1000 because that is the server's `le` bound on `page_size`
+(verified fact 6); a larger value is a 422.
 
 When `client` is `None`, create `httpx.Client(timeout=30.0)` and close it
 afterwards.
@@ -253,14 +294,24 @@ afterwards.
 - [ ] **Step 1: Write failing tests** using
       `httpx.Client(transport=httpx.MockTransport(handler))` and
       `sleep=lambda s: None`.
-  - `test_fetch_one_request_per_day`: a 3-day range makes 3 requests, each with
-    `summarize=false`, the right dates and a bearer header.
+  - `test_fetch_one_request_per_day`: a 3-day range whose days each fit in one
+    page makes 3 requests, each with `page=1`, `page_size=1000`,
+    `start_date="<day> 00:00:00"`, `end_date="<day> 23:59:59"` and a bearer
+    header.
+  - `test_fetch_pages_until_short_page`: a day whose first page returns
+    `PAGE_SIZE` records and whose second returns fewer makes two requests for
+    that day and yields both pages. Use a small monkeypatched `PAGE_SIZE` so the
+    fixture stays readable.
+  - `test_fetch_ignores_capped_totals`: the handler reports `total: 10000` and
+    `total_pages: 10` while returning a short first page; exactly one request is
+    made for that day (Review Focus 6).
   - `test_fetch_drops_records_from_next_day`: the handler returns a record for
     `day` and one for `day + 1`, and only the first is yielded (Review Focus 1).
   - `test_fetch_retries_5xx_then_succeeds`: the first response is 503, the
     second is 200.
-  - `test_fetch_non_list_body_raises`: a `{"detail": ...}` body raises
-    `SpendFetchError`, and `api_key` is not in `str(exc)`.
+  - `test_fetch_bad_body_raises`: a `{"detail": ...}` body, and a body whose
+    `data` is not a list, each raise `SpendFetchError`, and `api_key` is not in
+    `str(exc)`.
   - `test_fetch_4xx_raises_without_retry`: a 401 makes exactly one request.
 - [ ] **Step 2: Run them and confirm they fail.**
 - [ ] **Step 3: Implement.**
@@ -387,6 +438,13 @@ Command flow:
   and
   `actions=ActionsArgs(action_groups=[...], custom_properties={"investigate": LLM_SPEND_INVESTIGATE})`.
 
+Verified fact 4: custom properties are carried only in webhook, Logic App, Azure
+Function and Automation runbook payloads. They are absent from email, SMS and
+push notifications, and from the portal alert details page. Setting the property
+is still worth it, because it makes the hint available to any such receiver
+added to the action group later, but the docstring and the commit must not
+promise it in the email. Leave a comment on the constant saying so.
+
 - [ ] **Step 1: Write a failing test.** Extend
       `test_llm_spend_hourly_and_daily_rules` so that, for both rules,
       `rule.inputs["actions"]["customProperties"] == {"investigate": LLM_SPEND_INVESTIGATE}`.
@@ -395,7 +453,7 @@ Command flow:
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run it and confirm it passes.**
 - [ ] **Step 5: Commit.**
-      `feat(infra): name ops spend-report in llm_spend alerts`
+      `feat(infra): attach ops spend-report hint to llm_spend alert payloads`
 
 ---
 
@@ -411,10 +469,17 @@ Command flow:
 
 ## Verified facts
 
-| #   | Answer                                                  | Source                                             |
-| --- | ------------------------------------------------------- | -------------------------------------------------- |
-| 1   | Confirmed: `LiteLLM_SpendLogs.team_id String?` is a top-level column; the display name is `metadata.user_api_key_team_alias`. `get_logging_payload` sets `team_id=metadata.get("user_api_key_team_id", "") or ""` | litellm `v1.108.6`: `schema.prisma` (`model LiteLLM_SpendLogs`), `litellm/proxy/_types.py` (`class SpendLogsMetadata`), `litellm/proxy/spend_tracking/spend_tracking_utils.py` (`get_logging_payload`, ~L847) |
-| 2   | Confirmed: SHA-256 hex, never `sk-...`. Schema comment: `// Hashed API Token. Not the actual Virtual Key.` `_redact_logged_api_key` strips `bearer ` and returns `hash_token(...)`, which is `hashlib.sha256(token.encode()).hexdigest()` | litellm `v1.108.6`: `schema.prisma` (`api_key` column), `litellm/proxy/spend_tracking/spend_tracking_utils.py` (`_redact_logged_api_key`, L~139), `litellm/proxy/utils.py` (`hash_token`, L8026) |
-| 3   | Effectively no. The filter is `startTime: {gte: start, lte: end}`, but `end_date` is parsed as `strptime(end, "%Y-%m-%d").replace(tzinfo=utc)` — midnight — so only records at exactly `00:00:00Z` on the end day match. (Route is `[DEPRECATED]` in favour of `/spend/logs/v2` and caps at 10,000 rows.) Task 5 filters by day either way, so the assumption holds | litellm `v1.108.6`: `litellm/proxy/spend_tracking/spend_management_endpoints.py` (`view_spend_logs`, L3511) |
-| 4   | **Contradicted.** Custom properties are added only to webhook / Logic Apps / Azure Functions / Automation runbook payloads. Verbatim: "They aren't included in email, SMS, or push notifications, and they don't appear in the alert details page in the Azure portal." The common schema does define a top-level `customProperties` object, but only for webhook notifications | [Create Azure Monitor log search alert rules](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-create-log-alert-rule) (Custom properties note); [Common alert schema](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-common-schema) (Custom properties fields) |
-| 5   | Yes: `ActionsArgs.custom_properties: Mapping[str, str]` | installed `pulumi_azure_native/monitor/_inputs.py` |
+| #   | Answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Source                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Confirmed: `LiteLLM_SpendLogs.team_id String?` is a top-level column; the display name is `metadata.user_api_key_team_alias`. `get_logging_payload` sets `team_id=metadata.get("user_api_key_team_id", "") or ""`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | litellm `v1.108.6`: `schema.prisma` (`model LiteLLM_SpendLogs`), `litellm/proxy/_types.py` (`class SpendLogsMetadata`), `litellm/proxy/spend_tracking/spend_tracking_utils.py` (`get_logging_payload` L542, `team_id=` L847)                                                                                                                                                                                                                                                                                    |
+| 2   | Confirmed: SHA-256 hex, never `sk-...`. Schema comment: `// Hashed API Token. Not the actual Virtual Key.` `_redact_logged_api_key` strips `bearer ` and returns `hash_token(...)`, which is `hashlib.sha256(token.encode()).hexdigest()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | litellm `v1.108.6`: `schema.prisma` (`api_key` column), `litellm/proxy/spend_tracking/spend_tracking_utils.py` (`_redact_logged_api_key` L139), `litellm/proxy/utils.py` (`hash_token` L8026)                                                                                                                                                                                                                                                                                                                   |
+| 3   | Effectively no. The filter is `startTime: {gte: start, lte: end}`, but `end_date` is parsed as `strptime(end, "%Y-%m-%d").replace(tzinfo=utc)` — midnight — so only records at exactly `00:00:00Z` on the end day match. The route is `[DEPRECATED]` in favour of `/spend/logs/v2` and takes at most `SPEND_LOGS_PAGINATION_COUNT_CAP` (10,000) rows, logging `"/spend/logs result truncated to the %s most recent rows"`. **Consequence:** Task 5 moved to `/spend/logs/v2` (row 6)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | litellm `v1.108.6`: `litellm/proxy/spend_tracking/spend_management_endpoints.py` (`view_spend_logs`, L3511; `take=SPEND_LOGS_PAGINATION_COUNT_CAP` L3642 and L3695; truncation warning L385)                                                                                                                                                                                                                                                                                                                    |
+| 4   | **Contradicted.** Custom properties are added only to webhook / Logic Apps / Azure Functions / Automation runbook payloads. Verbatim: "They aren't included in email, SMS, or push notifications, and they don't appear in the alert details page in the Azure portal." The common schema does define a top-level `customProperties` object, but only for webhook notifications                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [Create Azure Monitor log search alert rules](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-create-log-alert-rule) (Custom properties note); [Common alert schema](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-common-schema) (Custom properties fields)                                                                                                                                                                                                          |
+| 5   | Yes: `ActionsArgs.custom_properties: Mapping[str, str]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | installed `pulumi_azure_native/monitor/_inputs.py`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 6   | `/spend/logs/v2` and `/spend/logs/ui` both route to `ui_view_spend_logs`. `start_date` and `end_date` are required (a missing one is a 400 `"Start date and end date are required"`). v2 accepts `"%Y-%m-%d %H:%M:%S"` or `"%Y-%m-%d"`; both are parsed with `strptime(...).replace(tzinfo=timezone.utc)`, so a bare date is midnight UTC. The SQL filter is `"startTime" >= $p` **and** `"startTime" <= $p`, inclusive at both ends — a whole day needs `end_date="<day> 23:59:59"`. Paging is `page` (`ge=1`, default 1) and `page_size` (`ge=1, le=1000`, default 50), applied as `LIMIT page_size OFFSET (page-1)*page_size`. The body is `{"data": [...], "total", "page", "page_size", "total_pages", "total_is_capped"}`. `total` is counted with `LIMIT CAP + 1` and clamped to `SPEND_LOGS_PAGINATION_COUNT_CAP = 10000`, and `total_pages` is derived from it — **so neither may drive a pagination loop**; page until a short page. The selected columns include `api_key`, `"user"`, `model`, `team_id`, `spend`, `"startTime"` and `metadata`, and exclude `messages`, `response` and `proxy_server_request`. A JSONB `metadata` returned as a string is `json.loads`-ed back to a dict with its keys untouched, so `user_api_key_alias` survives | litellm `v1.108.6`: `litellm/proxy/spend_tracking/spend_management_endpoints.py` — route decorators L2513/L2521 and handler `ui_view_spend_logs` L2529; `is_v2` L2660; `page`/`page_size` L2568–L2569; required dates L2714–L2722; accepted formats L2723; inclusive bounds L2867/L2870; `_SPEND_LOG_LIST_COLUMNS` L111–L123; `_hydrate_spend_log_metadata` L3311; `SPEND_LOGS_PAGINATION_COUNT_CAP` L87, count cap L3041 and `total_pages` L3084; response dict in `_build_ui_spend_logs_response` L4837–L4844 |
+
+Residual uncertainty on row 6: `user_api_key_team_alias` does not appear
+anywhere in `spend_management_endpoints.py`. Row 1 is the evidence that LiteLLM
+writes it into `metadata`, and row 6 only shows that `/spend/logs/v2` returns
+`metadata` unmodified. Task 9 Step 2 is still the check that the team label
+fills in against a real deployment.
