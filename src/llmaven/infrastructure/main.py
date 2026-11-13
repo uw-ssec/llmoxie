@@ -404,6 +404,7 @@ def create_pulumi_program(config_path: Path):
         mlflow_app = litellm_app = backup_job = None
 
         # 8.1. MLflow Container App
+        mlflow_tracking_uri_secret = None
         if config.mlflow and config.mlflow.enabled:
             pulumi.log.info("Creating MLflow Container App...")
 
@@ -435,7 +436,9 @@ def create_pulumi_program(config_path: Path):
             )
 
             # Create MLflow tracking URI secret
-            secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
+            mlflow_tracking_uri_secret = (
+                secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
+            )
 
             # Export MLflow URL
             if config.edge.enabled:
@@ -470,6 +473,12 @@ def create_pulumi_program(config_path: Path):
             if config.redis.enabled:
                 litellm_env_vars.update(REDIS_ENV_VARS)
                 litellm_secret_refs.update(REDIS_KEY_VAULT_SECRET_REFS)
+            if config.edge.enabled and config.litellm.hostname:
+                # The edge sends LiteLLM its internal FQDN as Host, so LiteLLM
+                # builds its login redirect from this instead; operator wins.
+                litellm_env_vars.setdefault(
+                    "PROXY_BASE_URL", f"https://{config.litellm.hostname}"
+                )
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
@@ -495,6 +504,11 @@ def create_pulumi_program(config_path: Path):
                         storage_conn_str_secret,
                         *foundry_dependencies,
                         *redis_dependencies,
+                        *(
+                            [mlflow_tracking_uri_secret]
+                            if mlflow_tracking_uri_secret is not None
+                            else []
+                        ),
                     ]
                 ),
                 extra_modules=[adl_logger_path],
@@ -526,7 +540,9 @@ def create_pulumi_program(config_path: Path):
         if config.edge.enabled:
             pulumi.log.info("Creating Traefik edge Container App...")
             backends = {
-                key: app.configuration.apply(lambda c: c.ingress.fqdn)
+                key: app.configuration.apply(
+                    lambda c: c.ingress.fqdn if c and c.ingress else None
+                )
                 for key, app in (("litellm", litellm_app), ("mlflow", mlflow_app))
                 if app is not None
             }

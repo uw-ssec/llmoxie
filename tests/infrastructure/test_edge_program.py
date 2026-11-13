@@ -183,3 +183,29 @@ def test_without_edge_apps_keep_public_ingress_and_sidecar(tmp_path, monkeypatch
     assert exports["litellm_url"] == "https://llmaven-dev-litellm.env.test"
     assert exports["mlflow_url"] == "https://llmaven-dev-mlflow.env.test"
     assert "edge_url" not in exports
+
+
+def test_with_edge_litellm_gets_its_public_url(with_edge):
+    env = with_edge[2]["llmaven-dev-litellm"]["env_vars"]
+    assert env["PROXY_BASE_URL"] == f"https://{LITELLM_HOST}"
+
+
+def test_with_edge_litellm_waits_for_the_tracking_uri_secret(with_edge):
+    opts = with_edge[2]["llmaven-dev-litellm"]["opts"]
+    names = [d._name for d in opts.depends_on]
+    assert any("mlflow-tracking-uri" in n for n in names)
+
+
+def test_with_edge_operator_proxy_base_url_wins(tmp_path, monkeypatch):
+    _, _, apps = _run(
+        tmp_path,
+        monkeypatch,
+        **_with_edge(env_vars={"PROXY_BASE_URL": "https://other.example.org"}),
+    )
+    env = apps["llmaven-dev-litellm"]["env_vars"]
+    assert env["PROXY_BASE_URL"] == "https://other.example.org"
+
+
+def test_without_edge_litellm_has_no_proxy_base_url(tmp_path, monkeypatch):
+    _, _, apps = _run(tmp_path, monkeypatch)
+    assert "PROXY_BASE_URL" not in apps["llmaven-dev-litellm"]["env_vars"]
