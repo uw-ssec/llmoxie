@@ -65,3 +65,47 @@ def test_invitation_lookup_needs_no_session():
     r = Browser().api_get("/invites/" + "x" * 30)
     assert r.status_code == 200 and r.json() == {"valid": False}
     assert Browser().api_get("/invites/short").json() == {"valid": False}
+
+
+# ── Actions ─────────────────────────────────────────────────────────────────
+
+def test_posts_without_the_csrf_header_are_refused():
+    alice = sign_in("alice", "alice123")
+    r = alice.api_post("/admin/orgs", {"name": "N", "slug": "n-x", "budget_ceiling": 1}, csrf=None)
+    assert r.status_code == 403 and "expired" in r.json()["error"]["message"]
+    r = alice.api_post("/admin/orgs", {"name": "N", "slug": "n-x", "budget_ceiling": 1}, csrf="not-the-token")
+    assert r.status_code == 403 and r.json()["error"]["status"] == 403
+
+
+def test_cross_site_posts_are_refused_before_anything_else():
+    alice = sign_in("alice", "alice123")
+    r = alice.request("POST", CONSOLE + "/web-api/admin/orgs", headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403
+
+
+def test_posts_need_a_session():
+    r = Browser().api_post("/admin/orgs", {"name": "N", "slug": "n-x", "budget_ceiling": 1})
+    assert r.status_code == 401 and r.json()["error"]["message"] == "You are signed out."
+
+
+def test_a_bad_value_comes_back_as_a_message_not_a_stack_trace():
+    alice = sign_in("alice", "alice123")
+    r = alice.api_post("/admin/orgs", {"name": "N", "slug": "Not A Slug", "budget_ceiling": 1})
+    assert r.status_code == 422 and isinstance(r.json()["error"]["message"], str)
+    r = alice.api_post("/admin/orgs", {"name": "N"})  # fields missing altogether
+    assert r.status_code == 422 and r.json() == {"error": {"status": 422, "message": "Some of those values are not valid."}}
+
+
+def test_creating_an_org_answers_with_a_message_and_where_to_go():
+    alice = sign_in("alice", "alice123")
+    r = alice.api_post("/admin/orgs", {"name": f"Web API {RUN}", "slug": f"wa-{RUN}", "budget_ceiling": 5})
+    body = r.json()
+    assert r.status_code == 200 and body["message"] == f"Created Web API {RUN}."
+    assert body["goto"].startswith("/orgs/") and set(body) == {"message", "goto"}
+    org_id = body["goto"].removeprefix("/orgs/")
+    assert alice.api_get(f"/orgs/{org_id}").json()["org"]["slug"] == f"wa-{RUN}"
+    taken = alice.api_post("/admin/orgs", {"name": "Again", "slug": f"wa-{RUN}", "budget_ceiling": 5})
+    assert taken.status_code == 409 and isinstance(taken.json()["error"]["message"], str)
+    removed = alice.api_post(f"/admin/orgs/{org_id}/remove", {"confirm_slug": f"wa-{RUN}"})
+    assert removed.status_code == 200 and removed.json()["goto"] == "/admin"
+    assert removed.json()["message"].startswith("Organization removed:")
