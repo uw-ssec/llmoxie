@@ -1,8 +1,9 @@
-"""Backup a PostgreSQL database to Azure Blob Storage via fsspec.
+"""Backup a PostgreSQL database to object storage via fsspec.
 
 Streams pg_dump stdout directly to the destination — no local disk writes.
 Destination URL format:
   az://container/prefix/     → Azure Blob (adlfs)
+  s3://bucket/prefix/        → S3-compatible storage (s3fs)
 """
 
 import argparse
@@ -30,11 +31,17 @@ def _parse_db_name(db_url: str) -> str:
 
 
 def _storage_options(destination: str) -> dict:
-    """Build fsspec storage_options from env vars for Azure Blob."""
+    """Build fsspec storage_options from env vars for the destination."""
     scheme = destination.split("://")[0]
+    if scheme == "s3":
+        # Credentials and region come from the standard AWS_* variables.
+        # AWS_ENDPOINT_URL points at an S3-compatible server such as RustFS.
+        endpoint = os.getenv("AWS_ENDPOINT_URL")
+        return {"client_kwargs": {"endpoint_url": endpoint}} if endpoint else {}
     if scheme not in ("az", "abfs"):
         raise ValueError(
-            f"Unsupported destination scheme: {scheme}. Only az:// or abfs:// are supported."
+            f"Unsupported destination scheme: {scheme}. "
+            "Only az://, abfs:// or s3:// are supported."
         )
 
     # AZURE_STORAGE_CONNECTION_STRING takes priority — used for Azurite and
@@ -116,7 +123,7 @@ def backup(config_path: str | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Stream a pg_dump backup to Azure Blob Storage"
+        description="Stream a pg_dump backup to object storage"
     )
     parser.add_argument(
         "--config",

@@ -31,6 +31,7 @@ llmaven = { features = [
     "pre-commit",
     "gh-cli",
     "okf",
+    "k8s",
 ], no-default-feature = true }
 infra = { features = [
     "infra",
@@ -106,6 +107,33 @@ restart = { cmd = "docker-compose restart", cwd = "docker" }
 clean = { cmd = "docker-compose down -v", cwd = "docker" }
 
 # === End Docker related dependencies and tasks ===
+
+# === Kubernetes (k3s) local stack: Helm chart prototype, see #236 ===
+#
+# This feature has no dependencies on purpose. Adding any would re-solve
+# pixi.lock, and every Pixi that can still solve writes lock format v7, which
+# CI's pinned v0.63.2 cannot read. Until CI's Pixi is bumped, helm and kubectl
+# run through the pinned `pixi exec` wrappers in scripts/k3s/bin/.
+
+[feature.k8s.activation.env]
+# helm and kubectl only ever see the local k3d cluster, never ~/.kube/config.
+KUBECONFIG = "$PIXI_PROJECT_ROOT/.kube/llmoxie-k3s.yaml"
+
+[feature.k8s.tasks]
+# conda-forge's `k3d` is an unrelated Jupyter library, so the CLI is downloaded.
+install-k3d = { cmd = "bash scripts/k3s/install_k3d.sh", description = "Install the pinned k3d CLI into the environment" }
+chart-lint = { cmd = "scripts/k3s/bin/helm lint charts/llmoxie -f charts/llmoxie/ci/k3s-values.yaml && scripts/k3s/bin/helm template llmoxie charts/llmoxie -f charts/llmoxie/ci/k3s-values.yaml --api-versions postgresql.cnpg.io/v1 > /dev/null", description = "Lint and render the llmoxie Helm chart" }
+k3s-up = { cmd = "bash scripts/k3s/up.sh", depends-on = [
+    "install-k3d",
+], description = "Create the local k3s clusters and install the llmoxie chart" }
+k3s-smoke = { cmd = "python scripts/k3s/smoke.py", description = "Smoke-test the llmoxie chart on the local k3s cluster" }
+# Restore drill (WARNING: This deletes and rebuilds the main cluster)
+k3s-restore-drill = { cmd = "python scripts/k3s/restore_drill.py", description = "Delete the main local cluster and restore LiteLLM from the backup cluster" }
+k3s-stop = { cmd = "k3d cluster stop llmoxie llmoxie-backup", description = "Stop the local k3s clusters and keep their data" }
+# Delete both clusters (WARNING: This will delete all data, backups included)
+k3s-delete = { cmd = "k3d cluster delete llmoxie llmoxie-backup", description = "Delete the local k3s clusters and their data" }
+
+# === End Kubernetes local stack ===
 
 [feature.pre-commit.dependencies]
 pre-commit = ">=3.4.0,<4"

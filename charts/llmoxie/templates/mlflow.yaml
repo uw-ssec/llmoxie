@@ -1,0 +1,93 @@
+{{- if .Values.mlflow.enabled }}
+{{- $fullname := include "llmoxie.fullname" . }}
+{{- $artifactRoot := printf "s3://%s/" .Values.objectStorage.buckets.mlflow }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-mlflow
+  labels:
+    {{- include "llmoxie.labels" (list . "mlflow") | nindent 4 }}
+spec:
+  type: {{ .Values.mlflow.service.type }}
+  selector:
+    {{- include "llmoxie.selectorLabels" (list . "mlflow") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.mlflow.service.port }}
+      targetPort: http
+      {{- if and (eq .Values.mlflow.service.type "NodePort") .Values.mlflow.service.nodePort }}
+      nodePort: {{ .Values.mlflow.service.nodePort }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-mlflow
+  labels:
+    {{- include "llmoxie.labels" (list . "mlflow") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "llmoxie.selectorLabels" (list . "mlflow") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "llmoxie.selectorLabels" (list . "mlflow") | nindent 8 }}
+    spec:
+      # Without this, a Service named "mlflow" injects MLFLOW_PORT=tcp://...,
+      # which `mlflow server` reads as its listen port.
+      enableServiceLinks: false
+      initContainers:
+        {{- include "llmoxie.postgres.wait" (list . .Values.mlflow.image) | nindent 8 }}
+        # MLflow uploads into an existing bucket but never creates one.
+        - name: ensure-bucket
+          image: "{{ .Values.mlflow.image.repository }}:{{ .Values.mlflow.image.tag }}"
+          imagePullPolicy: {{ .Values.mlflow.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              {{- include "llmoxie.objectStorage.ensureBucket" .Values.objectStorage.buckets.mlflow | nindent 14 }}
+          env:
+            {{- include "llmoxie.objectStorage.env" . | nindent 12 }}
+      containers:
+        - name: mlflow
+          image: "{{ .Values.mlflow.image.repository }}:{{ .Values.mlflow.image.tag }}"
+          imagePullPolicy: {{ .Values.mlflow.image.pullPolicy }}
+          args:
+            - --allowed-hosts
+            - {{ .Values.mlflow.allowedHosts | quote }}
+            - --cors-allowed-origins
+            - {{ .Values.mlflow.corsAllowedOrigins | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            {{- include "llmoxie.postgres.env" . | nindent 12 }}
+            - name: MLFLOW_HOST
+              value: "0.0.0.0"
+            - name: MLFLOW_PORT
+              value: "8080"
+            - name: MLFLOW_BACKEND_STORE_URI
+              value: "postgresql://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/{{ .Values.postgres.databases.mlflow }}"
+            - name: MLFLOW_DEFAULT_ARTIFACT_ROOT
+              value: {{ $artifactRoot | quote }}
+            {{- include "llmoxie.objectStorage.env" . | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+          {{- with .Values.mlflow.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

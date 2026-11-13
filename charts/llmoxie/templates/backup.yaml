@@ -1,0 +1,67 @@
+{{- if .Values.backup.enabled }}
+{{- $fullname := include "llmoxie.fullname" . }}
+{{- range $key, $database := .Values.postgres.databases }}
+{{- if or (ne $key "mlflow") $.Values.mlflow.enabled }}
+---
+# pg_dump of {{ $database }}, streamed to object storage outside the cluster.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fullname }}-backup-{{ $key }}
+  labels:
+    {{- include "llmoxie.labels" (list $ "backup") | nindent 4 }}
+spec:
+  schedule: {{ $.Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "llmoxie.selectorLabels" (list $ "backup") | nindent 12 }}
+        spec:
+          enableServiceLinks: false
+          restartPolicy: Never
+          initContainers:
+            # Create the bucket only when it is missing.
+            - name: ensure-bucket
+              image: "{{ $.Values.backup.image.repository }}:{{ $.Values.backup.image.tag }}"
+              imagePullPolicy: {{ $.Values.backup.image.pullPolicy }}
+              command:
+                - python
+                - -c
+                - |
+                  import os, s3fs
+                  endpoint = os.getenv("AWS_ENDPOINT_URL")
+                  fs = s3fs.S3FileSystem(
+                      client_kwargs={"endpoint_url": endpoint} if endpoint else {}
+                  )
+                  bucket = {{ $.Values.backup.storage.bucket | quote }}
+                  if not fs.exists(bucket):
+                      fs.mkdir(bucket)
+                      print(f"created bucket {bucket!r}")
+              env:
+                {{- include "llmoxie.backup.env" $ | nindent 16 }}
+          containers:
+            - name: backup
+              image: "{{ $.Values.backup.image.repository }}:{{ $.Values.backup.image.tag }}"
+              imagePullPolicy: {{ $.Values.backup.image.pullPolicy }}
+              env:
+                {{- include "llmoxie.postgres.env" $ | nindent 16 }}
+                - name: DATABASE_URL
+                  value: "postgresql://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/{{ $database }}"
+                - name: BACKUP_DESTINATION
+                  value: "s3://{{ $.Values.backup.storage.bucket }}/"
+                - name: BACKUP_KEEP_LAST_N
+                  value: {{ $.Values.backup.keepLastN | quote }}
+                {{- include "llmoxie.backup.env" $ | nindent 16 }}
+              {{- with $.Values.backup.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

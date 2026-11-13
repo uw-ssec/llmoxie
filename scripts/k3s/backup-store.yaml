@@ -1,0 +1,79 @@
+# RustFS for the local backup cluster (llmoxie-backup). scripts/k3s/up.sh applies
+# this into the backup-store namespace and creates the backup-store-keys Secret.
+# One List, not several documents, so the repository's YAML check accepts it.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: backup-store
+    spec:
+      type: NodePort
+      selector:
+        app: backup-store
+      ports:
+        - name: s3
+          port: 9000
+          targetPort: s3
+          nodePort: 30900
+  - apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: backup-store
+    spec:
+      serviceName: backup-store
+      replicas: 1
+      selector:
+        matchLabels:
+          app: backup-store
+      template:
+        metadata:
+          labels:
+            app: backup-store
+        spec:
+          securityContext:
+            fsGroup: 10001 # the RustFS image runs as UID/GID 10001
+          containers:
+            - name: rustfs
+              image: rustfs/rustfs:1.0.5
+              ports:
+                - name: s3
+                  containerPort: 9000
+              env:
+                - name: RUSTFS_VOLUMES
+                  value: /data
+                - name: RUSTFS_ADDRESS
+                  value: "0.0.0.0:9000"
+                - name: RUSTFS_CONSOLE_ENABLE
+                  value: "false"
+                - name: RUSTFS_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-store-keys
+                      key: access-key
+                - name: RUSTFS_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-store-keys
+                      key: secret-key
+              readinessProbe:
+                tcpSocket:
+                  port: s3
+                periodSeconds: 5
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: logs
+                  mountPath: /logs
+          volumes:
+            - name: logs
+              emptyDir: {}
+      volumeClaimTemplates:
+        - metadata:
+            name: data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi

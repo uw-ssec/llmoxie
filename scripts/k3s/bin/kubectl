@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Pinned kubectl from conda-forge, run without changing pixi.lock (see pixi.toml).
+exec "${PIXI_EXE:-pixi}" exec --spec "kubernetes-client=1.37.2" kubectl "$@"

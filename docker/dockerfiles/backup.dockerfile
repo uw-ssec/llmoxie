@@ -4,7 +4,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir fsspec adlfs pyyaml
+RUN pip install --no-cache-dir fsspec adlfs s3fs pyyaml
 
 WORKDIR /app
 COPY scripts/backup_postgres.py .

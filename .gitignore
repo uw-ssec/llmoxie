@@ -188,3 +188,6 @@ logs/*.jsonl
 
 # LLMaven Configs
 llmaven-config*.yaml
+
+# Local k3s (k3d) kubeconfig written by scripts/k3s/up.sh
+.kube/

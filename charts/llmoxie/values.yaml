@@ -1,0 +1,130 @@
+# PROTOTYPE values for the llmoxie chart (#236). Names and shapes will change.
+#
+# Each battery has a `mode`:
+#   bundled   the chart runs it in this release
+#   external  the chart connects to one the site already runs
+#   disabled  the feature is off (only where llmoxie can run without it)
+
+nameOverride: ""
+fullnameOverride: ""
+
+litellm:
+  image:
+    repository: ghcr.io/uw-ssec/llmoxie-litellm
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  # Two keys, which the site keeps in its own secret store, away from the
+  # backups:
+  #   master-key  the admin credential; it can be rotated
+  #   salt-key    encrypts provider credentials stored in the database; a
+  #               restore needs the same one, so it never changes
+  keys:
+    # Secret holding both, under `master-key` and `salt-key`.
+    existingSecret: ""
+    # Generate both in the cluster instead. For local and CI stacks only: a
+    # generated key exists nowhere else, so losing the cluster loses the key.
+    generate: false
+  # LiteLLM `model_list` entries.
+  models: []
+  # Names of Secrets with provider credentials, loaded as environment variables.
+  envFromSecrets: []
+  service:
+    type: ClusterIP
+    port: 4000
+    nodePort: null
+  resources: {}
+
+mlflow:
+  enabled: true
+  image:
+    repository: ghcr.io/uw-ssec/llmoxie-mlflow
+    tag: latest
+    pullPolicy: IfNotPresent
+  experimentName: Default
+  allowedHosts: "*"
+  corsAllowedOrigins: "*"
+  service:
+    type: ClusterIP
+    port: 8080
+    nodePort: null
+  resources: {}
+
+postgres:
+  mode: bundled # bundled | external
+  databases:
+    litellm: litellm_db
+    mlflow: mlflow_db
+  bundled:
+    # Needs the CloudNativePG operator on the cluster.
+    instances: 1
+    # Keep this major version equal to the pg_dump in the backup image (17).
+    # An older server rejects settings a newer pg_dump writes, so restores
+    # report errors; a newer server cannot be dumped at all.
+    imageName: ghcr.io/cloudnative-pg/postgresql:17
+    owner: llmoxie
+    storage:
+      size: 10Gi
+      storageClass: ""
+  external:
+    # Secret with keys `host`, `port`, `username` and `password`. Both databases
+    # above must already exist and be owned by that user.
+    existingSecret: ""
+
+redis:
+  mode: bundled # bundled | external | disabled
+  bundled:
+    image:
+      repository: ghcr.io/valkey-io/valkey
+      tag: 8.1-alpine
+      pullPolicy: IfNotPresent
+    resources: {}
+  external:
+    host: ""
+    port: 6379
+    # Secret holding the password under `redis-password`.
+    existingSecret: ""
+
+objectStorage:
+  mode: bundled # bundled | external
+  # llmoxie talks to object storage over the S3 API.
+  region: us-east-1
+  buckets:
+    mlflow: mlflow
+    requestLogs: litellm-logs
+  bundled:
+    # RustFS on a single volume, with no redundancy. Database backups never go
+    # here; see `backup.storage`.
+    image:
+      repository: rustfs/rustfs
+      tag: 1.0.5
+      pullPolicy: IfNotPresent
+    storage:
+      size: 10Gi
+      storageClass: ""
+    resources: {}
+  external:
+    # Leave empty for AWS S3. Set it for any other S3-compatible store.
+    endpoint: ""
+    # Secret with keys `access-key` and `secret-key`. Buckets that already exist
+    # are used as they are; missing ones are created.
+    existingSecret: ""
+
+backup:
+  enabled: true
+  # Backups must live outside this cluster, so the chart bundles no destination
+  # and refuses to install with backups on until one is set.
+  storage:
+    # Leave empty for AWS S3. Set it for any other S3-compatible store.
+    endpoint: ""
+    region: us-east-1
+    bucket: backups
+    # Secret with keys `access-key` and `secret-key`.
+    existingSecret: ""
+  image:
+    repository: ghcr.io/uw-ssec/llmoxie-backup
+    tag: latest
+    pullPolicy: IfNotPresent
+  schedule: "0 2 * * *"
+  keepLastN: 7
+  resources: {}

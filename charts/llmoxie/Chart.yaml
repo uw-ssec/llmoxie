@@ -1,0 +1,11 @@
+apiVersion: v2
+name: llmoxie
+description:
+  "PROTOTYPE: llmoxie AI control plane (LiteLLM, MLflow, PostgreSQL, Redis,
+  object storage, backups) for any Kubernetes cluster"
+type: application
+version: 0.0.1
+appVersion: "main"
+home: https://github.com/uw-ssec/llmoxie
+sources:
+  - https://github.com/uw-ssec/llmoxie

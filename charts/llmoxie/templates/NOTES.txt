@@ -1,0 +1,10 @@
+llmoxie (PROTOTYPE) is installed in namespace {{ .Release.Namespace }}.
+
+LiteLLM:  http://{{ include "llmoxie.fullname" . }}-litellm.{{ .Release.Namespace }}.svc:{{ .Values.litellm.service.port }}
+{{- if .Values.mlflow.enabled }}
+MLflow:   http://{{ include "llmoxie.fullname" . }}-mlflow.{{ .Release.Namespace }}.svc:{{ .Values.mlflow.service.port }}
+{{- end }}
+
+Read the LiteLLM master key:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "llmoxie.litellm.keysSecret" . }} -o jsonpath='{.data.master-key}' | base64 -d

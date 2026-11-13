@@ -13,6 +13,7 @@ repos:
       - id: check-merge-conflict
       - id: check-symlinks
       - id: check-yaml
+        exclude: ^charts/.*/templates/ # Helm templates are not plain YAML
       - id: debug-statements
       - id: end-of-file-fixer
       - id: mixed-line-ending
@@ -24,7 +25,9 @@ repos:
       - id: prettier
         types_or: [yaml, markdown, html, css, scss, javascript, json]
         args: [--prose-wrap=always]
-        exclude: ^knowledge/ # okf owns this format; prettier folds frontmatter
+        # okf owns the knowledge format (prettier folds frontmatter); Helm
+        # templates are not plain YAML.
+        exclude: ^(knowledge/|charts/.*/templates/)
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: "v0.17.3"
@@ -37,6 +40,7 @@ repos:
     rev: "v2.4.3"
     hooks:
       - id: codespell
+        args: [--ignore-words-list=aks] # AKS, Azure Kubernetes Service
         exclude: (\.ipynb$|pixi\.lock|tests/data/fixtures/.*\.jsonl$)
 
   - repo: local

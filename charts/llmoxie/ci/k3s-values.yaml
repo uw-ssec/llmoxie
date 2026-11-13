@@ -1,0 +1,37 @@
+# Values for the local k3s (k3d) stack and CI. See scripts/k3s/up.sh.
+
+litellm:
+  keys:
+    # Throwaway stack: let the chart generate the master and salt keys.
+    generate: true
+  service:
+    type: NodePort
+    nodePort: 30400
+  models:
+    # Answers without calling a provider, so the smoke test needs no API key.
+    - model_name: mock-gpt
+      litellm_params:
+        model: openai/mock-gpt
+        api_key: not-a-real-key
+        mock_response: "Hello from llmoxie on k3s"
+
+mlflow:
+  service:
+    type: NodePort
+    nodePort: 30080
+
+postgres:
+  bundled:
+    storage:
+      size: 2Gi
+
+objectStorage:
+  bundled:
+    storage:
+      size: 2Gi
+
+backup:
+  storage:
+    # RustFS in the second local cluster, see scripts/k3s/up.sh.
+    endpoint: http://k3d-llmoxie-backup-server-0:30900
+    existingSecret: llmoxie-backup-storage

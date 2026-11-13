@@ -1,3 +1,23 @@
+## 2026-11-13
+* **Update**: Linked `decisions/litellm-keys-in-site-secret-store.md` to `requirements/backups-outside-the-cluster.md` (Keys are kept apart from the backup destination).
+* **Update**: Linked `decisions/litellm-keys-in-site-secret-store.md` to `requirements/litellm-master-and-salt-key.md` (New installs start with a salt key; the existing-database hazard still applies to the Azure move).
+* **Update**: Linked `decisions/litellm-keys-in-site-secret-store.md` to `facts/litellm-restore-drill-results.md` (The drill verified that a restore needs only the old salt key).
+* **Creation**: Documented concept `decisions/litellm-keys-in-site-secret-store.md` (The chart takes the LiteLLM master and salt keys from the site's secret store and generates them only on request).
+* **Update**: Updated concept `facts/litellm-restore-drill-results.md`.
+
+## 2026-11-12
+* **Update**: Linked `facts/k3d-local-stack-traps.md` to `requirements/backups-outside-the-cluster.md` (The second local cluster exists because backups must live outside the main one).
+* **Creation**: Documented concept `facts/k3d-local-stack-traps.md` (Three traps in the local k3d stack: first-boot failure, image garbage collection, and slow cross-cluster DNS).
+* **Update**: Linked `facts/litellm-restore-drill-results.md` to `requirements/backups-outside-the-cluster.md` (The restore reads the dump from the off-cluster backup destination).
+* **Update**: Linked `facts/litellm-restore-drill-results.md` to `requirements/litellm-master-and-salt-key.md` (The drill shows what the master key being the encryption key means for a restore).
+* **Creation**: Documented concept `facts/litellm-restore-drill-results.md` (A litellm_db restore brings back virtual keys under any master key, but stored models need the old one).
+* **Update**: Linked `requirements/backups-outside-the-cluster.md` to `decisions/rustfs-bundled-object-store.md` (The bundled RustFS holds application data only; backups use a separate store).
+* **Update**: Linked `requirements/backups-outside-the-cluster.md` to `architecture/backup-storage-isolated-stack.md` (The same rule on Azure, where backup storage is a separate Pulumi stack).
+* **Creation**: Documented concept `requirements/backups-outside-the-cluster.md` (Database backups live outside the cluster they protect).
+* **Update**: Updated concept `decisions/rustfs-bundled-object-store.md`.
+* **Update**: Linked `decisions/rustfs-bundled-object-store.md` to `decisions/minio-replaced-by-azurite.md` (Both pick the object store behind MLflow artifacts; Azurite remains for the Azure and docker-compose path).
+* **Creation**: Documented concept `decisions/rustfs-bundled-object-store.md` (RustFS is the Helm chart's bundled object store, and S3 is the storage protocol).
+
 ## 2026-11-06
 * **Update**: Updated concept `decisions/monitoring-alerts-config.md`.
 * **Update**: Updated concept `facts/production-readiness-gaps.md`.

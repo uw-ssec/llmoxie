@@ -1,0 +1,99 @@
+{{- if eq .Values.objectStorage.mode "bundled" }}
+{{- $fullname := include "llmoxie.fullname" . }}
+{{- $bundled := .Values.objectStorage.bundled }}
+{{- $secret := printf "%s-object-storage" $fullname }}
+# RustFS, a single-node S3-compatible object store on one volume. It has no
+# redundancy: sites that need it use objectStorage.mode=external.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secret }}
+  labels:
+    {{- include "llmoxie.labels" (list . "object-storage") | nindent 4 }}
+type: Opaque
+data:
+  access-key: {{ include "llmoxie.generatedValue" (list . $secret "access-key" "llmoxie" 12) }}
+  secret-key: {{ include "llmoxie.generatedValue" (list . $secret "secret-key" "" 40) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-object-storage
+  labels:
+    {{- include "llmoxie.labels" (list . "object-storage") | nindent 4 }}
+spec:
+  selector:
+    {{- include "llmoxie.selectorLabels" (list . "object-storage") | nindent 4 }}
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-object-storage
+  labels:
+    {{- include "llmoxie.labels" (list . "object-storage") | nindent 4 }}
+spec:
+  serviceName: {{ $fullname }}-object-storage
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "llmoxie.selectorLabels" (list . "object-storage") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "llmoxie.selectorLabels" (list . "object-storage") | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      # The RustFS image runs as UID/GID 10001.
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: rustfs
+          image: "{{ $bundled.image.repository }}:{{ $bundled.image.tag }}"
+          imagePullPolicy: {{ $bundled.image.pullPolicy }}
+          ports:
+            - name: s3
+              containerPort: 9000
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_ADDRESS
+              value: "0.0.0.0:9000"
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "false"
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ $secret }}, key: access-key }
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ $secret }}, key: secret-key }
+          readinessProbe:
+            tcpSocket: { port: s3 }
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: logs
+              mountPath: /logs
+          {{- with $bundled.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: logs
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with $bundled.storage.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $bundled.storage.size }}
+{{- end }}

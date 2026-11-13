@@ -1,0 +1,27 @@
+{{- if eq .Values.postgres.mode "bundled" }}
+{{- $bundled := .Values.postgres.bundled }}
+# CloudNativePG publishes the connection details in the Secret
+# "<cluster name>-app" (host, port, username, password).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "llmoxie.fullname" . }}-postgres
+  labels:
+    {{- include "llmoxie.labels" (list . "postgres") | nindent 4 }}
+spec:
+  instances: {{ $bundled.instances }}
+  imageName: {{ $bundled.imageName | quote }}
+  storage:
+    size: {{ $bundled.storage.size }}
+    {{- with $bundled.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgres.databases.litellm }}
+      owner: {{ $bundled.owner }}
+      {{- if .Values.mlflow.enabled }}
+      postInitSQL:
+        - CREATE DATABASE {{ .Values.postgres.databases.mlflow }} OWNER {{ $bundled.owner }}
+      {{- end }}
+{{- end }}
