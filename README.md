@@ -362,13 +362,16 @@ mlflow:
   hostname: mlflow.example.org
 ```
 
-Hostnames move from the backends to Traefik, so each one is down between its
-removal and a manual `az containerapp hostname add` / `bind`. See "Traefik edge
-in front of the stack" in `.agents/rules/infrastructure.md` for the trust model,
-validation errors and rollout. Don't enable the edge in prod until the staging
-client-IP checks there pass. With the edge on, run
-`llmaven infra extract --source mlflow` with the public MLflow hostname set in
-your env file.
+The deploy moves each hostname from its old app to Traefik and binds it to the
+existing managed certificate named in `edge.custom_domains`. Each hostname is
+down between its removal and its bind. A hostname whose managed certificate
+doesn't exist yet still needs a manual `az containerapp hostname add` / `bind`.
+Move callers of the backends' platform FQDNs before deploying, because they
+break at that deploy. See "Traefik edge in front of the stack" in
+`.agents/rules/infrastructure.md` for the trust model, validation errors and
+rollout. Don't enable the edge in prod until the staging client-IP checks there
+pass. With the edge on, run `llmaven infra extract --source mlflow` with the
+public MLflow hostname set in your env file.
 
 #### Sidecar (stacks without the edge)
 

@@ -150,7 +150,8 @@ renderer in `resources/traefik.py`. With it on:
 
 - Traefik is the only app with external ingress. All public hostnames
   (`edge.custom_domains`) are bound to it. Its own platform FQDN answers 404 for
-  everything except the health path.
+  everything. Health is on the separate ping port (`edge.ping_port`), which the
+  platform probes use.
 - LiteLLM and MLflow move to internal ingress, so their platform FQDNs stop
   answering from the internet. This removes the platform-FQDN bypass the sidecar
   could not close.
@@ -223,20 +224,27 @@ below 2. Rate limits stay per replica.
 
 **Rollout.** Per environment, staging first:
 
-1. Deploy with `edge.enabled: true`. On a stack with existing hostnames, the
-   deploy removes each hostname from its old app and lists it on Traefik. Then,
-   per hostname, bind it to Traefik by hand with `az containerapp hostname add`
-   and `az containerapp hostname bind`. Check whether the existing managed
-   certificate can be reused in the same environment or a new one must be
-   issued. Each hostname is down from its removal until its bind, so plan the
-   window and announce it on ISS and prod.
+0. Before the first deploy, find everyone calling LiteLLM or MLflow at a
+   platform FQDN and move them to the public hostnames. They break at the deploy
+   in step 1, which flips both apps to internal ingress.
+1. Deploy with `edge.enabled: true`. The deploy moves each hostname from its old
+   app to Traefik and binds it there (SNI) to the existing managed certificate
+   named in `edge.custom_domains`, so that certificate must already exist in the
+   environment. Do the manual `az containerapp hostname add` and
+   `az containerapp hostname bind` (see
+   `knowledge/facts/custom-domains-declarative-certificate-manual.md`) only for
+   a hostname whose managed certificate doesn't exist yet, such as a new
+   hostname on a fresh staging stack. Whether Azure accepts a hostname on
+   Traefik in the same deploy that removes it from the old app is unverified and
+   is checked on staging first. If it refuses, re-running the deploy is the
+   expected fix. Each hostname is down from its removal until it is bound, so
+   plan the window and announce it on ISS and prod.
 2. On staging, run both client-IP checks. The Envoy peer must be inside
    `trusted_proxy_ips`, and no other workload in the environment may be able to
    reach Traefik's port directly and forge an allowlisted `X-Forwarded-For`.
    Also check streaming responses through Traefik, and that LiteLLM's and
    MLflow's platform FQDNs no longer answer from outside.
-3. Anyone still calling LiteLLM or MLflow at a platform FQDN breaks at this
-   step. Find those callers and move them before ISS and prod.
+3. Repeat for ISS and prod once staging passes.
 
 Without `edge.enabled` the stack deploys exactly as before. Design:
 `docs/superpowers/specs/2026-11-13-keycloak-azure-design.md`.
