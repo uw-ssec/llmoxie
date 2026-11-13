@@ -16,6 +16,7 @@ const buttonVariants = cva(
         ghost: "text-primary hover:bg-secondary",
         destructive: "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40",
         link: "h-auto border-0 p-0 text-primary normal-case underline-offset-4 hover:underline",
+        inverse: "bg-white text-primary hover:bg-secondary",
       },
       size: {
         default: "h-10 gap-2 px-5",
