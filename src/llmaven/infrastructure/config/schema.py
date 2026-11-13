@@ -344,10 +344,16 @@ class LlmSpendAlert(BaseModel):
     """LLM spend alert on hourly and/or daily cost thresholds (USD)."""
 
     max_usd_per_hour: float | None = Field(
-        default=None, gt=0, description="Max LLM spend per hour (USD); null to skip"
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        description="Max LLM spend per hour (USD); null to skip",
     )
     max_usd_per_day: float | None = Field(
-        default=50, gt=0, description="Max LLM spend per day (USD); null to skip"
+        default=50,
+        gt=0,
+        allow_inf_nan=False,
+        description="Max LLM spend per day (USD); null to skip",
     )
 
     @model_validator(mode="after")
