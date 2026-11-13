@@ -1,5 +1,8 @@
 import { Outlet, redirect, type LoaderFunctionArgs, type RouteObject } from 'react-router'
 import { ApiError, get, loadSession } from '@/lib/api'
+import { AdminOrgsPage } from '@/pages/admin-orgs'
+import { AuditPage } from '@/pages/audit'
+import { DataProtectionPage } from '@/pages/dlp'
 import { Frame, Landing, NotBuilt } from '@/pages/frame'
 import { ErrorScreen, InvitationPage, InvitationResult } from '@/pages/messages'
 
@@ -33,9 +36,9 @@ export const routes: RouteObject[] = [
           { index: true, element: <Landing /> },
           { path: 'invite/:token', loader: ({ params }) => get(`/invites/${params.token}`), element: <InvitationPage /> },
           { path: 'invite-result/:outcome', element: <InvitationResult /> },
-          { path: 'admin', loader: page(() => '/admin/orgs'), element: <NotBuilt /> },
-          { path: 'admin/audit', loader: page(() => '/admin/audit'), element: <NotBuilt /> },
-          { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <NotBuilt /> },
+          { path: 'admin', loader: page(() => '/admin/orgs'), element: <AdminOrgsPage /> },
+          { path: 'admin/audit', loader: page(() => '/admin/audit'), element: <AuditPage /> },
+          { path: 'admin/dlp', loader: page(() => '/admin/dlp'), element: <DataProtectionPage /> },
           { path: 'orgs/:orgId', loader: page(({ params }) => `/orgs/${params.orgId}`), element: <NotBuilt /> },
           { path: 'teams/:teamId', loader: page(({ params }) => `/teams/${params.teamId}`), element: <NotBuilt /> },
           { path: 'teams/:teamId/manage', loader: page(({ params }) => `/teams/${params.teamId}/manage`), element: <NotBuilt /> },
