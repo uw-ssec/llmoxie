@@ -6,11 +6,6 @@ name = "llmoxie-console" # Project name
 platforms = ["osx-arm64", "linux-64", "linux-aarch64"] # Supported platforms for development and deployment
 version = "0.1.0" # Project version
 
-# The environment configurations for different development scenarios
-[environments]
-default = { features = ["pre-commit", "gh-cli", "okf"], solve-group = "default" } # The default development environment with pre-commit, GitHub CLI, and OKF agent memory
-onboard = { features = ["pre-commit", "gh-cli", "onboard"], solve-group = "default" } # The onboarding environment with additional setup tasks
-
 # The project dependencies
 [dependencies]
 
@@ -27,31 +22,3 @@ args = [{ arg = "network" }, { arg = "env_file", default = "tests/.env" }]
 cmd = "docker run --rm --network {{ network }} --env-file {{ env_file }} llmoxie-console-tests:dev pytest -q -x -p no:cacheprovider tests"
 depends-on = ["test-image"]
 description = "Run the test suite against a running stack, from a container on that stack's Docker network"
-
-# GitHub CLI feature for interacting with GitHub from the command line
-[feature.gh-cli.dependencies]
-gh = ">=2.0.0"
-
-# OKF feature providing the `okf` agent-memory CLI
-[feature.okf.dependencies]
-okf-agent-memory = ">=0.6.1,<0.7"
-
-# Pre-commit feature for code quality and consistency
-[feature.pre-commit.dependencies]
-pre-commit = ">=4.3.0"
-
-[feature.pre-commit.tasks]
-pre-commit-install = { cmd = "pre-commit install", description = "Install pre-commit hooks in the git repository" }
-pre-commit-all = { cmd = "pre-commit run --all-files", description = "Run pre-commit checks on all files" }
-pre-commit = { cmd = "pre-commit run", description = "Run pre-commit checks on staged files" }
-
-# Onboarding feature for setting up the development environment
-[feature.onboard.pypi-dependencies]
-ssec-cli = { git = "https://github.com/uw-ssec/ssec-cli.git" }
-
-[feature.onboard.tasks]
-ssec-setup = { cmd = "ssec --install-completion", description = "Set up shell completion for ssec-cli" }
-onboard = { cmd = "ssec onboard", description = "Run the onboarding process for the SSEC project", depends-on = [
-    "pre-commit-install",
-    "ssec-setup",
-] }

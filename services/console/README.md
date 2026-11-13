@@ -39,17 +39,12 @@ default. Three layers apply it:
 
 ## Getting started
 
-This project uses [Pixi](https://pixi.sh) for its development environment and
-tasks, and the `docker` CLI to build and test the image.
+This project uses [Pixi](https://pixi.sh) for its tasks, and the `docker` CLI to
+build and test the image.
 
 ```bash
-pixi install            # the development environment (pre-commit, gh, okf)
-pixi run image          # build llmoxie-console:dev
-pixi run pre-commit-all # the checks every change must pass
+pixi run image # build llmoxie-console:dev
 ```
-
-For first-time setup, `pixi run -e onboard onboard` installs the pre-commit
-hooks and runs the SSEC onboarding.
 
 The image installs the locked versions in `requirements.txt`; the test image
 adds `requirements-test.txt`.
