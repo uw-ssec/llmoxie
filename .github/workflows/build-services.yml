@@ -35,6 +35,9 @@ jobs:
           - name: backup
             dockerfile: backup.dockerfile
             context: .
+          - name: keycloak
+            dockerfile: keycloak.dockerfile
+            context: .
 
     steps:
       - name: Checkout repository
