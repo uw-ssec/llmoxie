@@ -612,8 +612,8 @@ LLMOXIE_SPEND {"ts":"...","request_id":"...","key_alias":"...","key_hash":"...",
 The line is the `LLMOXIE_SPEND ` prefix followed by compact JSON with the fields
 `ts` (UTC ISO 8601), `request_id`, `key_alias`, `key_hash` (SHA-256 hex digest
 only, otherwise `null`), `user_id`, `team_alias`, `model`, `spend` (response
-cost in USD) and `total_tokens`. Prompts, responses and raw API keys are never
-written.
+cost in USD; `null` with a stderr warning when the cost is not a finite number)
+and `total_tokens`. Prompts, responses and raw API keys are never written.
 
 In Azure, Container Apps forwards stdout to `ContainerAppConsoleLogs_CL`, and
 the `llm_spend` alert reads these lines from there. Locally the lines only

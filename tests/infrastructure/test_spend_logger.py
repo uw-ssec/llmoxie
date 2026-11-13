@@ -182,11 +182,29 @@ def test_line_is_compact_json(spend_logger, capsys):
     assert ": " not in body
 
 
-@pytest.mark.parametrize("cost", [float("nan"), float("inf"), float("-inf"), "nan"])
-def test_non_finite_cost_is_zero_and_line_is_valid_json(spend_logger, capsys, cost):
+@pytest.mark.parametrize(
+    "cost",
+    [float("nan"), float("inf"), float("-inf"), "nan", "Infinity", "abc", [1]],
+)
+def test_invalid_cost_is_null_and_warned(spend_logger, capsys, monkeypatch, cost):
+    err = io.StringIO()
+    monkeypatch.setattr(spend_logger._handler, "stream", err)
     _emit(spend_logger, {"standard_logging_object": _payload(response_cost=cost)})
     out = capsys.readouterr().out
     assert "NaN" not in out
     assert "Infinity" not in out
     record = _only_line(out)
-    assert record["spend"] == 0.0
+    assert record["spend"] is None
+    assert record["request_id"] == "req-1"
+    warning = err.getvalue()
+    assert "WARNING" in warning
+    assert "invalid response_cost" in warning
+    assert "req-1" in warning
+
+
+def test_valid_cost_logs_no_warning(spend_logger, capsys, monkeypatch):
+    err = io.StringIO()
+    monkeypatch.setattr(spend_logger._handler, "stream", err)
+    _emit(spend_logger, {"standard_logging_object": _payload(response_cost="0.5")})
+    assert _only_line(capsys.readouterr().out)["spend"] == 0.5
+    assert err.getvalue() == ""

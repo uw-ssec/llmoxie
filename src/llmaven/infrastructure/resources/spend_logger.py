@@ -33,15 +33,32 @@ def _key_hash(value: Any) -> str | None:
     return None
 
 
-def _finite_cost(value: Any) -> float:
-    """Return the cost as a float, or 0.0 when it is not a finite number."""
-    cost = float(value or 0.0)
-    return cost if math.isfinite(cost) else 0.0
+def _finite_cost(value: Any) -> float | None:
+    """Return the cost as a float, 0.0 when absent, or None when invalid.
+
+    None marks a cost that is present but not a finite number, so it is never
+    mistaken for zero spend.
+    """
+    if value is None:
+        return 0.0
+    try:
+        cost = float(value)
+    except (TypeError, ValueError):
+        return None
+    return cost if math.isfinite(cost) else None
 
 
 def spend_record(payload: dict) -> dict:
     """Build the spend record for one standard logging payload."""
     metadata = payload.get("metadata") or {}
+    spend = _finite_cost(payload.get("response_cost"))
+    if spend is None:
+        logger.warning(
+            "invalid response_cost %r for request %s (model %s); spend written as null",
+            payload.get("response_cost"),
+            payload.get("id"),
+            payload.get("model"),
+        )
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "request_id": payload.get("id"),
@@ -50,7 +67,7 @@ def spend_record(payload: dict) -> dict:
         "user_id": metadata.get("user_api_key_user_id"),
         "team_alias": metadata.get("user_api_key_team_alias"),
         "model": payload.get("model"),
-        "spend": _finite_cost(payload.get("response_cost")),
+        "spend": spend,
         "total_tokens": int(payload.get("total_tokens") or 0),
     }
 
