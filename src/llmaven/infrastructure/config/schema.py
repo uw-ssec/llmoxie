@@ -643,11 +643,8 @@ class LiteLLMProxyConfig(BaseModel):
     )
     trusted_proxy_ips: list[str] | None = Field(
         default=None,
-        description="Peers whose X-Forwarded-For Traefik keeps. Required when the "
-        "edge is on, with no default: set it to the range the environment's "
-        "Envoy peers connect from (100.100.0.0/17 in the workload-profile "
-        "environment of #229). Never include the replica range "
-        "(100.100.192.0/19 there); see the infrastructure rule",
+        description="Peers whose X-Forwarded-For Traefik keeps. Defaults to "
+        "networking.container_apps_subnet, where the Container Apps Envoy runs",
     )
     rate_limit_average: int = Field(
         default=50,
@@ -771,8 +768,11 @@ class EdgeConfig(ContainerAppConfig):
     max_replicas: int = Field(default=3, description="Maximum replicas", ge=1)
     trusted_proxy_ips: list[str] | None = Field(
         default=None,
-        description="Peers whose X-Forwarded-For Traefik keeps. Defaults to "
-        "networking.container_apps_subnet, where the Container Apps Envoy runs",
+        description="Peers whose X-Forwarded-For Traefik keeps. Required when the "
+        "edge is on, with no default: set it to the range the environment's "
+        "Envoy peers connect from (100.100.0.0/17 in the workload-profile "
+        "environment of #229). Never include the replica range "
+        "(100.100.192.0/19 there); see the infrastructure rule",
     )
     rate_limit_average: int = Field(
         default=50,
