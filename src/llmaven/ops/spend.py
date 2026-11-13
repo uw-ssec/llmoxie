@@ -11,10 +11,13 @@ prefix of it is used.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+import zipfile
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
+from pathlib import Path
 
 # How much of the hashed api_key goes into a label when the key has no alias.
 KEY_LABEL_PREFIX_LEN = 8
@@ -180,3 +183,52 @@ def compare(
         rows.append(SpendRow(label, spend, prior, ratio, flag))
     rows.sort(key=lambda row: (-row.spend, row.label))
     return rows
+
+
+def _iter_jsonl_lines(lines: Iterable[str]) -> Iterator[dict]:
+    """Yield one record dict per line, skipping blanks and non-object lines.
+
+    A line that is blank, that is not valid JSON, or that decodes to anything
+    other than an object is dropped. Nothing about a skipped line is logged:
+    extract records carry prompt and response content.
+    """
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            yield record
+
+
+def iter_extract_records(path: Path) -> Iterator[dict]:
+    """Yield spend-log records from ``llmaven infra extract`` output.
+
+    ``path`` may be a ``.zip`` archive (every ``*.jsonl`` entry, in name
+    order), a directory (every ``*.jsonl`` file in it, in name order) or a
+    single ``.jsonl`` file. Anything else raises ``ValueError``.
+    """
+    if path.is_dir():
+        for jsonl_path in sorted(path.glob("*.jsonl")):
+            with jsonl_path.open(encoding="utf-8") as handle:
+                yield from _iter_jsonl_lines(handle)
+        return
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path) as archive:
+            for name in sorted(archive.namelist()):
+                if not name.endswith(".jsonl"):
+                    continue
+                with archive.open(name) as entry:
+                    text = entry.read().decode("utf-8")
+                yield from _iter_jsonl_lines(text.splitlines())
+        return
+    if path.suffix == ".jsonl":
+        with path.open(encoding="utf-8") as handle:
+            yield from _iter_jsonl_lines(handle)
+        return
+    raise ValueError(
+        f"Expected a .zip archive, a directory or a .jsonl file, got: {path}"
+    )

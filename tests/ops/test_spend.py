@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import zipfile
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +15,7 @@ from llmaven.ops.spend import (
     baseline_window,
     compare,
     group_label,
+    iter_extract_records,
     record_day,
 )
 
@@ -189,3 +193,90 @@ class TestCompare:
 
     def test_compare_empty_current(self):
         assert compare({}, {"alice": 1.0}, threshold=2.0) == []
+
+
+DAY_ONE_RECORDS = [
+    {"startTime": "2026-03-01T01:00:00Z", "spend": 1.0, "model": "gpt-4o"},
+    {"startTime": "2026-03-01T02:00:00Z", "spend": 2.0, "model": "gpt-4o-mini"},
+]
+DAY_TWO_RECORDS = [
+    {"startTime": "2026-03-02T03:00:00Z", "spend": 4.0, "model": "gpt-4o"},
+]
+ALL_RECORDS = DAY_ONE_RECORDS + DAY_TWO_RECORDS
+
+
+def _jsonl(records: list[dict]) -> str:
+    return "".join(f"{json.dumps(record)}\n" for record in records)
+
+
+@pytest.fixture
+def extract_dir(tmp_path: Path) -> Path:
+    """A directory of two days of extract output, as `infra extract` writes it."""
+    directory = tmp_path / "extract"
+    directory.mkdir()
+    (directory / "litellm_spend_logs_2026-03-01.jsonl").write_text(
+        _jsonl(DAY_ONE_RECORDS), encoding="utf-8"
+    )
+    (directory / "litellm_spend_logs_2026-03-02.jsonl").write_text(
+        _jsonl(DAY_TWO_RECORDS), encoding="utf-8"
+    )
+    return directory
+
+
+class TestIterExtractRecords:
+    def test_iter_extract_records_zip(self, tmp_path: Path, extract_dir: Path):
+        archive = tmp_path / "llmaven_litellm_spend_logs.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            for path in sorted(extract_dir.iterdir()):
+                zf.write(path, arcname=path.name)
+        assert list(iter_extract_records(archive)) == ALL_RECORDS
+
+    def test_iter_extract_records_directory(self, extract_dir: Path):
+        assert list(iter_extract_records(extract_dir)) == ALL_RECORDS
+
+    def test_iter_extract_records_single_file(self, extract_dir: Path):
+        path = extract_dir / "litellm_spend_logs_2026-03-01.jsonl"
+        assert list(iter_extract_records(path)) == DAY_ONE_RECORDS
+
+    def test_iter_extract_records_skips_blank_lines(self, tmp_path: Path):
+        path = tmp_path / "litellm_spend_logs_2026-03-01.jsonl"
+        path.write_text(
+            "\n"
+            f"{json.dumps(DAY_ONE_RECORDS[0])}\n"
+            "   \n"
+            f"{json.dumps(DAY_ONE_RECORDS[1])}\n"
+            "\n",
+            encoding="utf-8",
+        )
+        assert list(iter_extract_records(path)) == DAY_ONE_RECORDS
+
+    def test_iter_extract_records_skips_non_dict_lines(self, tmp_path: Path):
+        path = tmp_path / "litellm_spend_logs_2026-03-01.jsonl"
+        path.write_text(
+            f"{json.dumps(DAY_ONE_RECORDS[0])}\n"
+            "[1, 2, 3]\n"
+            '"a string"\n'
+            "null\n"
+            f"{json.dumps(DAY_ONE_RECORDS[1])}\n",
+            encoding="utf-8",
+        )
+        assert list(iter_extract_records(path)) == DAY_ONE_RECORDS
+
+    def test_iter_extract_records_zip_ignores_other_entries(self, tmp_path: Path):
+        archive = tmp_path / "mixed.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("litellm_spend_logs_2026-03-01.jsonl", _jsonl(DAY_ONE_RECORDS))
+            zf.writestr("README.md", "not a record\n")
+        assert list(iter_extract_records(archive)) == DAY_ONE_RECORDS
+
+    def test_iter_extract_records_directory_ignores_other_files(
+        self, extract_dir: Path
+    ):
+        (extract_dir / "notes.txt").write_text("not a record\n", encoding="utf-8")
+        assert list(iter_extract_records(extract_dir)) == ALL_RECORDS
+
+    def test_iter_extract_records_rejects_other_paths(self, tmp_path: Path):
+        path = tmp_path / "spend.csv"
+        path.write_text("label,spend\n", encoding="utf-8")
+        with pytest.raises(ValueError):
+            list(iter_extract_records(path))
