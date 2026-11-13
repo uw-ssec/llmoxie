@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import zipfile
 from datetime import date, timedelta
@@ -9,11 +10,14 @@ from pathlib import Path
 
 import httpx
 import pytest
+from rich.console import Console
 
 from llmaven.ops import spend as spend_module
 from llmaven.ops.spend import (
+    CSV_COLUMNS,
     GroupBy,
     SpendFetchError,
+    SpendRow,
     aggregate,
     baseline_window,
     compare,
@@ -21,6 +25,8 @@ from llmaven.ops.spend import (
     group_label,
     iter_extract_records,
     record_day,
+    render_table,
+    write_csv,
 )
 
 HASHED_KEY = "a" * 64
@@ -503,3 +509,66 @@ class TestFetchSpendRecords:
 
         assert len(requests) == 1
         assert API_KEY not in str(excinfo.value)
+
+
+class TestWriteCsv:
+    def test_write_csv_columns_and_blanks(self, tmp_path):
+        path = tmp_path / "spend.csv"
+        write_csv(
+            [
+                SpendRow("alpha", 2.5, 1.0, 2.5, "spike"),
+                SpendRow("beta", 1.0, None, None, ""),
+            ],
+            path,
+        )
+
+        rows = list(csv.reader(path.read_text(encoding="utf-8").splitlines()))
+        assert rows[0] == list(CSV_COLUMNS)
+        assert rows[1] == ["alpha", "2.5", "1.0", "2.5", "spike"]
+        assert rows[2] == ["beta", "1.0", "", "", ""]
+
+    def test_csv_has_no_raw_key(self, tmp_path):
+        record = {"api_key": HASHED_KEY, "spend": 1.0}
+        label = group_label(record, GroupBy.key)
+        path = tmp_path / "spend.csv"
+
+        write_csv([SpendRow(label, 1.0, None, None, "")], path)
+
+        text = path.read_text(encoding="utf-8")
+        assert HASHED_KEY not in text
+        assert HASHED_KEY[:8] in text
+
+
+class TestRenderTable:
+    @staticmethod
+    def _render(table) -> str:
+        console = Console(record=True, width=120)
+        console.print(table)
+        return console.export_text()
+
+    def test_render_table_top_and_total(self):
+        rows = [
+            SpendRow("alpha", 3.0, 1.0, 3.0, "spike"),
+            SpendRow("beta", 2.0, None, None, "new"),
+            SpendRow("gamma", 1.0, 1.0, 1.0, ""),
+        ]
+
+        text = self._render(render_table(rows, title="Spend", top=1))
+
+        assert "alpha" in text
+        assert "beta" not in text
+        assert "gamma" not in text
+        assert "6.00" in text
+
+    def test_render_table_without_top_shows_every_row(self):
+        rows = [
+            SpendRow("alpha", 3.0, 1.0, 3.0, "spike"),
+            SpendRow("beta", 2.0, None, None, "new"),
+        ]
+
+        text = self._render(render_table(rows, title="Spend report", top=None))
+
+        assert "Spend report" in text
+        assert "alpha" in text
+        assert "beta" in text
+        assert "5.00" in text

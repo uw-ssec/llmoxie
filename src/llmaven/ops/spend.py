@@ -13,6 +13,7 @@ prefix of it is used.
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 import time
@@ -24,6 +25,7 @@ from enum import Enum
 from pathlib import Path
 
 import httpx
+from rich.table import Table
 
 # How much of the hashed api_key goes into a label when the key has no alias.
 KEY_LABEL_PREFIX_LEN = 8
@@ -198,6 +200,73 @@ def compare(
         rows.append(SpendRow(label, spend, prior, ratio, flag))
     rows.sort(key=lambda row: (-row.spend, row.label))
     return rows
+
+
+CSV_COLUMNS = ("label", "spend_usd", "prior_usd", "ratio", "flag")
+
+
+def write_csv(rows: list[SpendRow], path: Path) -> None:
+    """Write every row to ``path`` under ``CSV_COLUMNS``.
+
+    A ``None`` comparison value is written as an empty cell rather than the
+    string "None". Spend and ratio are written as plain numbers so the file
+    stays machine-readable; the labels are the same ones the table shows, so
+    no raw api key reaches the file (okf ``cli-output-data-safety``).
+    """
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(CSV_COLUMNS)
+        for row in rows:
+            writer.writerow(
+                [
+                    row.label,
+                    row.spend,
+                    "" if row.prior is None else row.prior,
+                    "" if row.ratio is None else row.ratio,
+                    row.flag,
+                ]
+            )
+
+
+def _money(value: float) -> str:
+    return f"{value:.2f}"
+
+
+def render_table(rows: list[SpendRow], *, title: str, top: int | None) -> Table:
+    """Build the report table: the first ``top`` rows plus a total.
+
+    ``top=None`` shows every row. The total always covers all ``rows``, not
+    just the ones shown, so a truncated table still reports the true spend.
+    The caller supplies ``title``, which names the source, window, baseline
+    and grouping.
+    """
+    table = Table(title=title, show_header=True, header_style="bold")
+    table.add_column("Label")
+    table.add_column("Spend (USD)", justify="right")
+    table.add_column("Prior (USD)", justify="right")
+    table.add_column("Ratio", justify="right")
+    table.add_column("Flag")
+
+    shown = rows if top is None else rows[:top]
+    for row in shown:
+        table.add_row(
+            row.label,
+            _money(row.spend),
+            "" if row.prior is None else _money(row.prior),
+            "" if row.ratio is None else f"{row.ratio:.2f}",
+            row.flag,
+        )
+
+    table.add_section()
+    table.add_row(
+        "TOTAL",
+        _money(sum(row.spend for row in rows)),
+        "",
+        "",
+        "",
+        style="bold",
+    )
+    return table
 
 
 def _iter_jsonl_lines(lines: Iterable[str]) -> Iterator[dict]:
