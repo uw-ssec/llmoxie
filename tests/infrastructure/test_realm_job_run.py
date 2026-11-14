@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -28,6 +29,30 @@ def _cfg(keycloak_enabled=True, realm="llmoxie"):
     return config
 
 
+class _Clock:
+    """A fake clock: sleep() advances it; step adds time per reading."""
+
+    def __init__(self, step=0.0):
+        self.now = 0.0
+        self.step = step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+@contextlib.contextmanager
+def _time(clock):
+    with (
+        patch.object(deploy.time, "sleep", side_effect=clock.sleep),
+        patch.object(deploy.time, "monotonic", side_effect=clock),
+    ):
+        yield
+
+
 def _az(status_sequence, start_name="job-exec-1"):
     """A fake _run_az_command: start returns an execution, show walks statuses."""
     statuses = iter(status_sequence)
@@ -49,7 +74,7 @@ class TestRunRealmJob:
         fake, calls = _az(["Running", "Succeeded"])
         with (
             patch.object(deploy, "_run_az_command", side_effect=fake),
-            patch.object(deploy.time, "sleep"),
+            _time(_Clock()),
         ):
             run_realm_job(_cfg(), "realm-job")
 
@@ -67,7 +92,7 @@ class TestRunRealmJob:
         fake, _ = _az(["Failed"])
         with (
             patch.object(deploy, "_run_az_command", side_effect=fake),
-            patch.object(deploy.time, "sleep"),
+            _time(_Clock()),
             pytest.raises(DeploymentError) as exc,
         ):
             run_realm_job(_cfg(), "realm-job")
@@ -80,7 +105,7 @@ class TestRunRealmJob:
         fake, _ = _az(["Stopped"])
         with (
             patch.object(deploy, "_run_az_command", side_effect=fake),
-            patch.object(deploy.time, "sleep"),
+            _time(_Clock()),
             pytest.raises(DeploymentError, match="Stopped"),
         ):
             run_realm_job(_cfg(), "realm-job")
@@ -89,7 +114,7 @@ class TestRunRealmJob:
         fake, _ = _az(["Running"] * 100)
         with (
             patch.object(deploy, "_run_az_command", side_effect=fake),
-            patch.object(deploy.time, "sleep"),
+            _time(_Clock()),
             pytest.raises(DeploymentError, match="did not finish"),
         ):
             run_realm_job(_cfg(), "realm-job", timeout_s=30, poll_s=10)
@@ -104,15 +129,94 @@ class TestRunRealmJob:
         ):
             run_realm_job(_cfg(), "realm-job")
 
-    def test_progress_is_printed_at_most_every_30_seconds(self, capsys):
-        fake, _ = _az(["Running"] * 6 + ["Succeeded"])
+    def test_progress_is_printed_first_then_every_30_seconds(self, capsys):
+        fake, _ = _az(["Running"] * 8 + ["Succeeded"])
         with (
             patch.object(deploy, "_run_az_command", side_effect=fake),
-            patch.object(deploy.time, "sleep"),
+            _time(_Clock()),
         ):
             run_realm_job(_cfg(), "realm-job", poll_s=10)
-        out = capsys.readouterr().out
-        assert out.count("Running") <= 3
+        lines = [ln for ln in capsys.readouterr().out.splitlines() if "realm job" in ln]
+        assert lines == [
+            "  realm job Running (0s)",
+            "  realm job Running (30s)",
+            "  realm job Running (60s)",
+        ]
+
+    def test_timeout_counts_slow_az_calls(self):
+        fake, calls = _az(["Running"] * 100)
+        with (
+            patch.object(deploy, "_run_az_command", side_effect=fake),
+            _time(_Clock(step=40.0)),
+            pytest.raises(DeploymentError, match="did not finish"),
+        ):
+            run_realm_job(_cfg(), "realm-job", timeout_s=30, poll_s=10)
+        assert len(calls) <= 3
+
+    def test_failure_hints_are_complete_commands(self):
+        fake, _ = _az(["Failed"])
+        with (
+            patch.object(deploy, "_run_az_command", side_effect=fake),
+            _time(_Clock()),
+            pytest.raises(DeploymentError) as exc,
+        ):
+            run_realm_job(_cfg(), "realm-job")
+        assert (
+            "az containerapp job logs show --name realm-job --resource-group "
+            f"rg-test --execution job-exec-1 --container realm-import "
+            f"--subscription {SUB}"
+        ) in str(exc.value)
+        assert "`containerapp` CLI extension" in str(exc.value)
+
+    def test_timeout_hints_carry_the_subscription(self):
+        fake, _ = _az(["Running"] * 100)
+        with (
+            patch.object(deploy, "_run_az_command", side_effect=fake),
+            _time(_Clock()),
+            pytest.raises(DeploymentError) as exc,
+        ):
+            run_realm_job(_cfg(), "realm-job", timeout_s=20, poll_s=10)
+        assert (
+            "az containerapp job execution show --name realm-job --resource-group "
+            f"rg-test --job-execution-name job-exec-1 --subscription {SUB}"
+        ) in str(exc.value)
+        assert f"--container realm-import --subscription {SUB}" in str(exc.value)
+
+    def test_failure_includes_reason_and_message(self):
+        def fake(args, check=True, subscription_id=None):
+            if args[:3] == ["containerapp", "job", "start"]:
+                out = json.dumps({"name": "e1"})
+            else:
+                out = json.dumps(
+                    {
+                        "properties": {
+                            "status": "Failed",
+                            "reason": "BackoffLimitExceeded",
+                            "message": "container exited 1",
+                        }
+                    }
+                )
+            return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
+
+        with (
+            patch.object(deploy, "_run_az_command", side_effect=fake),
+            _time(_Clock()),
+            pytest.raises(DeploymentError, match="BackoffLimitExceeded.*exited 1"),
+        ):
+            run_realm_job(_cfg(), "realm-job")
+
+    @pytest.mark.parametrize("show_out", ["not json", "{}", '{"properties": {}}'])
+    def test_missing_status_fails_instead_of_timing_out(self, show_out):
+        def fake(args, check=True, subscription_id=None):
+            out = json.dumps({"name": "e1"}) if "start" in args else show_out
+            return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
+
+        with (
+            patch.object(deploy, "_run_az_command", side_effect=fake),
+            _time(_Clock()),
+            pytest.raises(DeploymentError, match="no properties.status"),
+        ):
+            run_realm_job(_cfg(), "realm-job")
 
 
 def _stack(outputs=None, up_outputs=None):
@@ -193,6 +297,19 @@ class TestDeployRunsRealmJob:
             deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
 
         run_job.assert_not_called()
+
+    def test_job_failure_says_infrastructure_is_deployed(self, patched_deploy):
+        load_config, get_stack, run_job = patched_deploy
+        load_config.return_value = _cfg()
+        get_stack.return_value = _stack()
+        run_job.side_effect = DeploymentError("job blew up")
+
+        with pytest.raises(
+            DeploymentError,
+            match="Infrastructure deployed, but the Keycloak realm was not "
+            "applied: job blew up",
+        ):
+            deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
 
     def test_missing_job_output_fails(self, patched_deploy):
         load_config, get_stack, run_job = patched_deploy
