@@ -189,7 +189,8 @@ def create_container_app_with_key_vault_secrets(
             health_probe_path on this port instead of TCP checks on container_port.
             Use it when the main container listens only on localhost, which the
             platform probes cannot reach.
-        health_probe_path: Health path for health_probe_port probes
+        health_probe_path: Health path for health_probe_port probes, and for
+            the Startup probe when health_probe_port is unset
         ip_security_restrictions: Ingress IP rules for the whole app
 
     Returns:
@@ -329,7 +330,7 @@ def create_container_app_with_key_vault_secrets(
             azure_native.app.ContainerAppProbeArgs(
                 type="Startup",
                 http_get=azure_native.app.ContainerAppProbeHttpGetArgs(
-                    path="/health/liveliness",
+                    path=health_probe_path,
                     port=container_port,
                 ),
                 initial_delay_seconds=10,
