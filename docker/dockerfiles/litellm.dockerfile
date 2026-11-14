@@ -16,3 +16,9 @@ RUN python -m ensurepip \
 # Fails the build unless this is the fork: upstream's ui_sso defines
 # _raise_if_sso_exceeds_free_user_limit, which the fork deletes.
 RUN python -c "import litellm.proxy.management_endpoints.ui_sso as m; assert not hasattr(m, '_raise_if_sso_exceeds_free_user_limit'), 'SSO user cap present: not the fork'"
+
+# The pinned-back mlflow-skinny and the fork's proxy must import together; CI
+# builds this image natively on amd64 only, so the build is the only check.
+# `timeout` (busybox in the fork image) fails the build on a hang instead of
+# stalling CI.
+RUN timeout 600 python -c "import mlflow, litellm.proxy.proxy_server"

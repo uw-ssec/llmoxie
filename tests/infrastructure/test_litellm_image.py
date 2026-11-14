@@ -37,6 +37,18 @@ def test_build_checks_the_sso_cap_is_gone():
     assert "assert not hasattr" in match.group(0)
 
 
+def test_build_checks_the_mlflow_and_proxy_imports():
+    # The full MLflow server install and the proxy must import together; CI
+    # builds this image natively on amd64 only, so the build is the only check.
+    # `timeout` (busybox in the fork image) fails a hang instead of stalling CI.
+    text = DOCKERFILE.read_text()
+    assert re.search(
+        r'^RUN timeout 600 python -c "import mlflow, litellm\.proxy\.proxy_server"$',
+        text,
+        re.M,
+    )
+
+
 def test_workflow_builds_litellm_for_amd64_only():
     # The fork base image is amd64 only, so an arm64 leg would fail the build.
     import yaml
