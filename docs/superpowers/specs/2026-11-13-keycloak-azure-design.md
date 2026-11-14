@@ -333,7 +333,10 @@ redemption, later the console broker) use the internal address.
 pattern as `litellm_db` and `mlflow_db` (a least-privilege role is the same open
 gap those have, #193). It is backed up by the server's built-in point-in-time
 backups; the builder confirms the configured retention and records it. The
-`pg_dump` job is not changed.
+`pg_dump` job is not changed. The `keycloak_db` resource is retained on delete
+(no other database is): turning `keycloak.enabled` off must not drop every user,
+credential and grant. The retained database leaves Pulumi state, so turning
+Keycloak on again needs it imported first.
 
 ### 2.4 Secrets
 
@@ -454,12 +457,23 @@ On LiteLLM's host there are four routers:
   admin IP allowlist, except LiteLLM's UI and login paths.
 - Everything else goes through `ForwardAuth`.
 
-LiteLLM's UI and login paths are `/ui`, `/login`, `/v2/login`, `/sso` and
-`/fallback/login`; this list is confirmed against the
-`uw-ssec/llmoxie-litellm-fork` routes before it is relied on, because a path
-missing from it would sit on the bearer-key route and bypass the login. They are
+LiteLLM's UI and login paths are the `LITELLM_UI_PATHS` constant in
+`resources/traefik.py` (`/ui`, `/_next`, `/litellm-asset-prefix`, `/login`,
+`/v2/login`, `/v3/login`, `/fallback/login`, `/sso`, `/onboarding`,
+`/get_image`, `/get_logo_url`, `/get_favicon` and the two
+`/.well-known/litellm-ui-config` paths), confirmed against the
+`uw-ssec/llmoxie-litellm-fork` routes, because a path missing from it would sit
+on the bearer-key route and bypass the login. They are
 never on the bearer-key route, so LiteLLM's own master-key login form is never
 reachable without a Keycloak session. The tests below pin the behavior.
+
+**Revocation.** oauth2-proxy refreshes each session with Keycloak every minute
+(`cookie_refresh=1m`, below the 5-minute access-token lifespan) and expires the
+cookie after 10 hours (`cookie_expire=10h`, Keycloak's default SSO session max).
+On a refresh, `keycloak-oidc` re-reads the roles and re-runs the role check, and
+a disabled user or ended Keycloak session is signed out, so removing a role or
+disabling a user ends gate access within about a minute. API keys LiteLLM minted
+earlier keep the role they were given and must be revoked.
 
 ### 2.7 LiteLLM on the fork, with SSO
 
@@ -511,21 +525,40 @@ against stacks where MLflow has no login.
 - `realm.name` must not change for an existing stack (it is in the issuer); warn
   when it differs from the deployed output.
 - Images named by digest.
-- `realm.overrides` must not redefine the clients the stack renders.
+- `realm.overrides` must not redefine the clients the stack renders, nor set
+  `realm` or `id` at its top level (the realm is named by `realm.name`).
+- `realm.name` is not `master`; `realm.secret_refs` uses no name the realm job
+  sets itself.
+- A login needs its app enabled. `keycloak.image` is pinned by digest while
+  Keycloak is on (its migrations are one-way).
 
 ### 2.10 Stage 2 rollout
 
 Per environment, staging first, with a recent `pg_dump` of `litellm_db`:
 
-1. Release with the fork image pinned (published 2026-11-13).
+1. Release with the fork LiteLLM image pinned (published 2026-11-13) and deploy
+   it, before turning `litellm.login` on. Set `keycloak.image` to a built tag
+   and its digest.
 2. Deploy with `keycloak.enabled: true`, logins off, and Keycloak's hostname
    added to `edge.custom_domains` (bind its certificate by hand, as in stage 1).
    Check the issuer at
-   `https://<host>/realms/<name>/.well-known/openid-configuration`.
-3. Create the first admins in the realm (admin console from an allowlisted IP)
-   and grant `mlflow-user` and `litellm-admin`. Copy the `llmaven-cli` secret
-   into operators' env files.
-4. Turn on `mlflow.login` and `litellm.login`. Deploy. Run the checks below.
+   `https://<host>/realms/<name>/.well-known/openid-configuration`. The roles
+   and the `llmaven-cli` client exist only with a login on, so they cannot be
+   granted yet. From an allowlisted IP, create the first admins in the admin
+   console, in the `<keycloak.realm.name>` realm (not `master`), each with an
+   email that has "Email verified" on and a password: the realm requires a
+   verified email, no SMTP is configured, and oauth2-proxy refuses an unverified
+   email.
+3. Turn on `mlflow.login` and `litellm.login`. Deploy. This creates the roles,
+   the clients and their secrets; the UIs refuse everyone until step 4.
+4. Immediately grant `mlflow-user` and `litellm-admin` to the admins, and copy
+   the `llmaven-cli` secret into operators' env files.
+5. Run the checks below.
+
+Rollback: turn the logins off first and keep Keycloak on; only then turn
+Keycloak off (the app, the job and the secrets go, `keycloak_db` stays). Turning
+a login off deletes its Key Vault secrets; whether soft-delete blocks recreating
+them is unverified.
 
 ## Verification
 
