@@ -326,6 +326,11 @@ def create_realm_job(
             "KEYCLOAK_URL": pulumi.Output.concat("https://", keycloak_fqdn),
             "KEYCLOAK_USER": KEYCLOAK_ADMIN_USER,
             "KEYCLOAK_AVAILABILITYCHECK_ENABLED": "true",
+            # keycloak-config-cli 6.5.1 waits 120s by default
+            # (KeycloakConfigProperties.KeycloakAvailabilityCheck); a fresh
+            # stack's first Keycloak boot runs its database migrations first.
+            # It stays under REALM_REPLICA_TIMEOUT.
+            "KEYCLOAK_AVAILABILITYCHECK_TIMEOUT": "300s",
             "IMPORT_FILES_LOCATIONS": f"{REALM_CONFIG_DIR}/{REALM_FILE}",
             "IMPORT_VARSUBSTITUTION_ENABLED": "true",
             "IMPORT_REMOTESTATE_ENABLED": "true",

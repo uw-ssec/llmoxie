@@ -209,6 +209,9 @@ def test_realm_job_shape():
             "KEYCLOAK_URL": f"https://{KC_FQDN}",
             "KEYCLOAK_USER": "admin",
             "KEYCLOAK_AVAILABILITYCHECK_ENABLED": "true",
+            # A fresh stack's first Keycloak boot (database migrations) can
+            # take minutes; the config-cli default is 120s.
+            "KEYCLOAK_AVAILABILITYCHECK_TIMEOUT": "300s",
             "IMPORT_FILES_LOCATIONS": "/config/realm.json",
             "IMPORT_VARSUBSTITUTION_ENABLED": "true",
             "IMPORT_REMOTESTATE_ENABLED": "true",
