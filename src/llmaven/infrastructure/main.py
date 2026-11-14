@@ -52,6 +52,7 @@ def create_pulumi_program(config_path: Path):
         import pulumi_azure_native as azure_native
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
+        from llmaven.infrastructure.config.schema import edge_app_base_name
         from llmaven.infrastructure.resources import (
             BACKUP_STORAGE_SECRET_NAME,
             REDIS_ENV_VARS,
@@ -61,6 +62,7 @@ def create_pulumi_program(config_path: Path):
             create_backup_job,
             create_container_apps_environment,
             create_databases,
+            create_edge_app,
             create_key_vault,
             create_litellm_app,
             create_log_analytics_workspace,
@@ -408,6 +410,7 @@ def create_pulumi_program(config_path: Path):
         mlflow_app = litellm_app = backup_job = None
 
         # 8.1. MLflow Container App
+        mlflow_tracking_uri_secret = None
         if config.mlflow and config.mlflow.enabled:
             pulumi.log.info("Creating MLflow Container App...")
 
@@ -431,6 +434,7 @@ def create_pulumi_program(config_path: Path):
                     depends_on=[shared_kv_access_policy, storage_conn_str_secret]
                 ),
                 custom_domains=config.mlflow.custom_domains,
+                ingress_external=not config.edge.enabled,
             )
 
             mlflow_fqdn = mlflow_app.configuration.apply(
@@ -438,15 +442,22 @@ def create_pulumi_program(config_path: Path):
             )
 
             # Create MLflow tracking URI secret
-            secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
+            mlflow_tracking_uri_secret = (
+                secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
+            )
 
             # Export MLflow URL
-            pulumi.export(
-                "mlflow_url",
-                mlflow_app.configuration.apply(
-                    lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
-                ),
-            )
+            if config.edge.enabled:
+                pulumi.export("mlflow_url", f"https://{config.mlflow.hostname}")
+            else:
+                pulumi.export(
+                    "mlflow_url",
+                    mlflow_app.configuration.apply(
+                        lambda c: (
+                            f"https://{c.ingress.fqdn}" if c and c.ingress else None
+                        )
+                    ),
+                )
 
         # 8.2. LiteLLM Container App
         if config.litellm and config.litellm.enabled:
@@ -471,6 +482,12 @@ def create_pulumi_program(config_path: Path):
             if config.redis.enabled:
                 litellm_env_vars.update(REDIS_ENV_VARS)
                 litellm_secret_refs.update(REDIS_KEY_VAULT_SECRET_REFS)
+            if config.edge.enabled and config.litellm.hostname:
+                # The edge sends LiteLLM its internal FQDN as Host, so LiteLLM
+                # builds its login redirect from this instead; operator wins.
+                litellm_env_vars.setdefault(
+                    "PROXY_BASE_URL", f"https://{config.litellm.hostname}"
+                )
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
@@ -496,6 +513,11 @@ def create_pulumi_program(config_path: Path):
                         storage_conn_str_secret,
                         *foundry_dependencies,
                         *redis_dependencies,
+                        *(
+                            [mlflow_tracking_uri_secret]
+                            if mlflow_tracking_uri_secret is not None
+                            else []
+                        ),
                     ]
                 ),
                 extra_modules=[adl_logger_path, spend_logger_path],
@@ -506,12 +528,48 @@ def create_pulumi_program(config_path: Path):
                 redis_clustering_policy=config.redis.clustering_policy,
                 proxy=config.litellm.proxy,
                 ip_security_restrictions=config.litellm.ip_security_restrictions,
+                ingress_external=not config.edge.enabled,
             )
 
             # Export LiteLLM URL
+            if config.edge.enabled:
+                pulumi.export("litellm_url", f"https://{config.litellm.hostname}")
+            else:
+                pulumi.export(
+                    "litellm_url",
+                    litellm_app.configuration.apply(
+                        lambda c: (
+                            f"https://{c.ingress.fqdn}" if c and c.ingress else None
+                        )
+                    ),
+                )
+
+        # 8.3. Traefik edge Container App (the only public entry point)
+        edge_app = None
+        if config.edge.enabled:
+            pulumi.log.info("Creating Traefik edge Container App...")
+            backends = {
+                key: app.configuration.apply(
+                    lambda c: c.ingress.fqdn if c and c.ingress else None
+                )
+                for key, app in (("litellm", litellm_app), ("mlflow", mlflow_app))
+                if app is not None
+            }
+            edge_app = create_edge_app(
+                name=edge_app_base_name(project_name, environment),
+                resource_group_name=resource_group,
+                location=location,
+                container_env_id=container_env.id,
+                config=config,
+                backends=backends,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[a for a in (mlflow_app, litellm_app) if a is not None]
+                ),
+            )
             pulumi.export(
-                "litellm_url",
-                litellm_app.configuration.apply(
+                "edge_url",
+                edge_app.configuration.apply(
                     lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
                 ),
             )
@@ -576,6 +634,7 @@ def create_pulumi_program(config_path: Path):
             log_analytics_workspace=log_analytics,
             litellm_app=litellm_app,
             mlflow_app=mlflow_app,
+            edge_app=edge_app,
             postgres_server=postgres_server,
             backup_job=backup_job,
             tags=config.tags,

@@ -82,11 +82,14 @@ def _run(
     # Container apps are stubbed: their identity input trips the mock
     # serializer, and what matters here is the surrounding program.
     def fake_create_app(**kwargs):
-        return SimpleNamespace(
-            id=pulumi.Output.from_input(f"{kwargs['app_name']}-id"),
-            name=pulumi.Output.from_input(kwargs["app_name"]),
-            configuration=pulumi.Output.from_input(None),
+        # A real resource, so the edge can list the apps in depends_on.
+        app = pulumi.ComponentResource("test:index:App", kwargs["app_name"])
+        app.id = pulumi.Output.from_input(f"{kwargs['app_name']}-id")
+        app.name = pulumi.Output.from_input(kwargs["app_name"])
+        app.configuration = pulumi.Output.from_input(
+            SimpleNamespace(ingress=SimpleNamespace(fqdn="app.internal.test"))
         )
+        return app
 
     monkeypatch.setattr(
         helpers, "create_container_app_with_key_vault_secrets", fake_create_app
@@ -328,6 +331,37 @@ def test_litellm_disabled_skips_gateway_alerts_without_crashing(tmp_path, monkey
     )
     assert {"alert-db-storage", "alert-db-cpu"} <= names
     assert any("litellm" in w.lower() for w in warnings)
+
+
+def _edge_config(**litellm):
+    return {
+        **ALL_ON,
+        "edge": {
+            "enabled": True,
+            "trusted_proxy_ips": ["100.100.0.0/17"],
+            "custom_domains": [
+                {"name": "ai.example.org", "certificate_name": "cert-0"},
+                {"name": "mlflow.example.org", "certificate_name": "cert-1"},
+            ],
+        },
+        "litellm": {"hostname": "ai.example.org"},
+        "mlflow": {"hostname": "mlflow.example.org"},
+    }
+
+
+def test_replica_restart_alert_covers_edge(tmp_path, monkeypatch):
+    resources, _, _ = _run(tmp_path, monkeypatch, _edge_config())
+    names = {r.name for r in _by_type(resources, "azure-native:monitor:MetricAlert")}
+    assert "alert-replica-restarts-edge" in names
+    [alert] = [r for r in resources if r.name == "alert-replica-restarts-edge"]
+    assert alert.inputs["criteria"]["allOf"][0]["metricName"] == "RestartCount"
+
+
+def test_no_edge_means_no_edge_restart_alert_or_warning(tmp_path, monkeypatch):
+    resources, _, warnings = _run(tmp_path, monkeypatch, ALL_ON)
+    names = {r.name for r in _by_type(resources, "azure-native:monitor:MetricAlert")}
+    assert "alert-replica-restarts-edge" not in names
+    assert not any("edge" in w.lower() for w in warnings)
 
 
 @pytest.fixture(autouse=True)

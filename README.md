@@ -355,7 +355,65 @@ time, not by `infra validate`.
 With `foundry.enabled: false` (the default) nothing changes: bring your own
 endpoint through the `azure-api-*` secrets.
 
-### Restricting LiteLLM admin routes (optional Traefik proxy)
+### Restricting LiteLLM admin routes (optional Traefik edge)
+
+With `edge.enabled`, a standalone Traefik app is the only public entry point and
+LiteLLM and MLflow move to internal ingress. It replaces the sidecar described
+in the next subsection, which stays for stacks that have not moved. Setting both
+`edge.enabled` and `litellm.proxy.enabled` is refused.
+
+```yaml
+edge:
+  enabled: true
+  image: docker.io/library/traefik:v3.7.x@sha256:<digest>
+  min_replicas: 2
+  custom_domains: # every public hostname, bound to the Traefik app
+    - { name: ai.example.org, certificate_name: ... }
+    - { name: mlflow.example.org, certificate_name: ... }
+  trusted_proxy_ips: [100.100.0.0/17] # required; see below
+  rate_limit_average: 50
+  rate_limit_burst: 100
+litellm:
+  hostname: ai.example.org
+  admin_allowed_ips: [203.0.113.0/24]
+mlflow:
+  hostname: mlflow.example.org
+```
+
+`edge.trusted_proxy_ips` is required and has no default: a missing or empty
+value is refused when the config loads. Set it to the range the environment's
+Envoy peers connect from. In the workload-profile environment observed in
+[#229](https://github.com/uw-ssec/llmoxie/issues/229) (ISS) that is
+`100.100.0.0/17`, which is not `networking.container_apps_subnet`. Don't include
+the replica range (`100.100.192.0/19` there): replicas must stay untrusted, or
+one workload could forge an allowlisted `X-Forwarded-For`. Consumption-only
+environments are untested, so find the peer range from the Traefik access log
+(`edge.log_forwarded_for: true`, `ClientAddr`) before relying on it. A pinned
+`edge.revision_suffix` is checked against the whole revision name
+(`<app>--<suffix>-p<8 hex>`, at most 54 characters, where `<app>` is
+`<project.name>-<project.environment>-traefik-<env>`); the error states how long
+the suffix may be.
+
+The deploy moves each hostname from its old app to Traefik and binds it to the
+existing managed certificate named in `edge.custom_domains`. Each hostname is
+down between its removal and its bind. A hostname whose managed certificate
+doesn't exist yet still needs a manual `az containerapp hostname add` / `bind`.
+Move callers of the backends' platform FQDNs before deploying, because they
+break at that deploy. See "Traefik edge in front of the stack" in
+`.agents/rules/infrastructure.md` for the trust model, validation errors and
+rollout, DNS, the two-deploy rollback and the trust boundary: with the edge on,
+LiteLLM and MLflow are reachable from inside the environment without passing
+Traefik's allowlist. Deploys and hostname binds change live infrastructure and
+are the owner's to run. Rehearse staging in the prod shape (edge off, sidecar
+on, hostnames bound) before turning the edge on, check on the staging flip that
+MLflow accepts its internal hostname (if not, set `MLFLOW_SERVER_ALLOWED_HOSTS`
+in `mlflow.env_vars`, keeping `MLFLOW_HOST: "0.0.0.0"` there), and pin
+`edge.refresh_trigger`. Don't enable the edge in prod until the staging
+client-IP checks there pass. With the edge on, run
+`llmaven infra extract --source mlflow` with the public MLflow hostname set in
+your env file.
+
+#### Sidecar (stacks without the edge)
 
 LiteLLM serves the inference API and its admin surface (UI, key, team, model and
 MCP management) on one port, and Container Apps ingress can only filter by IP

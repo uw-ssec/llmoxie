@@ -647,6 +647,32 @@ def validate_config(
 
     print()
 
+    # Edge-only settings with the edge off have no effect
+    if not config.edge.enabled:
+        ignored = [
+            name
+            for name, value in (
+                ("litellm.hostname", config.litellm.hostname),
+                ("litellm.admin_allowed_ips", config.litellm.admin_allowed_ips),
+                ("mlflow.hostname", config.mlflow.hostname),
+            )
+            if value
+        ]
+        for name in ignored:
+            message = (
+                f"{name} is set but edge.enabled is false, so it has no effect"
+                + (
+                    "; the admin surface is not restricted unless the proxy "
+                    "sidecar or ingress restrictions do it"
+                    if name == "litellm.admin_allowed_ips"
+                    else ""
+                )
+            )
+            warnings.append(message)
+            print(f"   ⚠️  {message}")
+        if ignored:
+            print()
+
     # 6. Production Validation
     if config.project.environment == "prod":
         print("6. Production Environment Checks")
@@ -666,6 +692,13 @@ def validate_config(
                 "Production environment should enable geo-redundant backups"
             )
             print("   ⚠️  Geo-redundant backup not enabled")
+
+        if config.edge.enabled and config.edge.min_replicas < 2:
+            warnings.append(
+                "Production environment should run the edge with edge.min_replicas "
+                "of at least 2: it is the single entry point"
+            )
+            print("   ⚠️  edge.min_replicas is below 2")
 
         print()
 
