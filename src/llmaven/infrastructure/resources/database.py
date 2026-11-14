@@ -126,6 +126,11 @@ def create_postgres_server(
     return postgres_server
 
 
+# Databases that outlive their config entry. keycloak_db holds every user,
+# credential and grant, so turning Keycloak off must not drop it.
+RETAINED_DATABASES = frozenset({"keycloak_db"})
+
+
 def create_databases(
     resource_group_name: Output[str],
     server_name: Output[str],
@@ -144,11 +149,14 @@ def create_databases(
         tags: Resource tags
 
     Returns:
-        List of PostgreSQL Database resources
+        List of PostgreSQL Database resources (keycloak_db is retained on delete)
     """
     databases = []
 
     for db_name in database_names:
+        extra = {}
+        if db_name in RETAINED_DATABASES:
+            extra["opts"] = pulumi.ResourceOptions(retain_on_delete=True)
         database = azure_native.dbforpostgresql.Database(
             f"postgres-db-{db_name}-{environment}",
             resource_group_name=resource_group_name,
@@ -156,6 +164,7 @@ def create_databases(
             database_name=db_name,
             charset="UTF8",
             collation="en_US.utf8",
+            **extra,
         )
         databases.append(database)
 
