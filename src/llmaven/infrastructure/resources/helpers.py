@@ -296,6 +296,7 @@ def create_mlflow_app(
         enable_ingress=True,
         ingress_external=ingress_external,
         custom_domains=custom_domains,
+        health_probe_path="/health",
         opts=opts,
     )
 
