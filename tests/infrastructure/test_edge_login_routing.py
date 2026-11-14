@@ -218,6 +218,7 @@ def test_mlflow_login_routes():
     http = _http()
     oauth = _winner(http, MLFLOW_HOST, "/oauth2/callback")
     assert http["routers"][oauth]["service"] == "mlflow-auth"
+    assert http["routers"][oauth]["middlewares"] == ["client-rate-limit"]
     assert http["services"]["mlflow-auth"]["loadBalancer"]["servers"] == [
         {"url": BACKENDS["mlflow-auth"]}
     ]
@@ -267,6 +268,8 @@ def test_litellm_login_routes():
     oauth = routers["litellm-oauth2"]
     assert oauth["rule"] == f"{host} && PathPrefix(`/oauth2/`)"
     assert oauth["service"] == "litellm-auth"
+    # The callback is reachable without a session, so it is rate-limited.
+    assert oauth["middlewares"] == ["client-rate-limit"]
 
     session = routers["litellm-session"]
     assert LITELLM_COOKIE_RULE in session["rule"]

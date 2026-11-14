@@ -246,6 +246,7 @@ def _add_litellm_login_routes(
         "entryPoints": [ENTRYPOINT],
         "rule": f"{host} && PathPrefix(`/oauth2/`)",
         "priority": _OAUTH2_PRIORITY,
+        "middlewares": ["client-rate-limit"],
         "service": "litellm-auth",
     }
     routers["litellm-session"] = {
@@ -367,6 +368,7 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
                 "entryPoints": [ENTRYPOINT],
                 "rule": f"{mlflow_host} && PathPrefix(`/oauth2/`)",
                 "priority": _OAUTH2_PRIORITY,
+                "middlewares": ["client-rate-limit"],
                 "service": "mlflow-auth",
             }
             middlewares["mlflow-login"] = _forward_auth(backends["mlflow-auth"])
