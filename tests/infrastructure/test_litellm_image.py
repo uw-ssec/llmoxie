@@ -29,7 +29,29 @@ def test_litellm_is_not_reinstalled_from_pypi():
 
 def test_build_checks_the_sso_cap_is_gone():
     text = DOCKERFILE.read_text()
-    match = re.search(r"^RUN python -c .*_raise_if_sso_exceeds_free_user_limit.*$", text, re.M)
+    match = re.search(
+        r"^RUN python -c .*_raise_if_sso_exceeds_free_user_limit.*$", text, re.M
+    )
     assert match, "build must assert the upstream cap function is absent"
     assert "ui_sso" in match.group(0)
     assert "assert not hasattr" in match.group(0)
+
+
+def test_workflow_builds_litellm_for_amd64_only():
+    # The fork base image is amd64 only, so an arm64 leg would fail the build.
+    import yaml
+
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "build-services.yml").read_text()
+    )
+    job = workflow["jobs"]["build-images"]
+    platforms = {
+        s["name"]: s["platforms"] for s in job["strategy"]["matrix"]["service"]
+    }
+    assert platforms["litellm"] == "linux/amd64"
+    for name in ("mlflow", "backup", "keycloak"):
+        assert platforms[name] == "linux/amd64,linux/arm64"
+    build = next(
+        s for s in job["steps"] if str(s.get("name", "")).startswith("Build and push")
+    )
+    assert build["with"]["platforms"] == "${{ matrix.service.platforms }}"

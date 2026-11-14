@@ -1,3 +1,6 @@
+## 2026-11-14
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
+
 ## 2026-11-13
 * **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
 * **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.

@@ -3,7 +3,7 @@ type: Decision
 title: "LiteLLM is pinned by version and digest, and upgrades across migrations are one-way"
 description: "The image is the uw-ssec fork of v1.108.6 by digest (amd64 only; no SSO cap); check advisories per exact version, and Prisma migrations are one-way, so rollback means restoring a pg_dump."
 tags: [litellm, supply-chain, upgrade]
-generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-13T23:41:05Z" }
+generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-14T00:05:16Z" }
 status: stable
 governance: constraint
 code_refs: [docker/dockerfiles/litellm.dockerfile]
@@ -16,7 +16,7 @@ sources:
 
 **Status at a7e7d32:** implemented (#148, then #235). Released as llmoxie `v2026.11.5`; prod and ISS run it since 2026-11-12.
 
-**Update 2026-11-13 (SSO stage):** the pinned image is now the uw-ssec fork, `ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6@sha256:98070f3f…fbd3` (branch `sso-enabled` of uw-ssec/llmoxie-litellm), amd64 only. The pinned version is unchanged (v1.108.6), so no new advisories apply beyond those already checked for it; the digest is the fork's own, not the upstream index below. The fork is upstream v1.108.6 plus commit `3f4f5a05`, which deletes the 5-user SSO cap and drops the proprietary `enterprise/` package; its compare against upstream `v1.108.6` touches no Prisma schema or migration file (only `.dockerignore`, `Dockerfile`, `pyproject.toml`, `uv.lock`, `README.md`, `litellm/proxy/management_endpoints/ui_sso.py`, `docker/Dockerfile.mlflow`, CI workflows and watcher script, and removed `dist/` artifacts), so the migration facts below are unchanged. Taking on the fork's maintenance was a deliberate choice: a later bump means merging upstream into the fork, publishing a new image and re-pinning its digest here, after re-checking advisories for the exact version. The Dockerfile asserts at build time that `_raise_if_sso_exceeds_free_user_limit` is absent from `ui_sso`.
+**Update 2026-11-13 (SSO stage):** the pinned image is now the uw-ssec fork, `ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6@sha256:98070f3f…fbd3` (branch `sso-enabled` of uw-ssec/llmoxie-litellm), amd64 only, so the published llmoxie LiteLLM image is amd64-only too (build-services.yml gives litellm `platforms: linux/amd64`; the other images stay multi-arch) and Apple Silicon/ARM hosts need emulation. The pinned version is unchanged (v1.108.6), so no new advisories apply beyond those already checked for it; the digest is the fork's own, not the upstream index below. The fork is upstream v1.108.6 plus commit `3f4f5a05`, which deletes the 5-user SSO cap and drops the proprietary `enterprise/` package; its compare against upstream `v1.108.6` touches no Prisma schema or migration file (only `.dockerignore`, `Dockerfile`, `pyproject.toml`, `uv.lock`, `README.md`, `litellm/proxy/management_endpoints/ui_sso.py`, `docker/Dockerfile.mlflow`, CI workflows and watcher script, and removed `dist/` artifacts), so the migration facts below are unchanged. Taking on the fork's maintenance was a deliberate choice: a later bump means merging upstream into the fork, publishing a new image and re-pinning its digest here, after re-checking advisories for the exact version. The Dockerfile asserts at build time that `_raise_if_sso_exceeds_free_user_limit` is absent from `ui_sso`.
 
 The upstream digest and `cosign` notes below describe the previous base; the fork's image is not signed by upstream.
 
