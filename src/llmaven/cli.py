@@ -836,6 +836,13 @@ class _KeycloakToken:
             _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL")
         if not client_secret:
             _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET")
+        if not token_url.lower().startswith("https://"):
+            # The client secret is posted to this URL; the message does not
+            # repeat it, since it may carry credentials.
+            _fail_extract(
+                "keycloak-token-url must start with https://: the CLI client "
+                "secret is sent to it"
+            )
         return cls(token_url, client_secret)
 
     def _request(self) -> tuple[str | None, str | None]:

@@ -1662,7 +1662,7 @@ class TestKeycloakTokenHardening:
         secrets = _keycloak_secrets()
         if case == "invalid_url":
             secrets["keycloak-token-url"] = (
-                f"http://user:{CLI_SECRET}@[bad/token?x={CLI_SECRET}"
+                f"https://user:{CLI_SECRET}@[bad/token?x={CLI_SECRET}"
             )
             patcher = patch("httpx.post", side_effect=ValueError(CLI_SECRET))
         elif case == "non_json":
@@ -1705,6 +1705,28 @@ class TestKeycloakTokenHardening:
 
         assert "https://auth.example.org/t" in result.output
         assert CLI_SECRET not in result.output
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://auth.example.org/token",
+            f"http://u:{CLI_SECRET}@auth.example.org/token?q={CLI_SECRET}",
+            "ftp://auth.example.org/token",
+            "auth.example.org/token",
+        ],
+    )
+    def test_non_https_token_url_is_refused_before_any_request(
+        self, url, runner: CliRunner, tmp_path: Path
+    ):
+        # The client secret is sent to this URL, so it must be https.
+        secrets = _keycloak_secrets(**{"keycloak-token-url": url})
+        with patch("httpx.post") as mock_post:
+            result = self._run(runner, tmp_path, secrets)
+
+        assert result.exit_code == 1
+        assert "keycloak-token-url must start with https://" in result.output
+        assert CLI_SECRET not in result.output
+        mock_post.assert_not_called()
 
     def test_repr_hides_secret(self):
         from llmaven.cli import _KeycloakToken
