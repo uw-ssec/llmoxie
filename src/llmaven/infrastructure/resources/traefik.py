@@ -210,8 +210,9 @@ def policy_digest(proxy: LiteLLMProxyConfig, dynamic_config: str) -> str:
 _OAUTH2_PRIORITY = 150
 _SESSION_PRIORITY = 100
 _BEARER_PRIORITY = 50
-# Go regexp: a percent sign, a backslash or a NUL in the routing path.
-_ODD_PATH_CHARS = r"[%\\\x00]"
+# Go regexp: a percent sign, a backslash, a NUL or a semicolon (path parameter)
+# in the routing path.
+_ODD_PATH_CHARS = r"[%\\\x00;]"
 
 
 def _forward_auth(login_base_url: str) -> dict:

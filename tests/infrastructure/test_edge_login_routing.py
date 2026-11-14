@@ -457,3 +457,21 @@ def test_missing_keycloak_backend_raises():
     backends = {k: v for k, v in BACKENDS.items() if k != "keycloak"}
     with pytest.raises(KeyError, match="keycloak"):
         _http(backends=backends)
+
+
+@pytest.mark.parametrize("path", ["/ui;x", "/v2/login;x", "/key;x/generate"])
+def test_semicolon_paths_never_use_the_bearer_route(path):
+    """A path parameter (;) may be dropped by the backend, so it needs a session."""
+    http = _http()
+    hits = _matching(http, LITELLM_HOST, path, Authorization="Bearer x")
+    assert hits
+    assert "litellm-bearer" not in hits
+    for name in hits:
+        assert _carries(http, name, "litellm-login"), name
+
+
+def test_plain_key_path_still_takes_the_bearer_route():
+    assert (
+        _winner(_http(), LITELLM_HOST, "/key/generate", Authorization="Bearer x")
+        == "litellm-bearer"
+    )
