@@ -137,6 +137,12 @@ def test_cli_client_is_service_account_only():
     )
     assert user["serviceAccountClientId"] == "llmaven-cli"
     assert "mlflow-user" in user["realmRoles"]
+    # oauth2-proxy rejects a bearer token without a verified email; .invalid
+    # is reserved (RFC 2606) so the address can never receive mail.
+    assert user["email"] == "llmaven-cli@service.invalid"
+    assert user["emailVerified"] is True
+    # No explicit scope list: the realm's default `email` scope applies.
+    assert "defaultClientScopes" not in client
 
 
 def test_roles_reach_access_tokens():

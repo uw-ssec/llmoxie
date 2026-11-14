@@ -191,6 +191,10 @@ def build_realm_document(config: LLMavenConfig) -> dict:
                 "username": "service-account-llmaven-cli",
                 "enabled": True,
                 "serviceAccountClientId": "llmaven-cli",
+                # oauth2-proxy needs a verified email in a bearer token; .invalid
+                # is reserved (RFC 2606), so this can never receive mail.
+                "email": "llmaven-cli@service.invalid",
+                "emailVerified": True,
                 "realmRoles": [mlflow.login.role],
             }
         )
