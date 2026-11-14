@@ -28,6 +28,7 @@ console_err = Console(stderr=True)
 
 app = typer.Typer(
     name="llmaven",
+    pretty_exceptions_show_locals=False,
     help="LLMaven - CLI for Scientific Discovery",
     add_completion=False,
 )
@@ -35,6 +36,7 @@ app = typer.Typer(
 # Create subcommand for infrastructure management
 infra_app = typer.Typer(
     name="infra",
+    pretty_exceptions_show_locals=False,
     help="Infrastructure deployment and management commands",
     add_completion=False,
 )
@@ -43,6 +45,7 @@ app.add_typer(infra_app)
 # Create subcommand for backup storage infrastructure management
 backup_infra_app = typer.Typer(
     name="backup-infra",
+    pretty_exceptions_show_locals=False,
     help="Backup storage infrastructure commands",
     add_completion=False,
 )
@@ -685,7 +688,10 @@ def _utc_date_to_epoch_ms(d: date) -> int:
 
 
 def _fetch_mlflow_experiment_ids_for_date_range(
-    mlflow_client: MlflowClient, start_date_obj: date, end_date_obj: date
+    mlflow_client: MlflowClient,
+    start_date_obj: date,
+    end_date_obj: date,
+    before_request: Callable[[], object] | None = None,
 ) -> list[str]:
     from mlflow.entities import ViewType
 
@@ -707,6 +713,8 @@ def _fetch_mlflow_experiment_ids_for_date_range(
     date_filter_string = f"creation_time < {end_ms}"
 
     while True:
+        if before_request is not None:
+            before_request()
         experiments = mlflow_client.search_experiments(
             view_type=ViewType.ACTIVE_ONLY,
             filter_string=date_filter_string,
@@ -965,11 +973,17 @@ def _extract_mlflow_traces(
     # This is only a coarse pre-filter; the authoritative date filtering happens
     # later at the trace level via trace.timestamp_ms.
     try:
+        id_kwargs = {}
+        if before_request is not None:
+            id_kwargs["before_request"] = before_request
         experiment_ids = _fetch_mlflow_experiment_ids_for_date_range(
             mlflow_client,
             start_date_obj,
             end_date_obj,
+            **id_kwargs,
         )
+    except typer.Exit:
+        raise
     except Exception as exc:
         _fail_extract(f"MLflow experiment search failed: {exc}")
 

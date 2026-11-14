@@ -1814,3 +1814,96 @@ class TestKeycloakTokenHardening:
         assert result.exit_code == 0, result.output
         assert seen == ["t1", "t2"]
         assert os.environ["MLFLOW_TRACKING_TOKEN"] == "previous-token"
+
+
+class TestTracebackLocalsAndExperimentRefresh:
+    def test_unexpected_secret_loading_error_does_not_show_secret(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+        env_file = tmp_path / "env"
+        env_file.write_text(
+            f"LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET={CLI_SECRET}\n",
+            encoding="utf-8",
+        )
+        secret_holder = {"value": CLI_SECRET}  # a local that would show in a frame
+
+        def _boom(path):
+            env_vars = {"LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET": CLI_SECRET}  # noqa: F841
+            raise ValueError("embedded null byte")
+
+        with patch("llmaven.infrastructure.utils.secrets.load_env_file", _boom):
+            result = runner.invoke(
+                app,
+                [
+                    "infra",
+                    "extract",
+                    "--source",
+                    "mlflow",
+                    "--from",
+                    "2026-01-01",
+                    "--to",
+                    "2026-01-01",
+                    "--out",
+                    str(tmp_path / "o.zip"),
+                    "--env-file",
+                    str(env_file),
+                ],
+            )
+
+        assert secret_holder["value"] == CLI_SECRET
+        assert result.exit_code != 0
+        assert CLI_SECRET not in result.output
+        assert CLI_SECRET not in repr(result.exception)
+
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    def test_token_refreshed_between_experiment_pages(
+        self,
+        _set_uri,
+        mock_client_cls,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        now = [1000.0]
+        monkeypatch.setattr("time.monotonic", lambda: now[0])
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+        seen: list[str | None] = []
+
+        def _search(**_kwargs):
+            seen.append(os.environ.get("MLFLOW_TRACKING_TOKEN"))
+            now[0] += 400
+            page = MockPagedList([], token="next" if len(seen) == 1 else None)
+            return page
+
+        mock_client_cls.return_value.search_experiments.side_effect = _search
+        responses = [
+            Mock(
+                status_code=200, json=lambda: {"access_token": "t1", "expires_in": 300}
+            ),
+            Mock(
+                status_code=200, json=lambda: {"access_token": "t2", "expires_in": 300}
+            ),
+        ]
+        with (
+            patch("httpx.post", side_effect=responses),
+            patch("llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()),
+        ):
+            result = invoke_extract(
+                runner,
+                from_date="2026-01-01",
+                to_date="2026-01-01",
+                source="mlflow",
+                output_file=tmp_path / "out.zip",
+            )
+
+        assert result.exit_code == 0, result.output
+        assert seen == ["t1", "t2"]
+        assert "MLFLOW_TRACKING_TOKEN" not in os.environ
+
+    def test_typer_apps_do_not_show_traceback_locals(self):
+        from llmaven.cli import backup_infra_app, infra_app
+
+        for typer_app in (app, infra_app, backup_infra_app):
+            assert typer_app.pretty_exceptions_show_locals is False
