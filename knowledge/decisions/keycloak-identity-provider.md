@@ -3,13 +3,10 @@ type: Decision
 title: Keycloak is the identity provider
 description: "Keycloak, with its realm applied from the YAML by keycloak-config-cli, replaces the Entra External ID plan; keycloak_db rides the Postgres point-in-time backups."
 tags: [keycloak, identity, auth, infra]
-generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-14T00:45:57Z" }
+generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-14T01:07:01Z" }
 status: stable
 governance: constraint
-code_refs:
-  - src/llmaven/infrastructure/resources/keycloak.py
-  - src/llmaven/infrastructure/resources/keycloak_realm.py
-  - docker/dockerfiles/keycloak.dockerfile
+code_refs: [src/llmaven/infrastructure/resources/keycloak.py, src/llmaven/infrastructure/resources/keycloak_realm.py, docker/dockerfiles/keycloak.dockerfile]
 ---
 
 ## Context
@@ -34,7 +31,8 @@ Run Keycloak 26.5.5 (optimized, `--cache=local`, one replica) as a Container App
 
 ## Caveats
 
-- Removing `litellm-admin` from a user blocks the UI gate but does not demote `proxy_admin` in LiteLLM or revoke keys they minted.
+- Each login app refreshes its session with Keycloak every minute and caps the cookie at 10 hours, so removing `mlflow-user` or `litellm-admin`, or disabling a user, ends gate access within about a minute (read in oauth2-proxy v7.15.6; not yet run on staging). It does not demote `proxy_admin` in LiteLLM or revoke API keys minted earlier, which keep the role LiteLLM gave them; revoke them.
+- The Keycloak image must be pinned by digest (`<name>:<tag>@sha256:<digest>`) once `keycloak.enabled` is true, because its database migrations are one-way; the schema enforces it. The `keycloak_db` database is retained on delete, so turning Keycloak off leaves it on the server (and out of Pulumi state).
 - Keycloak and the login apps are internal-ingress apps reachable from inside the environment without passing Traefik, the same open trust-boundary decision as stage 1.
 - Verified only locally with real containers over plain HTTP; TLS on internal FQDNs, Envoy peers and the hostname move are unverified until staging.
 
