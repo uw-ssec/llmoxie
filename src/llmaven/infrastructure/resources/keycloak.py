@@ -50,6 +50,8 @@ _CLIENT_SECRET_KEY = {
 
 OAUTH2_PROXY_PORT = 4180
 OAUTH2_PROXY_PING_PATH = "/ping"
+LOGIN_COOKIE_REFRESH = "1m"
+LOGIN_COOKIE_EXPIRE = "10h"
 _OIDC_PATH = "protocol/openid-connect"
 # kind -> (app suffix, gate client id, Key Vault key of its client secret,
 # Key Vault key of its cookie secret).
@@ -154,11 +156,25 @@ def create_login_app(
     """Create the oauth2-proxy app that answers Traefik's ForwardAuth for ``kind``.
 
     Traefik sends each request to ``https://<this app>/``; with no session the
-    proxy answers 401 and the edge sends the browser through ``/oauth2/`` on
-    the app's own host. Ingress is internal. The browser-facing URLs use the
+    proxy answers 302 to Keycloak's login page (seen in the real-container
+    run) and the browser comes back through ``/oauth2/callback`` on the app's
+    own host. Ingress is internal. The browser-facing URLs use the
     public Keycloak host; the token and key fetches go straight to Keycloak's
     internal FQDN. Discovery is skipped because the issuer (public) and the
     back-channel host differ.
+
+    Session refresh (oauth2-proxy v7.15.6, read at that tag): ``needsRefresh``
+    is true once the session is older than ``cookie_refresh``
+    (pkg/middleware/stored_session.go:244-246; the default is 0, which
+    disables it, pkg/apis/options/cookie.go:59). The loader then calls the
+    provider's ``RefreshSession`` (stored_session.go:217-250), and
+    ``KeycloakOIDCProvider.RefreshSession`` redeems the refresh token and calls
+    ``extractRoles`` on the result (providers/keycloak_oidc.go:75-84). The
+    redeem replaces ``Groups`` from the new ID token (providers/oidc.go:195-201),
+    and ``Authorize`` runs on the refreshed session (oauthproxy.go:1192). A fatal
+    OAuth error (``invalid_grant``, ``invalid_client``) clears the session
+    (stored_session.go:35-66, 221-236); a network error keeps it until the next
+    refresh, so the bound is about a minute while Keycloak is reachable.
 
     Role check (oauth2-proxy v7.15.6, read at that tag): ``OAUTH2_PROXY_ALLOWED_ROLES``
     is the ``allowed_roles`` option (pkg/apis/options/options.go, flag
@@ -211,6 +227,16 @@ def create_login_app(
         "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
         "OAUTH2_PROXY_WHITELIST_DOMAINS": app_config.hostname,
         "OAUTH2_PROXY_HTTP_ADDRESS": f"0.0.0.0:{OAUTH2_PROXY_PORT}",
+        # Revocation latency. oauth2-proxy defaults to no refresh and a 7-day
+        # cookie, so a removed role or a disabled user would keep a working
+        # session for days. With a refresh period, the first request after it
+        # redeems the refresh token at Keycloak (an ended session or disabled
+        # user fails with invalid_grant and the session is cleared) and
+        # keycloak-oidc re-reads the roles from the new tokens before
+        # Authorize runs. 1m is below Keycloak's 5-minute access-token
+        # lifespan; 10h is Keycloak's default SSO session max.
+        "OAUTH2_PROXY_COOKIE_REFRESH": LOGIN_COOKIE_REFRESH,
+        "OAUTH2_PROXY_COOKIE_EXPIRE": LOGIN_COOKIE_EXPIRE,
     }
     if kind == "mlflow":
         # `infra extract` calls MLflow with a Keycloak access token. LiteLLM's
@@ -239,6 +265,8 @@ def create_login_app(
         tags=tags,
         enable_ingress=True,
         ingress_external=False,
+        revision_suffix=kc.revision_suffix,
+        refresh_trigger=kc.refresh_trigger,
         health_probe_port=OAUTH2_PROXY_PORT,
         health_probe_path=OAUTH2_PROXY_PING_PATH,
         opts=opts,

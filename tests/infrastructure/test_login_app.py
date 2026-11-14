@@ -94,6 +94,11 @@ def _common_env(kind: str, client: str, role: str, host: str) -> dict:
         "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
         "OAUTH2_PROXY_WHITELIST_DOMAINS": host,
         "OAUTH2_PROXY_HTTP_ADDRESS": "0.0.0.0:4180",
+        # Revocation: a gate session is re-checked with Keycloak every minute
+        # (below its 5-minute access-token lifespan) and ends with Keycloak's
+        # SSO session max, not oauth2-proxy's 7-day cookie default.
+        "OAUTH2_PROXY_COOKIE_REFRESH": "1m",
+        "OAUTH2_PROXY_COOKIE_EXPIRE": "10h",
     }
 
 
@@ -147,3 +152,15 @@ def test_login_apps_never_skip_auth(kind):
     for name in SKIP_AUTH_ENV:
         assert name not in result["env"]
         assert name not in result["refs"]
+
+
+@pytest.mark.parametrize("kind", ["mlflow", "litellm"])
+def test_login_apps_carry_the_pinned_refresh_trigger_and_revision(kind):
+    # An unpinned REFRESH_TRIGGER is the current time, so every deploy would roll
+    # the login apps and `--expect-no-changes` could never pass.
+    config = _config()
+    config.keycloak.refresh_trigger = "pinned-1"
+    config.keycloak.revision_suffix = "rev1"
+    result = _create_login(kind, config)
+    assert result["env"]["REFRESH_TRIGGER"] == "pinned-1"
+    assert result["kwargs"]["template"].revision_suffix == "rev1"
