@@ -7,6 +7,7 @@ Uses Pulumi Automation API for programmatic infrastructure deployment.
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from pulumi import automation as auto
@@ -400,6 +401,96 @@ def _raise_if_changes(change_summary: dict) -> None:
         )
 
 
+REALM_JOB_PROGRESS_S = 30
+
+
+def run_realm_job(
+    config, job_name: str, timeout_s: int = 600, poll_s: int = 10
+) -> None:
+    """Start the Keycloak realm job and wait for it to succeed.
+
+    Every az call uses the configured subscription. Any terminal status other
+    than Succeeded (Failed, Stopped, Degraded) fails the deploy.
+
+    Raises:
+        DeploymentError: If the job fails, stops, or outlasts timeout_s
+    """
+    rg = config.azure.resource_group
+    sub = config.azure.subscription_id
+
+    started = _run_az_command(
+        [
+            "containerapp", "job", "start",
+            "--name", job_name,
+            "--resource-group", rg,
+            "-o", "json",
+        ],
+        subscription_id=sub,
+    )  # fmt: skip
+    try:
+        execution = json.loads(started.stdout).get("name")
+    except (json.JSONDecodeError, AttributeError):
+        execution = None
+    if not execution:
+        raise DeploymentError(
+            f"Started realm job '{job_name}' but could not read its execution "
+            f"name from the Azure CLI output: {started.stdout.strip()}"
+        )
+    print(f"Applying the Keycloak realm (job {job_name}, execution {execution})...")
+
+    elapsed = 0
+    last_progress = None
+    status = "Unknown"
+    while elapsed < timeout_s:
+        shown = _run_az_command(
+            [
+                "containerapp", "job", "execution", "show",
+                "--name", job_name,
+                "--resource-group", rg,
+                "--job-execution-name", execution,
+                "-o", "json",
+            ],
+            subscription_id=sub,
+        )  # fmt: skip
+        try:
+            status = json.loads(shown.stdout)["properties"]["status"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            status = "Unknown"
+        if status == "Succeeded":
+            print("✓ Keycloak realm applied")
+            return
+        if status in ("Failed", "Stopped", "Degraded"):
+            raise DeploymentError(
+                f"Realm job '{job_name}' execution '{execution}' ended {status}. "
+                "Read its output with: az containerapp job logs show "
+                f"--name {job_name} --resource-group {rg} --execution {execution}"
+            )
+        if last_progress is None or elapsed - last_progress >= REALM_JOB_PROGRESS_S:
+            print(f"  realm job {status} ({elapsed}s)")
+            last_progress = elapsed
+        time.sleep(poll_s)
+        elapsed += poll_s
+
+    raise DeploymentError(
+        f"Realm job '{job_name}' execution '{execution}' did not finish within "
+        f"{timeout_s}s (last status {status}). Check it with: "
+        f"az containerapp job execution show --name {job_name} "
+        f"--resource-group {rg} --job-execution-name {execution}"
+    )
+
+
+def _refuse_realm_rename(stack, configured: str) -> None:
+    """Refuse a deploy that would rename an already-deployed realm."""
+    deployed = stack.outputs().get("keycloak_realm")
+    if deployed is not None and deployed.value != configured:
+        raise DeploymentError(
+            f"keycloak.realm.name is '{configured}' but the stack deployed realm "
+            f"'{deployed.value}'. The realm name is part of the token issuer "
+            "https://<keycloak.hostname>/realms/<name>, so changing it would "
+            f"invalidate every client. Set it back to '{deployed.value}'."
+        )
+
+
 def deploy_infrastructure(
     config_path: Path,
     preview: bool = False,
@@ -498,6 +589,9 @@ def deploy_infrastructure(
         print(f"✓ Stack initialized: {stack_name}")
         print()
 
+        if config.keycloak.enabled:
+            _refuse_realm_rename(stack, config.keycloak.realm.name)
+
         # Install plugins
         print("Installing required Pulumi plugins...")
         stack.workspace.install_plugin("azure-native", "v2.0.0")
@@ -580,6 +674,16 @@ def deploy_infrastructure(
                 print("Deployment Outputs:")
                 for key, output in up_result.outputs.items():
                     print(f"  {key}: {output.value}")
+                print()
+
+            if config.keycloak.enabled:
+                job_output = (up_result.outputs or {}).get("keycloak_realm_job")
+                if job_output is None:
+                    raise DeploymentError(
+                        "The deployment did not export keycloak_realm_job, so the "
+                        "Keycloak realm was not applied."
+                    )
+                run_realm_job(config, job_output.value)
                 print()
 
             print("Next steps:")
