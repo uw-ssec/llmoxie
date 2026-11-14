@@ -11,6 +11,7 @@ from llmaven.infrastructure.config.schema import (
     KEYCLOAK_APP_SUFFIX,
     LLMavenConfig,
     container_app_name,
+    is_reserved_realm_env,
     realm_job_name,
 )
 from llmaven.infrastructure.resources import container_apps, keycloak
@@ -25,6 +26,7 @@ from .test_edge_app import _isolated_mocks
 AUTH_HOST = "auth.example.org"
 KC_FQDN = "keycloak.internal.test"
 IDENTITY = "identity-id"
+KEYCLOAK_IMAGE = "ghcr.io/uw-ssec/llmoxie-keycloak:26.5.5@sha256:" + "b" * 64
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +62,12 @@ def _config(mlflow_login=True, litellm_login=True, **realm) -> LLMavenConfig:
                 "hostname": "mlflow.example.org",
                 "login": {"enabled": mlflow_login},
             },
-            "keycloak": {"enabled": True, "hostname": AUTH_HOST, "realm": realm},
+            "keycloak": {
+                "enabled": True,
+                "image": KEYCLOAK_IMAGE,
+                "hostname": AUTH_HOST,
+                "realm": realm,
+            },
         }
     )
 
@@ -159,7 +166,7 @@ def test_keycloak_app_shape():
 
     container = result["container"]
     assert container.args == ["start", "--optimized", "--cache=local"]
-    assert container.image == "ghcr.io/uw-ssec/llmoxie-keycloak:latest"
+    assert container.image == KEYCLOAK_IMAGE
     assert (
         result["env"].items()
         >= {
@@ -272,3 +279,12 @@ def test_keycloak_uses_shared_identity_and_no_access_policy():
     )
     app["ap"].assert_not_called()
     job["ap"].assert_not_called()
+
+
+def test_every_env_the_realm_job_sets_is_reserved():
+    # realm.secret_refs must not be able to override any of these.
+    result = _create_job(_config())
+    names = set(result["env"]) | set(result["refs"])
+    assert names
+    for name in names:
+        assert is_reserved_realm_env(name), name

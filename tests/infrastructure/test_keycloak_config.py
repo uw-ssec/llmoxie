@@ -11,6 +11,7 @@ from llmaven.deployment.validate import validate_config
 from llmaven.infrastructure.config.schema import (
     CONTAINER_APP_NAME_MAX,
     LLMavenConfig,
+    is_reserved_realm_env,
     container_app_name,
     edge_app_name,
     realm_job_name,
@@ -25,6 +26,7 @@ EXISTING_STACK = {
         "postgres_subnet": "172.16.2.0/24",
     },
 }
+PINNED_KEYCLOAK = "ghcr.io/uw-ssec/llmoxie-keycloak:26.5.5@sha256:" + "b" * 64
 LITELLM_HOST = "ai.example.org"
 MLFLOW_HOST = "mlflow.example.org"
 AUTH_HOST = "auth.example.org"
@@ -49,7 +51,12 @@ def _data(keycloak=None, litellm=None, mlflow=None, project=None) -> dict:
             **(litellm or {}),
         },
         "mlflow": {"hostname": MLFLOW_HOST, **(mlflow or {})},
-        "keycloak": {"enabled": True, "hostname": AUTH_HOST, **(keycloak or {})},
+        "keycloak": {
+            "enabled": True,
+            "image": PINNED_KEYCLOAK,
+            "hostname": AUTH_HOST,
+            **(keycloak or {}),
+        },
     }
     if project:
         data["project"] = project
@@ -260,3 +267,61 @@ def test_override_client_ids_are_compared_case_insensitively():
         _config(
             keycloak={"realm": {"overrides": {"clients": [{"clientId": "LiteLLM"}]}}}
         )
+
+
+def test_keycloak_image_needs_a_digest_when_enabled():
+    # Keycloak's database migrations are one-way, so a moving tag is refused.
+    for image in (
+        "ghcr.io/uw-ssec/llmoxie-keycloak:latest",
+        "ghcr.io/uw-ssec/llmoxie-keycloak@sha256:" + "a" * 64,
+    ):
+        with pytest.raises(ValueError, match=r"@sha256:"):
+            _config(keycloak={"image": image})
+    _config(keycloak={"image": PINNED_KEYCLOAK})
+
+
+def test_unpinned_keycloak_image_is_ignored_with_keycloak_off():
+    # The default stays :latest because Keycloak is off by default.
+    config = LLMavenConfig()
+    assert config.keycloak.image.endswith(":latest")
+
+
+@pytest.mark.parametrize("key", ["realm", "id"])
+def test_overrides_cannot_rename_the_realm(key):
+    with pytest.raises(ValueError, match=r"keycloak\.realm\.name"):
+        _config(keycloak={"realm": {"overrides": {key: "other"}}})
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "KEYCLOAK_PASSWORD",
+        "KEYCLOAK_URL",
+        "keycloak_user",
+        "KEYCLOAK_AVAILABILITYCHECK_TIMEOUT",
+        "KC_CLIENT_SECRET_LITELLM",
+        "IMPORT_MANAGED_CLIENT",
+        "REALM_DOCUMENT_SHA256",
+    ],
+)
+def test_realm_secret_refs_cannot_use_reserved_names(name):
+    with pytest.raises(ValueError, match="reserved"):
+        _config(keycloak={"realm": {"secret_refs": {name: "some-secret"}}})
+
+
+def test_realm_secret_refs_accept_other_names():
+    config = _config(keycloak={"realm": {"secret_refs": {"SMTP_PASSWORD": "smtp"}}})
+    assert config.keycloak.realm.secret_refs == {"SMTP_PASSWORD": "smtp"}
+    assert not is_reserved_realm_env("SMTP_PASSWORD")
+
+
+@pytest.mark.parametrize("app", ["mlflow", "litellm"])
+def test_login_needs_its_app_enabled(app):
+    data = _data(**{app: {"enabled": False, "login": {"enabled": True}}})
+    with pytest.raises(ValueError, match=rf"{app}\.login\.enabled.*{app}\.enabled"):
+        LLMavenConfig.model_validate(data)
+
+
+def test_master_realm_is_rejected():
+    with pytest.raises(ValueError, match="master"):
+        _config(keycloak={"realm": {"name": "master"}})

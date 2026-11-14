@@ -18,6 +18,7 @@ from llmaven.infrastructure.resources import SecretsManager
 from llmaven.infrastructure.resources import keycloak as keycloak_module
 from llmaven.infrastructure.resources.secrets_manager import KEYCLOAK_SECRET_NAMES
 
+from . import PINNED_KEYCLOAK_IMAGE
 from .test_edge_program import EDGE, _run, _with_edge
 
 KEYCLOAK_HOST = "auth.example.org"
@@ -41,7 +42,11 @@ KEYCLOAK_EDGE = {
 def _keycloak(mlflow_login=True, litellm_login=True, **litellm):
     config = _with_edge(**litellm)
     config["edge"] = KEYCLOAK_EDGE
-    config["keycloak"] = {"enabled": True, "hostname": KEYCLOAK_HOST}
+    config["keycloak"] = {
+        "enabled": True,
+        "image": PINNED_KEYCLOAK_IMAGE,
+        "hostname": KEYCLOAK_HOST,
+    }
     config["mlflow"]["login"] = {"enabled": mlflow_login}
     config["litellm"]["login"] = {"enabled": litellm_login}
     return config

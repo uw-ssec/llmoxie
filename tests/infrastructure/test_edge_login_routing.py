@@ -16,6 +16,7 @@ from llmaven.infrastructure.resources.traefik import (
     build_edge_dynamic_config,
 )
 
+from . import PINNED_KEYCLOAK_IMAGE
 from .test_edge_config import LITELLM_HOST, MLFLOW_HOST, _data
 
 KEYCLOAK_HOST = "auth.example.org"
@@ -38,6 +39,7 @@ def _config(*, keycloak=True, mlflow_login=True, litellm_login=True, kc_ips=None
     if keycloak:
         data["keycloak"] = {
             "enabled": True,
+            "image": PINNED_KEYCLOAK_IMAGE,
             "hostname": KEYCLOAK_HOST,
             "admin_allowed_ips": [KEYCLOAK_ADMIN] if kc_ips is None else kc_ips,
         }

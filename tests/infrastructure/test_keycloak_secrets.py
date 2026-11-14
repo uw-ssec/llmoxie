@@ -9,6 +9,7 @@ from llmaven.infrastructure.resources.secrets_manager import (
     SecretsManager,
 )
 
+from . import PINNED_KEYCLOAK_IMAGE
 from .test_edge_app import _isolated_mocks
 
 HOST = "psql.example.postgres.database.azure.com"
@@ -53,7 +54,11 @@ def _config(mlflow_login: bool, litellm_login: bool) -> LLMavenConfig:
                     {"name": "auth.example.org", "certificate_name": "cert-2"},
                 ],
             },
-            "keycloak": {"enabled": True, "hostname": "auth.example.org"},
+            "keycloak": {
+                "enabled": True,
+                "image": PINNED_KEYCLOAK_IMAGE,
+                "hostname": "auth.example.org",
+            },
             "litellm": {
                 "hostname": "ai.example.org",
                 "login": {"enabled": litellm_login},

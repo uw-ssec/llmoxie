@@ -877,6 +877,22 @@ class EdgeConfig(ContainerAppConfig):
     validate_cidrs = field_validator("trusted_proxy_ips")(_check_cidrs)
 
 
+# Env var names the realm job sets itself (resources/keycloak.py
+# create_realm_job): keycloak-config-cli's KEYCLOAK_* and IMPORT_* settings, the
+# per-client KC_CLIENT_SECRET_* secrets, and the realm digest. A test asserts
+# every name the job sets is covered.
+_RESERVED_REALM_ENV_PREFIXES = ("KEYCLOAK_", "IMPORT_", "KC_CLIENT_SECRET_")
+_RESERVED_REALM_ENV_NAMES = frozenset({"REALM_DOCUMENT_SHA256"})
+
+
+def is_reserved_realm_env(name: str) -> bool:
+    """Whether the realm job sets this env var itself."""
+    upper = name.upper()
+    return upper in _RESERVED_REALM_ENV_NAMES or upper.startswith(
+        _RESERVED_REALM_ENV_PREFIXES
+    )
+
+
 class KeycloakRealmConfig(BaseModel):
     """The realm the stack imports into Keycloak."""
 
@@ -888,7 +904,8 @@ class KeycloakRealmConfig(BaseModel):
     display_name: str = Field(default="LLMoxie", description="Realm display name")
     secret_refs: dict[str, str] = Field(
         default_factory=dict,
-        description="Realm-import env var name to Key Vault secret name",
+        description="Realm-import env var name to Key Vault secret name. Names "
+        "the realm job sets itself are reserved",
     )
     overrides: dict = Field(
         default_factory=dict,
@@ -896,9 +913,39 @@ class KeycloakRealmConfig(BaseModel):
         f"redefine the stack's clients ({', '.join(STACK_CLIENT_IDS)})",
     )
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if v == "master":
+            raise ValueError(
+                "realm.name cannot be 'master': that is Keycloak's own admin realm"
+            )
+        return v
+
+    @field_validator("secret_refs")
+    @classmethod
+    def validate_secret_refs(cls, v: dict[str, str]) -> dict[str, str]:
+        reserved = sorted(n for n in v if is_reserved_realm_env(n))
+        if reserved:
+            raise ValueError(
+                f"realm.secret_refs uses reserved env var names {reserved}: the "
+                "realm job sets these itself (reserved: names starting with "
+                f"{', '.join(_RESERVED_REALM_ENV_PREFIXES)}, and "
+                f"{', '.join(sorted(_RESERVED_REALM_ENV_NAMES))})"
+            )
+        return v
+
     @field_validator("overrides")
     @classmethod
     def validate_overrides(cls, v: dict) -> dict:
+        for key in ("realm", "id"):
+            if key in v:
+                raise ValueError(
+                    f"realm.overrides sets {key!r}, which would rename the "
+                    "imported realm while the issuer URLs, exports and rename "
+                    "guard still use the configured name. Set keycloak.realm.name "
+                    "instead."
+                )
         for client in v.get("clients") or []:
             client_id = client.get("clientId") if isinstance(client, dict) else None
             if isinstance(client_id, str) and "$(" in client_id:
@@ -919,10 +966,10 @@ class KeycloakRealmConfig(BaseModel):
 _PINNED_IMAGE_RE = re.compile(r"^[^@\s]*[^@\s/]:[^@\s/:]+@sha256:[0-9a-f]{64}$")
 
 
-def _check_digest(v: str) -> str:
+def _check_digest(v: str, field: str = "Image") -> str:
     if not _PINNED_IMAGE_RE.fullmatch(v):
         raise ValueError(
-            f"Image {v!r} must be pinned as <name>:<tag>@sha256:<64 hex digits>: "
+            f"{field} {v!r} must be pinned as <name>:<tag>@sha256:<64 hex digits>: "
             "this stack runs it with credentials, so a moving tag is not accepted"
         )
     return v
@@ -934,7 +981,10 @@ class KeycloakConfig(BaseModel):
     enabled: bool = Field(default=False, description="Run Keycloak behind the edge")
     image: str = Field(
         default="ghcr.io/uw-ssec/llmoxie-keycloak:latest",
-        description="Keycloak image",
+        description="Keycloak image. The default is a moving tag, which is fine "
+        "while Keycloak is off; once keycloak.enabled is true it must be "
+        "<name>:<tag>@sha256:<digest>, because Keycloak's database migrations "
+        "are one-way",
     )
     hostname: str | None = Field(
         default=None,
@@ -1339,6 +1389,11 @@ class LLMavenConfig(BaseModel):
                     f"{name}.login.enabled is true but keycloak.enabled is false: "
                     "the login signs users in through Keycloak."
                 )
+            if app.login.enabled and not app.enabled:
+                raise ValueError(
+                    f"{name}.login.enabled is true but {name}.enabled is false: "
+                    "there is no app to put a login in front of."
+                )
         if not keycloak.enabled:
             return
         if not edge.enabled:
@@ -1346,8 +1401,9 @@ class LLMavenConfig(BaseModel):
                 "keycloak.enabled needs edge.enabled: Keycloak is reached only "
                 "through the edge."
             )
-        _check_digest(keycloak.config_cli_image)
-        _check_digest(keycloak.oauth2_proxy_image)
+        _check_digest(keycloak.image, "keycloak.image")
+        _check_digest(keycloak.config_cli_image, "keycloak.config_cli_image")
+        _check_digest(keycloak.oauth2_proxy_image, "keycloak.oauth2_proxy_image")
         if keycloak.hostname is None:
             raise ValueError(
                 "keycloak.enabled is true but keycloak.hostname is not set: the "

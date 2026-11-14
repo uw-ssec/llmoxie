@@ -13,6 +13,8 @@ from llmaven.infrastructure.resources.keycloak_realm import (
     render_realm_document,
 )
 
+from . import PINNED_KEYCLOAK_IMAGE
+
 LITELLM_HOST = "ai.example.org"
 MLFLOW_HOST = "mlflow.example.org"
 AUTH_HOST = "auth.example.org"
@@ -47,6 +49,7 @@ def _config(mlflow_login=True, litellm_login=True, overrides=None) -> LLMavenCon
             },
             "keycloak": {
                 "enabled": True,
+                "image": PINNED_KEYCLOAK_IMAGE,
                 "hostname": AUTH_HOST,
                 "realm": {"overrides": overrides or {}},
             },
