@@ -588,14 +588,30 @@ def create_pulumi_program(config_path: Path):
                     "GENERIC_USER_ID_ATTRIBUTE": "preferred_username",
                     "GENERIC_USER_EMAIL_ATTRIBUTE": "email",
                     "GENERIC_USER_DISPLAY_NAME_ATTRIBUTE": "name",
-                    # LiteLLM reads the role from this claim; `proxy_admin`
-                    # makes an admin. The realm must emit it (see the report).
-                    "GENERIC_USER_ROLE_ATTRIBUTE": "role",
+                    # Role mapping, read in the uw-ssec fork (branch sso-enabled,
+                    # litellm/proxy/management_endpoints/ui_sso.py):
+                    # _setup_role_mappings (~1443-1452) reads these three env vars
+                    # and parses GENERIC_ROLE_MAPPINGS_ROLES with ast.literal_eval
+                    # (a Python dict literal, not JSON). generic_response_convertor
+                    # (~1247-1283) reads the groups at the dotted path of
+                    # GROUP_CLAIM in the userinfo response, which the realm fills
+                    # with realm_access.roles; determine_role_from_groups (~845)
+                    # picks the highest matching role. The role goes into the
+                    # user update on every login (~2006-2015), not only at
+                    # creation. With a mapping set, GENERIC_USER_ROLE_ATTRIBUTE
+                    # is only a fallback for no match, so it is not set.
+                    "GENERIC_ROLE_MAPPINGS_GROUP_CLAIM": "realm_access.roles",
+                    "GENERIC_ROLE_MAPPINGS_ROLES": repr(
+                        {"proxy_admin": [config.litellm.login.role]}
+                    ),
                 }.items():
                     litellm_env_vars.setdefault(key, value)
-                litellm_secret_refs.setdefault(
-                    "GENERIC_CLIENT_SECRET", KEYCLOAK_SECRET_NAMES["client_litellm"]
-                )
+                # An operator's plain value or own secret ref wins; both would
+                # put the variable in the container twice.
+                if "GENERIC_CLIENT_SECRET" not in litellm_env_vars:
+                    litellm_secret_refs.setdefault(
+                        "GENERIC_CLIENT_SECRET", KEYCLOAK_SECRET_NAMES["client_litellm"]
+                    )
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",

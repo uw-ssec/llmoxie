@@ -112,6 +112,7 @@ def test_gate_clients():
 
 def test_litellm_sso_client():
     client = _client(build_realm_document(_config()), "litellm")
+    assert "pkce.code.challenge.method" not in client["attributes"]
     assert client["redirectUris"] == [f"https://{LITELLM_HOST}/sso/callback"]
     assert client["publicClient"] is False
     assert client["standardFlowEnabled"] is True

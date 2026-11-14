@@ -107,6 +107,7 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
     )
 
     # The realm job carries a managed identity, which trips the mock serializer.
+    # monkeypatch undoes this stub at the end of each test.
     jobs: dict[str, dict] = {}
 
     def fake_job(resource_name, opts=None, **kwargs):

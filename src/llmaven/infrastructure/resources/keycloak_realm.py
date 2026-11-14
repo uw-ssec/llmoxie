@@ -121,8 +121,10 @@ def _audience_mapper(audience: str) -> dict:
     }
 
 
-def _web_client(client_id: str, redirect_uri: str, name: str) -> dict:
-    return {
+def _web_client(
+    client_id: str, redirect_uri: str, name: str, pkce: bool = True
+) -> dict:
+    client = {
         "clientId": client_id,
         "name": name,
         "enabled": True,
@@ -135,9 +137,12 @@ def _web_client(client_id: str, redirect_uri: str, name: str) -> dict:
         "directAccessGrantsEnabled": False,
         "serviceAccountsEnabled": False,
         "redirectUris": [redirect_uri],
-        "attributes": {"pkce.code.challenge.method": "S256"},
+        "attributes": {},
         "protocolMappers": [_realm_role_mapper()],
     }
+    if pkce:
+        client["attributes"]["pkce.code.challenge.method"] = "S256"
+    return client
 
 
 def build_realm_document(config: LLMavenConfig) -> dict:
@@ -203,6 +208,8 @@ def build_realm_document(config: LLMavenConfig) -> dict:
                 "litellm",
                 f"https://{litellm.hostname}/sso/callback",
                 "LiteLLM SSO",
+                # LiteLLM's generic SSO sends no PKCE; it is a confidential client.
+                pkce=False,
             )
         )
     roles = list({r["name"]: r for r in reversed(roles)}.values())[::-1]
