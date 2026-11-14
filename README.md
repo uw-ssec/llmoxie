@@ -411,7 +411,26 @@ in `mlflow.env_vars`, keeping `MLFLOW_HOST: "0.0.0.0"` there), and pin
 `edge.refresh_trigger`. Don't enable the edge in prod until the staging
 client-IP checks there pass. With the edge on, run
 `llmaven infra extract --source mlflow` with the public MLflow hostname set in
-your env file.
+your env file. To pass the MLflow login, also set
+`LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL` (the realm's token endpoint) and
+`LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET` (the `llmaven-cli` client secret)
+there; set both or neither.
+
+Keycloak sign-in (stage 2, off by default) goes further: `keycloak.enabled` adds
+Keycloak behind the edge on its own hostname, applies a realm from the YAML with
+keycloak-config-cli after each `infra deploy`, and `mlflow.login.enabled` /
+`litellm.login.enabled` put a Keycloak login in front of the two UIs. On
+LiteLLM, the exact public inference and health paths stay open, but any other
+path needs a Keycloak session unless it carries `Authorization: Bearer` from an
+allowlisted IP, and encoded paths (`%`, `;`, backslash) and the UI paths always
+need one, so admin scripts that use them or other key headers must change.
+Keycloak and the login apps are internal-ingress apps, like LiteLLM and MLflow,
+so other workloads in the environment can reach them without passing Traefik.
+The realm name is permanent, and `keycloak.image` must be pinned by digest once
+Keycloak is on. Removing a role or disabling a user ends gate access within
+about a minute; API keys minted earlier keep their LiteLLM role. See "Keycloak
+and the logins" in `.agents/rules/infrastructure.md` for config, secrets,
+rollout, rollback and what was tested locally versus still unverified.
 
 #### Sidecar (stacks without the edge)
 

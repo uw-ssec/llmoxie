@@ -16,6 +16,7 @@ import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import date
 
     from mlflow import MlflowClient
@@ -27,6 +28,7 @@ console_err = Console(stderr=True)
 
 app = typer.Typer(
     name="llmaven",
+    pretty_exceptions_show_locals=False,
     help="LLMaven - CLI for Scientific Discovery",
     add_completion=False,
 )
@@ -34,6 +36,7 @@ app = typer.Typer(
 # Create subcommand for infrastructure management
 infra_app = typer.Typer(
     name="infra",
+    pretty_exceptions_show_locals=False,
     help="Infrastructure deployment and management commands",
     add_completion=False,
 )
@@ -42,6 +45,7 @@ app.add_typer(infra_app)
 # Create subcommand for backup storage infrastructure management
 backup_infra_app = typer.Typer(
     name="backup-infra",
+    pretty_exceptions_show_locals=False,
     help="Backup storage infrastructure commands",
     add_completion=False,
 )
@@ -417,7 +421,9 @@ def _parse_utc_date(date_value: str) -> date:
 
 
 def _fail_extract(message: str, code: int = 1) -> NoReturn:
-    console_err.print(f"[red]✗[/red] {message}")
+    from rich.markup import escape
+
+    console_err.print(f"[red]✗[/red] {escape(message)}")
     raise typer.Exit(code=code)
 
 
@@ -682,7 +688,10 @@ def _utc_date_to_epoch_ms(d: date) -> int:
 
 
 def _fetch_mlflow_experiment_ids_for_date_range(
-    mlflow_client: MlflowClient, start_date_obj: date, end_date_obj: date
+    mlflow_client: MlflowClient,
+    start_date_obj: date,
+    end_date_obj: date,
+    before_request: Callable[[], object] | None = None,
 ) -> list[str]:
     from mlflow.entities import ViewType
 
@@ -704,6 +713,8 @@ def _fetch_mlflow_experiment_ids_for_date_range(
     date_filter_string = f"creation_time < {end_ms}"
 
     while True:
+        if before_request is not None:
+            before_request()
         experiments = mlflow_client.search_experiments(
             view_type=ViewType.ACTIVE_ONLY,
             filter_string=date_filter_string,
@@ -725,6 +736,7 @@ def _fetch_mlflow_experiment_traces_in_date_range(
     experiment_ids: list[str],
     start_ms: int,
     end_ms: int,
+    before_request: Callable[[], object] | None = None,
 ) -> list[object]:
     if not experiment_ids:
         return []
@@ -745,6 +757,8 @@ def _fetch_mlflow_experiment_traces_in_date_range(
                 f"(page {page_num}, {len(all_traces)} collected)"
             )
 
+            if before_request is not None:
+                before_request()
             traces = client.search_traces(
                 locations=experiment_ids,
                 filter_string=date_filter_string,
@@ -774,12 +788,177 @@ def _get_mlflow_tracking_uri(env_file: Path | None) -> str:
     return mlflow_tracking_uri
 
 
+_TOKEN_REFRESH_MARGIN_SECONDS = 60.0
+_DEFAULT_TOKEN_LIFETIME_SECONDS = 300.0
+
+
+def _safe_url(url: object) -> str:
+    """Reduce a URL to scheme, host and path for messages (no userinfo/query)."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(str(url))
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return f"{parts.scheme}://{host}{parts.path}"
+    except Exception:
+        return "<invalid URL>"
+
+
+class _KeycloakToken:
+    """Keycloak client-credentials token for MLflow, kept fresh while it runs.
+
+    The client secret lives only here. __repr__ is masked and every failure is
+    reported without chained context, so tracebacks that show locals (Typer's
+    default) cannot reveal it.
+    """
+
+    __slots__ = ("_expires_at", "_secret", "_token", "_url")
+
+    def __init__(self, url: str, secret: str) -> None:
+        self._url = url
+        self._secret = secret
+        self._token: str | None = None
+        self._expires_at = 0.0
+
+    def __repr__(self) -> str:
+        return "_KeycloakToken(<redacted>)"
+
+    @classmethod
+    def from_env_file(cls, env_file: Path | None) -> _KeycloakToken | None:
+        secrets = _get_llmaven_secrets(env_file)
+        token_url = secrets.get("keycloak-token-url")
+        client_secret = secrets.get("keycloak-cli-client-secret")
+        if not token_url and not client_secret:
+            return None
+        if not token_url:
+            _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL")
+        if not client_secret:
+            _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET")
+        if not token_url.lower().startswith("https://"):
+            # The client secret is posted to this URL; the message does not
+            # repeat it, since it may carry credentials.
+            _fail_extract(
+                "keycloak-token-url must start with https://: the CLI client "
+                "secret is sent to it"
+            )
+        return cls(token_url, client_secret)
+
+    def _request(self) -> tuple[str | None, str | None]:
+        """Return (error message, None) or (None, token); never raises."""
+        import time
+
+        import httpx
+
+        status = ""
+        try:
+            response = httpx.post(
+                self._url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": "llmaven-cli",
+                    "client_secret": self._secret,
+                },
+                timeout=30.0,
+            )
+            status = f"HTTP {response.status_code}"
+            if response.status_code != 200:
+                return f"Keycloak token request failed with {status}", None
+            body = response.json()
+            token = body["access_token"]
+            if not isinstance(token, str) or not token:
+                raise TypeError("access_token is not a non-empty string")
+            try:
+                lifetime = float(
+                    body.get("expires_in", _DEFAULT_TOKEN_LIFETIME_SECONDS)
+                )
+            except (TypeError, ValueError):
+                lifetime = _DEFAULT_TOKEN_LIFETIME_SECONDS
+            self._expires_at = time.monotonic() + lifetime
+        except Exception as exc:
+            detail = f" ({status})" if status else ""
+            return (
+                f"Keycloak token request failed: {type(exc).__name__}{detail} "
+                f"for {_safe_url(self._url)}",
+                None,
+            )
+        return None, token
+
+    def ensure_fresh(self) -> str:
+        """Set MLFLOW_TRACKING_TOKEN, fetching a new token when near expiry."""
+        import os
+        import time
+
+        if (
+            self._token is None
+            or time.monotonic() >= self._expires_at - _TOKEN_REFRESH_MARGIN_SECONDS
+        ):
+            error, token = self._request()
+            if error is not None:
+                _fail_extract(error)
+            self._token = token
+        os.environ["MLFLOW_TRACKING_TOKEN"] = self._token
+        return self._token
+
+
+def _get_mlflow_token(env_file: Path | None) -> str | None:
+    """Fetch a Keycloak access token for MLflow's login, if configured."""
+    source = _KeycloakToken.from_env_file(env_file)
+    if source is None:
+        return None
+    error, token = source._request()
+    if error is not None:
+        _fail_extract(error)
+    return token
+
+
 def _extract_mlflow_logs(
     start_date_obj: date,
     end_date_obj: date,
     output_file: Path,
     env_file: Path | None,
     use_zip: bool = True,
+) -> None:
+    import os
+
+    # Fail fast on a missing tracking URI, before any token request.
+    _get_mlflow_tracking_uri(env_file)
+
+    source = _KeycloakToken.from_env_file(env_file)
+    if source is None:
+        _extract_mlflow_traces(
+            start_date_obj, end_date_obj, output_file, env_file, use_zip=use_zip
+        )
+        return
+
+    # MLflow's client re-reads this per request; it is set only while the
+    # extract runs and refreshed before each request batch.
+    previous = os.environ.get("MLFLOW_TRACKING_TOKEN")
+    try:
+        source.ensure_fresh()
+        _extract_mlflow_traces(
+            start_date_obj,
+            end_date_obj,
+            output_file,
+            env_file,
+            use_zip=use_zip,
+            before_request=source.ensure_fresh,
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("MLFLOW_TRACKING_TOKEN", None)
+        else:
+            os.environ["MLFLOW_TRACKING_TOKEN"] = previous
+
+
+def _extract_mlflow_traces(
+    start_date_obj: date,
+    end_date_obj: date,
+    output_file: Path,
+    env_file: Path | None,
+    use_zip: bool = True,
+    before_request: Callable[[], object] | None = None,
 ) -> None:
     from collections import defaultdict
 
@@ -801,11 +980,17 @@ def _extract_mlflow_logs(
     # This is only a coarse pre-filter; the authoritative date filtering happens
     # later at the trace level via trace.timestamp_ms.
     try:
+        id_kwargs = {}
+        if before_request is not None:
+            id_kwargs["before_request"] = before_request
         experiment_ids = _fetch_mlflow_experiment_ids_for_date_range(
             mlflow_client,
             start_date_obj,
             end_date_obj,
+            **id_kwargs,
         )
+    except typer.Exit:
+        raise
     except Exception as exc:
         _fail_extract(f"MLflow experiment search failed: {exc}")
 
@@ -825,13 +1010,19 @@ def _extract_mlflow_logs(
             date_str = current_date.isoformat()
 
             # Fetch all traces for this UTC day across the candidate experiments.
+            fetch_kwargs = {}
+            if before_request is not None:
+                fetch_kwargs["before_request"] = before_request
             try:
                 traces = _fetch_mlflow_experiment_traces_in_date_range(
                     client=mlflow_client,
                     experiment_ids=experiment_ids,
                     start_ms=_utc_date_to_epoch_ms(current_date),
                     end_ms=_utc_date_to_epoch_ms(next_date),
+                    **fetch_kwargs,
                 )
+            except typer.Exit:
+                raise
             except Exception as exc:
                 _fail_extract(f"MLflow trace search failed for {date_str}: {exc}")
 

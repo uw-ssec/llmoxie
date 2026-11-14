@@ -673,6 +673,16 @@ def validate_config(
         if ignored:
             print()
 
+    # Keycloak with no admin allowlist leaves its admin console closed to all
+    if config.keycloak.enabled and not config.keycloak.admin_allowed_ips:
+        message = (
+            "keycloak.admin_allowed_ips is empty, so the Keycloak admin console "
+            "is closed to everyone"
+        )
+        warnings.append(message)
+        print(f"   ⚠️  {message}")
+        print()
+
     # 6. Production Validation
     if config.project.environment == "prod":
         print("6. Production Environment Checks")

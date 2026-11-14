@@ -25,6 +25,7 @@ def _config(resource_group="rg-test", state_store="pulumistatetest"):
     config.project.enable_passphrase = False
     config.project.pulumi_state_store = state_store
     config.azure.resource_group = resource_group
+    config.keycloak.enabled = False
     return config
 
 

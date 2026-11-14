@@ -1,4 +1,15 @@
+## 2026-11-14
+* **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
+* **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
+* **Update**: Linked `decisions/keycloak-identity-provider.md` to `decisions/stay-on-oss-litellm-gateway.md` (LiteLLM SSO for the Admin UI uses the uw-ssec fork and Keycloak).
+* **Update**: Linked `decisions/keycloak-identity-provider.md` to `requirements/traefik-sidecar-allowlist-and-client-ip.md` (The edge allowlist and client-IP trust the Keycloak admin console and login routes depend on).
+* **Creation**: Documented concept `decisions/keycloak-identity-provider.md` (Keycloak is the identity provider).
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
+
 ## 2026-11-13
+* **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
+* **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
 * **Update**: Updated concept `decisions/no-op-deploy-controls.md`.
 * **Update**: Updated concept `requirements/traefik-sidecar-allowlist-and-client-ip.md`.
 * **Update**: Updated concept `decisions/monitoring-alerts-config.md`.
