@@ -416,6 +416,18 @@ your env file. To pass the MLflow login, also set
 `LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET` (the `llmaven-cli` client secret)
 there; set both or neither.
 
+Keycloak sign-in (stage 2, off by default) goes further: `keycloak.enabled` adds
+Keycloak behind the edge on its own hostname, applies a realm from the YAML with
+keycloak-config-cli after each `infra deploy`, and `mlflow.login.enabled` /
+`litellm.login.enabled` put a Keycloak login in front of the two UIs. LiteLLM
+admin scripts that use encoded paths or key headers other than
+`Authorization: Bearer`, and any request to its UI paths, then need a Keycloak
+session. Keycloak and the login apps are internal-ingress apps, like LiteLLM and
+MLflow, so other workloads in the environment can reach them without passing
+Traefik. The realm name is permanent. See "Keycloak and the logins" in
+`.agents/rules/infrastructure.md` for config, secrets, rollout and what was
+tested locally versus still unverified.
+
 #### Sidecar (stacks without the edge)
 
 LiteLLM serves the inference API and its admin surface (UI, key, team, model and
