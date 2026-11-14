@@ -16,6 +16,7 @@ import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import date
 
     from mlflow import MlflowClient
@@ -417,7 +418,9 @@ def _parse_utc_date(date_value: str) -> date:
 
 
 def _fail_extract(message: str, code: int = 1) -> NoReturn:
-    console_err.print(f"[red]✗[/red] {message}")
+    from rich.markup import escape
+
+    console_err.print(f"[red]✗[/red] {escape(message)}")
     raise typer.Exit(code=code)
 
 
@@ -725,6 +728,7 @@ def _fetch_mlflow_experiment_traces_in_date_range(
     experiment_ids: list[str],
     start_ms: int,
     end_ms: int,
+    before_request: Callable[[], object] | None = None,
 ) -> list[object]:
     if not experiment_ids:
         return []
@@ -745,6 +749,8 @@ def _fetch_mlflow_experiment_traces_in_date_range(
                 f"(page {page_num}, {len(all_traces)} collected)"
             )
 
+            if before_request is not None:
+                before_request()
             traces = client.search_traces(
                 locations=experiment_ids,
                 filter_string=date_filter_string,
@@ -774,44 +780,121 @@ def _get_mlflow_tracking_uri(env_file: Path | None) -> str:
     return mlflow_tracking_uri
 
 
-def _get_mlflow_token(env_file: Path | None) -> str | None:
-    """Fetch a Keycloak access token for MLflow's login, if configured.
+_TOKEN_REFRESH_MARGIN_SECONDS = 60.0
+_DEFAULT_TOKEN_LIFETIME_SECONDS = 300.0
 
-    Returns None when neither Keycloak entry is set. The secret and the token
-    are never included in any message.
+
+def _safe_url(url: object) -> str:
+    """Reduce a URL to scheme, host and path for messages (no userinfo/query)."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(str(url))
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return f"{parts.scheme}://{host}{parts.path}"
+    except Exception:
+        return "<invalid URL>"
+
+
+class _KeycloakToken:
+    """Keycloak client-credentials token for MLflow, kept fresh while it runs.
+
+    The client secret lives only here. __repr__ is masked and every failure is
+    reported without chained context, so tracebacks that show locals (Typer's
+    default) cannot reveal it.
     """
-    import httpx
 
-    secrets = _get_llmaven_secrets(env_file)
-    token_url = secrets.get("keycloak-token-url")
-    client_secret = secrets.get("keycloak-cli-client-secret")
-    if not token_url and not client_secret:
+    __slots__ = ("_expires_at", "_secret", "_token", "_url")
+
+    def __init__(self, url: str, secret: str) -> None:
+        self._url = url
+        self._secret = secret
+        self._token: str | None = None
+        self._expires_at = 0.0
+
+    def __repr__(self) -> str:
+        return "_KeycloakToken(<redacted>)"
+
+    @classmethod
+    def from_env_file(cls, env_file: Path | None) -> _KeycloakToken | None:
+        secrets = _get_llmaven_secrets(env_file)
+        token_url = secrets.get("keycloak-token-url")
+        client_secret = secrets.get("keycloak-cli-client-secret")
+        if not token_url and not client_secret:
+            return None
+        if not token_url:
+            _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL")
+        if not client_secret:
+            _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET")
+        return cls(token_url, client_secret)
+
+    def _request(self) -> tuple[str | None, str | None]:
+        """Return (error message, None) or (None, token); never raises."""
+        import time
+
+        import httpx
+
+        status = ""
+        try:
+            response = httpx.post(
+                self._url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": "llmaven-cli",
+                    "client_secret": self._secret,
+                },
+                timeout=30.0,
+            )
+            status = f"HTTP {response.status_code}"
+            if response.status_code != 200:
+                return f"Keycloak token request failed with {status}", None
+            body = response.json()
+            token = body["access_token"]
+            if not isinstance(token, str) or not token:
+                raise TypeError("access_token is not a non-empty string")
+            try:
+                lifetime = float(
+                    body.get("expires_in", _DEFAULT_TOKEN_LIFETIME_SECONDS)
+                )
+            except (TypeError, ValueError):
+                lifetime = _DEFAULT_TOKEN_LIFETIME_SECONDS
+            self._expires_at = time.monotonic() + lifetime
+        except Exception as exc:
+            detail = f" ({status})" if status else ""
+            return (
+                f"Keycloak token request failed: {type(exc).__name__}{detail} "
+                f"for {_safe_url(self._url)}",
+                None,
+            )
+        return None, token
+
+    def ensure_fresh(self) -> str:
+        """Set MLFLOW_TRACKING_TOKEN, fetching a new token when near expiry."""
+        import os
+        import time
+
+        if (
+            self._token is None
+            or time.monotonic() >= self._expires_at - _TOKEN_REFRESH_MARGIN_SECONDS
+        ):
+            error, token = self._request()
+            if error is not None:
+                _fail_extract(error)
+            self._token = token
+        os.environ["MLFLOW_TRACKING_TOKEN"] = self._token
+        return self._token
+
+
+def _get_mlflow_token(env_file: Path | None) -> str | None:
+    """Fetch a Keycloak access token for MLflow's login, if configured."""
+    source = _KeycloakToken.from_env_file(env_file)
+    if source is None:
         return None
-    if not token_url:
-        _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL")
-    if not client_secret:
-        _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET")
-
-    try:
-        response = httpx.post(
-            token_url,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": "llmaven-cli",
-                "client_secret": client_secret,
-            },
-            timeout=30.0,
-        )
-    except httpx.HTTPError as exc:
-        _fail_extract(
-            f"Keycloak token request failed ({type(exc).__name__}) for {token_url}"
-        )
-    if response.status_code != 200:
-        _fail_extract(f"Keycloak token request failed with HTTP {response.status_code}")
-    try:
-        token = response.json()["access_token"]
-    except (ValueError, KeyError, TypeError):
-        _fail_extract("Keycloak token response had no access_token")
+    error, token = source._request()
+    if error is not None:
+        _fail_extract(error)
     return token
 
 
@@ -824,19 +907,28 @@ def _extract_mlflow_logs(
 ) -> None:
     import os
 
-    token = _get_mlflow_token(env_file)
-    if token is None:
+    # Fail fast on a missing tracking URI, before any token request.
+    _get_mlflow_tracking_uri(env_file)
+
+    source = _KeycloakToken.from_env_file(env_file)
+    if source is None:
         _extract_mlflow_traces(
             start_date_obj, end_date_obj, output_file, env_file, use_zip=use_zip
         )
         return
 
-    # MLflow's client reads this only while the extract runs.
+    # MLflow's client re-reads this per request; it is set only while the
+    # extract runs and refreshed before each request batch.
     previous = os.environ.get("MLFLOW_TRACKING_TOKEN")
-    os.environ["MLFLOW_TRACKING_TOKEN"] = token
     try:
+        source.ensure_fresh()
         _extract_mlflow_traces(
-            start_date_obj, end_date_obj, output_file, env_file, use_zip=use_zip
+            start_date_obj,
+            end_date_obj,
+            output_file,
+            env_file,
+            use_zip=use_zip,
+            before_request=source.ensure_fresh,
         )
     finally:
         if previous is None:
@@ -851,6 +943,7 @@ def _extract_mlflow_traces(
     output_file: Path,
     env_file: Path | None,
     use_zip: bool = True,
+    before_request: Callable[[], object] | None = None,
 ) -> None:
     from collections import defaultdict
 
@@ -896,13 +989,19 @@ def _extract_mlflow_traces(
             date_str = current_date.isoformat()
 
             # Fetch all traces for this UTC day across the candidate experiments.
+            fetch_kwargs = {}
+            if before_request is not None:
+                fetch_kwargs["before_request"] = before_request
             try:
                 traces = _fetch_mlflow_experiment_traces_in_date_range(
                     client=mlflow_client,
                     experiment_ids=experiment_ids,
                     start_ms=_utc_date_to_epoch_ms(current_date),
                     end_ms=_utc_date_to_epoch_ms(next_date),
+                    **fetch_kwargs,
                 )
+            except typer.Exit:
+                raise
             except Exception as exc:
                 _fail_extract(f"MLflow trace search failed for {date_str}: {exc}")
 
