@@ -1,4 +1,7 @@
 ## 2026-11-13
+* **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
+* **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
 * **Update**: Updated concept `decisions/no-op-deploy-controls.md`.
 * **Update**: Updated concept `requirements/traefik-sidecar-allowlist-and-client-ip.md`.
 * **Update**: Updated concept `decisions/monitoring-alerts-config.md`.

@@ -1,9 +1,9 @@
 ---
 type: Fact
 title: "The LiteLLM image has no pip, wget or curl, and needs mlflow-skinny"
-description: "Since v1.106.x the image is a uv venv, so the Dockerfile uses ensurepip and re-pins litellm; full mlflow caps cryptography below 47 and reintroduces advisories."
+description: "Since v1.106.x the image is a uv venv, so the Dockerfile uses ensurepip; on the fork it asserts the SSO cap is gone instead of re-pinning litellm, and full mlflow caps cryptography below 47."
 tags: [litellm, docker, mlflow]
-generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-12T19:51:07Z" }
+generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-13T23:41:06Z" }
 status: stable
 code_refs: [docker/dockerfiles/litellm.dockerfile, docker/dockerfiles/mlflow.dockerfile, docker/docker-compose.yml]
 sources:
@@ -17,7 +17,7 @@ sources:
 **Status at a7e7d32:** implemented. Re-checked on v1.108.6 (#235).
 
 - Since 1.106.x the image has a uv-built venv with no `pip`, so `RUN pip install` fails. The Dockerfile bootstraps with `python -m ensurepip`, chosen over adding a second installer image. This still works on 1.108.6.
-- It re-pins `litellm==<base version>` (now `1.108.6`) so a dependency conflict fails the build instead of replacing the signature-verified package. Bump this pin together with the `FROM` tag and digest.
+- The base is now the uw-ssec fork. The Dockerfile no longer re-pins `litellm==`: that would replace the fork's patched package with upstream's and restore the SSO cap. Instead a build-time `python -c` asserts `_raise_if_sso_exceeds_free_user_limit` is absent from `ui_sso`, which fails on the stock image (verified). The fork already ships `azure-storage-blob` 12.28.0 and `azure-identity` 1.25.2, so only `mlflow-skinny==3.6.0` is installed; the fork's own `mlflow-skinny` is 3.17.2, newer than the 3.6.0 server, so it is pinned back.
 - Full `mlflow==3.6.0` caps `cryptography<47`, which downgraded the base image's 50.0.0 and reintroduced four advisories. `mlflow-skinny` is enough for LiteLLM's callback. Using `mlflow>=3.16` was rejected because it would put a newer client in front of the 3.6.0 server. On 1.108.6 the built image keeps `cryptography 50.0.0` on both amd64 and arm64.
 - After layering packages on a signed base, diff versions to catch downgrades. `packaging` still moves from 26.2 to 25.0 (seen on 1.106.6).
 - The image has no `wget` or `curl`. The old compose healthcheck called `wget`, so the container always looked unhealthy and `docker compose up --wait` exited 1 while `/health/liveliness` returned 200 (#197, #199). Probes run in Python `urllib`, and any new probe should assume Python only.
