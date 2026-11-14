@@ -427,10 +427,10 @@ need one, so admin scripts that use them or other key headers must change.
 Keycloak and the login apps are internal-ingress apps, like LiteLLM and MLflow,
 so other workloads in the environment can reach them without passing Traefik.
 The realm name is permanent, and `keycloak.image` must be pinned by digest once
-Keycloak is on. Removing a role or disabling a user ends gate access within about
-a minute; API keys minted earlier keep their LiteLLM role. See "Keycloak and the
-logins" in `.agents/rules/infrastructure.md` for config, secrets, rollout,
-rollback and what was tested locally versus still unverified.
+Keycloak is on. Removing a role or disabling a user ends gate access within
+about a minute; API keys minted earlier keep their LiteLLM role. See "Keycloak
+and the logins" in `.agents/rules/infrastructure.md` for config, secrets,
+rollout, rollback and what was tested locally versus still unverified.
 
 #### Sidecar (stacks without the edge)
 

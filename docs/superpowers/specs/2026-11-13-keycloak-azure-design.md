@@ -463,9 +463,9 @@ LiteLLM's UI and login paths are the `LITELLM_UI_PATHS` constant in
 `/get_image`, `/get_logo_url`, `/get_favicon` and the two
 `/.well-known/litellm-ui-config` paths), confirmed against the
 `uw-ssec/llmoxie-litellm-fork` routes, because a path missing from it would sit
-on the bearer-key route and bypass the login. They are
-never on the bearer-key route, so LiteLLM's own master-key login form is never
-reachable without a Keycloak session. The tests below pin the behavior.
+on the bearer-key route and bypass the login. They are never on the bearer-key
+route, so LiteLLM's own master-key login form is never reachable without a
+Keycloak session. The tests below pin the behavior.
 
 **Revocation.** oauth2-proxy refreshes each session with Keycloak every minute
 (`cookie_refresh=1m`, below the 5-minute access-token lifespan) and expires the

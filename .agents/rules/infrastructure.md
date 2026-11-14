@@ -365,9 +365,8 @@ document), `resources/traefik.py` (login routes).
   `mlflow-user`, LiteLLM's is `litellm-admin`. A request with the login cookie
   is sent through ForwardAuth from any IP. On MLflow's host a bearer token from
   `llmaven-cli` also passes oauth2-proxy's check. On LiteLLM's host a bearer key
-  with no session passes only from `litellm.admin_allowed_ips`, as before.
-  The `/oauth2/` routes on both hosts are rate limited like the other public
-  routes.
+  with no session passes only from `litellm.admin_allowed_ips`, as before. The
+  `/oauth2/` routes on both hosts are rate limited like the other public routes.
   LiteLLM's exact public inference and health paths are routed before any login
   check, so a key in any header still works there. On every other path a request
   needs a Keycloak session unless it carries `Authorization: Bearer` from an
@@ -423,14 +422,15 @@ enabling Keycloak means setting `keycloak.image` to a built tag and its digest.
 - `Azure caps these names at 32 characters: ... Shorten project.name.` for the
   Keycloak app, the realm job and the login apps.
 - `Image ... must be pinned as <name>:<tag>@sha256:<64 hex digits>` (named
-  `keycloak.image`, `keycloak.config_cli_image` or `keycloak.oauth2_proxy_image`).
+  `keycloak.image`, `keycloak.config_cli_image` or
+  `keycloak.oauth2_proxy_image`).
 - `<app>.login.enabled is true but <app>.enabled is false`.
 - `realm.name cannot be 'master'`.
 - `realm.overrides sets 'realm'` (or `'id'`): that would rename the imported
   realm; set `keycloak.realm.name` instead.
 - `realm.secret_refs uses reserved env var names`: names starting with
-  `KEYCLOAK_`, `IMPORT_` or `KC_CLIENT_SECRET_`, and `REALM_DOCUMENT_SHA256`, are
-  set by the realm job itself.
+  `KEYCLOAK_`, `IMPORT_` or `KC_CLIENT_SECRET_`, and `REALM_DOCUMENT_SHA256`,
+  are set by the realm job itself.
 
 `keycloak_db` is added to `database.databases` automatically. That also creates
 an unused `postgres://` connection-string secret for it; it is harmless. The
@@ -502,16 +502,17 @@ image that can't import them fails in CI; that import has not been run locally.
 The stack sets `GENERIC_ROLE_MAPPINGS_GROUP_CLAIM=realm_access.roles` and
 `GENERIC_ROLE_MAPPINGS_ROLES` mapping `proxy_admin` to `litellm.login.role`.
 LiteLLM updates the role on every login. **Revocation.** Each login app
-refreshes its session with Keycloak every minute (`OAUTH2_PROXY_COOKIE_REFRESH=1m`,
-below Keycloak's 5-minute access-token lifespan) and caps the cookie at 10 hours
-(`OAUTH2_PROXY_COOKIE_EXPIRE=10h`, Keycloak's default SSO session max). On a
-refresh, oauth2-proxy's `keycloak-oidc` provider re-reads the roles from the new
-tokens, and a user who was disabled or whose Keycloak session ended is signed
-out. So removing `mlflow-user` or `litellm-admin`, or disabling a user, ends
-their gate access within about a minute (read in oauth2-proxy v7.15.6; not yet
-run against staging, see "Staging checks"). It does not demote `proxy_admin` in
-LiteLLM's database, and API keys they minted earlier keep the role LiteLLM gave
-them. Revoke those keys too.
+refreshes its session with Keycloak every minute
+(`OAUTH2_PROXY_COOKIE_REFRESH=1m`, below Keycloak's 5-minute access-token
+lifespan) and caps the cookie at 10 hours (`OAUTH2_PROXY_COOKIE_EXPIRE=10h`,
+Keycloak's default SSO session max). On a refresh, oauth2-proxy's
+`keycloak-oidc` provider re-reads the roles from the new tokens, and a user who
+was disabled or whose Keycloak session ended is signed out. So removing
+`mlflow-user` or `litellm-admin`, or disabling a user, ends their gate access
+within about a minute (read in oauth2-proxy v7.15.6; not yet run against
+staging, see "Staging checks"). It does not demote `proxy_admin` in LiteLLM's
+database, and API keys they minted earlier keep the role LiteLLM gave them.
+Revoke those keys too.
 
 **`llmaven infra extract`.** To pass the MLflow login, put both of these in the
 env file, next to the public MLflow hostname:
@@ -567,9 +568,9 @@ the Keycloak secrets, but not `keycloak_db`: the database is retained on the
 server, with its users, credentials and grants. The retained database is no
 longer in Pulumi state, so turning Keycloak on again would try to create it
 again and fail until it is imported into the stack (`pulumi import`); that path
-is unverified. Don't turn Keycloak off while a login is on (the
-config is refused). Rolling LiteLLM back from the fork image is a separate step
-and needs the `pg_dump` from step 0.
+is unverified. Don't turn Keycloak off while a login is on (the config is
+refused). Rolling LiteLLM back from the fork image is a separate step and needs
+the `pg_dump` from step 0.
 
 **Staging checks** (what the local run could not show; see also "What was
 tested"):
