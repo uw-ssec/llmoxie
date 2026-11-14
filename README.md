@@ -419,12 +419,14 @@ there; set both or neither.
 Keycloak sign-in (stage 2, off by default) goes further: `keycloak.enabled` adds
 Keycloak behind the edge on its own hostname, applies a realm from the YAML with
 keycloak-config-cli after each `infra deploy`, and `mlflow.login.enabled` /
-`litellm.login.enabled` put a Keycloak login in front of the two UIs. LiteLLM
-admin scripts that use encoded paths or key headers other than
-`Authorization: Bearer`, and any request to its UI paths, then need a Keycloak
-session. Keycloak and the login apps are internal-ingress apps, like LiteLLM and
-MLflow, so other workloads in the environment can reach them without passing
-Traefik. The realm name is permanent. See "Keycloak and the logins" in
+`litellm.login.enabled` put a Keycloak login in front of the two UIs. On
+LiteLLM, the exact public inference and health paths stay open, but any other
+path needs a Keycloak session unless it carries `Authorization: Bearer` from an
+allowlisted IP, and encoded paths (`%`, `;`, backslash) and the UI paths always
+need one, so admin scripts that use them or other key headers must change.
+Keycloak and the login apps are internal-ingress apps, like LiteLLM and MLflow,
+so other workloads in the environment can reach them without passing Traefik.
+The realm name is permanent. See "Keycloak and the logins" in
 `.agents/rules/infrastructure.md` for config, secrets, rollout and what was
 tested locally versus still unverified.
 

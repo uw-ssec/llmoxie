@@ -366,13 +366,17 @@ document), `resources/traefik.py` (login routes).
   is sent through ForwardAuth from any IP. On MLflow's host a bearer token from
   `llmaven-cli` also passes oauth2-proxy's check. On LiteLLM's host a bearer key
   with no session passes only from `litellm.admin_allowed_ips`, as before.
-  Requests whose path contains `%`, a backslash, a NUL or `;`, and anything
-  under the LiteLLM UI and login paths (`LITELLM_UI_PATHS` in
-  `resources/traefik.py`), always need a Keycloak session, from any IP. So admin
-  scripts that use encoded paths (for example `/v1/models/openai%2Fgpt-4o`, or
-  Bedrock ARNs with `%3A`) or other key headers (`x-litellm-api-key`, `api-key`,
-  `x-api-key`, a lowercase `bearer`) now get sent to the login. Change them to a
-  plain path and `Authorization: Bearer`, or run them from a session.
+  LiteLLM's exact public inference and health paths are routed before any login
+  check, so a key in any header still works there. On every other path a request
+  needs a Keycloak session unless it carries `Authorization: Bearer` from an
+  allowlisted IP. Requests whose path contains `%`, a backslash, a NUL or `;`,
+  and anything under the LiteLLM UI and login paths (`LITELLM_UI_PATHS` in
+  `resources/traefik.py`), always need a session, from any IP. So admin scripts
+  that use encoded paths (for example `/v1/models/openai%2Fgpt-4o`, or Bedrock
+  ARNs with `%3A`) or other key headers (`x-litellm-api-key`, `api-key`,
+  `x-api-key`, a lowercase `bearer`) on a non-public path now get sent to the
+  login. Change them to a plain path and `Authorization: Bearer`, or run them
+  from a session.
 - **Trust boundary.** Keycloak and the two login apps, like LiteLLM and MLflow,
   are internal-ingress apps. Any workload in the Container Apps environment can
   reach them without passing Traefik. This is the same open decision as in
@@ -440,7 +444,7 @@ logins that are on. The bootstrap admin user is `admin`; its password is in
 - `realm.overrides` is merged over the stack's realm, lists by key, and cannot
   redefine the four stack clients. Add other clients under a new `clientId`.
 - `realm.secret_refs` maps an env var name to a Key Vault secret name, for
-  operator secrets the document references as `$(NAME)`, such as a CILogon
+  operator secrets the document references as `$(env:NAME)`, such as a CILogon
   client secret.
 - CILogon comes later, per environment, as an `identityProviders` entry in
   `realm.overrides`, brokered through Keycloak (spec "Identity providers
@@ -458,11 +462,13 @@ logins that are on. The bootstrap admin user is `admin`; its password is in
 `llmaven infra deploy` starts the realm job and waits for it (up to 600 s). It
 does this also after an `up` with no changes, and never on `--preview`. If the
 job fails or doesn't finish, the deploy raises
-`Infrastructure deployed, but the Keycloak realm was not applied: ...` with two
-ready-to-run commands: `az containerapp job execution show` for the status, and
-`az containerapp job logs show ... --container realm-import` for its output (the
-logs command needs the `containerapp` CLI extension). Fix the cause and run
-`deploy` again; the import is repeatable.
+`Infrastructure deployed, but the Keycloak realm was not applied: ...`. If the
+job ends Failed, Stopped or Degraded, the message carries Azure's reason and
+message and the command
+`az containerapp job logs show ... --container realm-import` (it needs the
+`containerapp` CLI extension). If it outlasts the 600 s, the message carries
+that logs command and also `az containerapp job execution show` for the status.
+Fix the cause and run `deploy` again; the import is repeatable.
 
 **Backups.** `keycloak_db` is on the Postgres server's point-in-time backups.
 The retention is `database.backup_retention_days` (7 to 35), which defaults to 7
@@ -473,9 +479,11 @@ state at that time, including the realm's users and sessions.
 **LiteLLM SSO.** With `litellm.login.enabled`, LiteLLM's Admin UI signs in
 through the `litellm` client. LiteLLM must be the uw-ssec fork build (see
 `docker/dockerfiles/litellm.dockerfile`): it is published for amd64 only, so
-Apple Silicon hosts need emulation, and that `import mlflow` works on that image
-is verified by the native CI build (`build-services.yml`), not locally. The
-stack sets `GENERIC_ROLE_MAPPINGS_GROUP_CLAIM=realm_access.roles` and
+Apple Silicon hosts need emulation. Whether `import mlflow` works on that image
+is unverified: neither the Dockerfile nor `build-services.yml` runs it. After
+the first CI build, check it with
+`docker run --rm --platform linux/amd64 <published image> python -c "import mlflow; print(mlflow.__version__)"`.
+The stack sets `GENERIC_ROLE_MAPPINGS_GROUP_CLAIM=realm_access.roles` and
 `GENERIC_ROLE_MAPPINGS_ROLES` mapping `proxy_admin` to `litellm.login.role`.
 LiteLLM updates the role on every login. Removing `litellm-admin` from a person
 blocks their UI access through the gate, but it does not demote `proxy_admin` in
@@ -498,34 +506,43 @@ the environment first. Staging first, then ISS and prod:
 1. Deploy with `keycloak.enabled: true` and both `login.enabled: false`.
    Keycloak and the realm job come up; nothing is gated yet. Bind the Keycloak
    hostname and its certificate the same way as the edge's hostnames (not yet
-   exercised for Keycloak).
-2. From an IP in `keycloak.admin_allowed_ips`, sign in to the admin console as
-   `admin`, create the administrators' users in the realm, and grant them
-   `litellm-admin` and `mlflow-user` as needed.
-3. Copy the `llmaven-cli` secret into the operators' env files (above).
-4. Turn `mlflow.login.enabled` and `litellm.login.enabled` on and deploy. Move
+   exercised for Keycloak). Check that the issuer
+   `https://<keycloak.hostname>/realms/<name>/.well-known/openid-configuration`
+   answers. With the logins off the realm has no `mlflow-user` or
+   `litellm-admin` role and no `llmaven-cli` client yet, and no client secrets
+   exist, so those cannot be done here. From an IP in
+   `keycloak.admin_allowed_ips`, sign in to the admin console as `admin` and
+   create the administrators' users.
+2. Turn `mlflow.login.enabled` and `litellm.login.enabled` on and deploy. Move
    admin scripts off encoded paths and non-`Authorization` key headers first
-   (see "Login apps").
-5. Confirm on staging what the local run could not: see "What was tested".
+   (see "Login apps" above). This deploy creates the roles, the clients and
+   their secrets, and turns the logins on. **From this deploy until step 3, the
+   MLflow and LiteLLM UIs refuse everyone**, because no user holds the role yet.
+   API keys on LiteLLM's public paths keep working.
+3. Immediately grant `mlflow-user` and `litellm-admin` to the administrators in
+   the admin console, and copy the `llmaven-cli` secret from Key Vault
+   (`keycloak-client-llmaven-cli`) into the operators' env files (above).
+4. Confirm on staging what the local run could not: see "What was tested".
 
 **What was tested** (a local run with the real Keycloak, keycloak-config-cli,
 oauth2-proxy and Traefik images at the config's pinned versions, and `whoami`
 stubs for LiteLLM and MLflow; 10/10 re-run cases as expected after two fixes).
 Proven: the issuer is the public URL, and oauth2-proxy redeems codes against
 Keycloak's internal address (never through the edge) while accepting tokens with
-the public issuer; a browser login works for a user with the role and is refused
-for one without it, on both hosts; an `llmaven-cli` bearer passes MLflow, and a
-token without `mlflow-user` gets 403; garbage bearers go to the login; on
-LiteLLM, a bearer key passes only from the allowlisted IP, and the UI and login
-paths, including `//ui/`, `/%75ui/`, `/ui%2F` and `;` forms, always go to the
-login; large sessions split into two cookies and still match the route; the
-Keycloak admin console is closed to other IPs, including through `..`, `%2e%2e`
-and `;` path tricks; and a second realm job run keeps client `org-demo`, created
-by hand, and changes nothing but the order of built-in client scope lists in a
-Keycloak export. It used these dev overrides: plain HTTP everywhere (insecure
-cookies, `http://` redirect URIs patched in by hand), and an `X-Forwarded-For`
-header on each request to stand in for Envoy. Still unverified and needing
-staging: TLS on the internal FQDNs, Envoy as the real peer (with
-`KC_PROXY_HEADERS=xforwarded` and an `https` forwarded protocol), the hostname
-move, what real LiteLLM and MLflow do with forwarded requests, and a login
-against the real LiteLLM fork build.
+the public issuer; a browser login works for a user with the role on both hosts
+and is refused for one without `litellm-admin` on LiteLLM (a browser session
+without `mlflow-user` on MLflow was not tested); an `llmaven-cli` bearer passes
+MLflow, and a bearer token for a user without `mlflow-user` gets 403; garbage
+bearers go to the login; on LiteLLM, a bearer key passes only from the
+allowlisted IP, and the UI and login paths, including `//ui/`, `/%75i/`,
+`/ui%2F` and `;` forms, always go to the login; large sessions split into two
+cookies and still match the route; the Keycloak admin console is closed to other
+IPs, including through `..`, `%2e%2e` and `;` path tricks; and a second realm
+job run keeps client `org-demo`, created by hand, and changes nothing but the
+order of built-in client scope lists in a Keycloak export. It used these dev
+overrides: plain HTTP everywhere (insecure cookies, `http://` redirect URIs
+patched in by hand), and an `X-Forwarded-For` header on each request to stand in
+for Envoy. Still unverified and needing staging: TLS on the internal FQDNs,
+Envoy as the real peer (with `KC_PROXY_HEADERS=xforwarded` and an `https`
+forwarded protocol), the hostname move, what real LiteLLM and MLflow do with
+forwarded requests, and a login against the real LiteLLM fork build.
