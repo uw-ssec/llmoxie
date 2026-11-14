@@ -411,7 +411,10 @@ in `mlflow.env_vars`, keeping `MLFLOW_HOST: "0.0.0.0"` there), and pin
 `edge.refresh_trigger`. Don't enable the edge in prod until the staging
 client-IP checks there pass. With the edge on, run
 `llmaven infra extract --source mlflow` with the public MLflow hostname set in
-your env file.
+your env file. To pass the MLflow login, also set
+`LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL` (the realm's token endpoint) and
+`LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET` (the `llmaven-cli` client secret)
+there; set both or neither.
 
 #### Sidecar (stacks without the edge)
 

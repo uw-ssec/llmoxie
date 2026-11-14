@@ -774,7 +774,78 @@ def _get_mlflow_tracking_uri(env_file: Path | None) -> str:
     return mlflow_tracking_uri
 
 
+def _get_mlflow_token(env_file: Path | None) -> str | None:
+    """Fetch a Keycloak access token for MLflow's login, if configured.
+
+    Returns None when neither Keycloak entry is set. The secret and the token
+    are never included in any message.
+    """
+    import httpx
+
+    secrets = _get_llmaven_secrets(env_file)
+    token_url = secrets.get("keycloak-token-url")
+    client_secret = secrets.get("keycloak-cli-client-secret")
+    if not token_url and not client_secret:
+        return None
+    if not token_url:
+        _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL")
+    if not client_secret:
+        _fail_extract("Missing: LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET")
+
+    try:
+        response = httpx.post(
+            token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": "llmaven-cli",
+                "client_secret": client_secret,
+            },
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        _fail_extract(
+            f"Keycloak token request failed ({type(exc).__name__}) for {token_url}"
+        )
+    if response.status_code != 200:
+        _fail_extract(f"Keycloak token request failed with HTTP {response.status_code}")
+    try:
+        token = response.json()["access_token"]
+    except (ValueError, KeyError, TypeError):
+        _fail_extract("Keycloak token response had no access_token")
+    return token
+
+
 def _extract_mlflow_logs(
+    start_date_obj: date,
+    end_date_obj: date,
+    output_file: Path,
+    env_file: Path | None,
+    use_zip: bool = True,
+) -> None:
+    import os
+
+    token = _get_mlflow_token(env_file)
+    if token is None:
+        _extract_mlflow_traces(
+            start_date_obj, end_date_obj, output_file, env_file, use_zip=use_zip
+        )
+        return
+
+    # MLflow's client reads this only while the extract runs.
+    previous = os.environ.get("MLFLOW_TRACKING_TOKEN")
+    os.environ["MLFLOW_TRACKING_TOKEN"] = token
+    try:
+        _extract_mlflow_traces(
+            start_date_obj, end_date_obj, output_file, env_file, use_zip=use_zip
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("MLFLOW_TRACKING_TOKEN", None)
+        else:
+            os.environ["MLFLOW_TRACKING_TOKEN"] = previous
+
+
+def _extract_mlflow_traces(
     start_date_obj: date,
     end_date_obj: date,
     output_file: Path,

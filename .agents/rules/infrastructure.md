@@ -165,7 +165,9 @@ renderer in `resources/traefik.py`. With it on:
   `litellm.admin_allowed_ips`. MLflow's host is open.
 - `mlflow-tracking-uri` becomes MLflow's internal address automatically. If you
   run `llmaven infra extract --source mlflow`, set the public MLflow hostname in
-  your env file.
+  your env file, plus `LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL` and
+  `LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET` (both or neither) to pass the
+  login.
 
 ```yaml
 edge:
