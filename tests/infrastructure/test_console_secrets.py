@@ -1,6 +1,7 @@
 """The console's identities, per-app vaults and secrets."""
 
 import pulumi
+import pulumi_azure_native as azure_native
 import pytest
 
 from llmaven.infrastructure.config.schema import console_vault_name
@@ -150,7 +151,7 @@ def test_broker_vault_holds_only_broker_secrets(mocks):
     assert set(_secrets_in(resources, broker)) == {
         "console-broker-caller-secret",
         "console-broker-db-url",
-        "console-acs-connection-string",
+        "console-mail-connection",
     }
 
 
@@ -183,7 +184,7 @@ def test_env_var_maps(mocks):
     assert cs.broker_secret_names == {
         "CONSOLE_BROKER_DATABASE_URL": "console-broker-db-url",
         "CONSOLE_BROKER_CALLER_SECRET": "console-broker-caller-secret",
-        "ACS_CONNECTION_STRING": "console-acs-connection-string",
+        "ACS_CONNECTION_STRING": "console-mail-connection",
     }
 
 
@@ -221,7 +222,7 @@ def test_database_urls_use_role_password_and_host(mocks):
     assert broker_url.startswith("postgresql://console_broker:")
     assert broker_url.endswith(f"@{HOST}:5432/console_db?sslmode=require")
     assert (
-        _plain(broker["console-acs-connection-string"].inputs["properties"]["value"])
+        _plain(broker["console-mail-connection"].inputs["properties"]["value"])
         == "endpoint=acs"
     )
 
@@ -254,11 +255,35 @@ def test_no_role_assignments_or_access_policy_resources(mocks):
 def test_no_secret_value_is_exported(mocks, monkeypatch):
     exported = []
     monkeypatch.setattr(pulumi, "export", lambda name, value: exported.append(name))
-    import llmaven.infrastructure.resources.key_vault as kv
-
-    monkeypatch.setattr(kv.pulumi, "export", lambda name, value: None)
     _create(mocks)
-    assert exported == []
+    # Only the main vault's own name and URI are exported, never a console value.
+    assert [n for n in exported if not n.startswith("key_vault_")] == []
+
+
+def test_every_console_secret_value_is_a_pulumi_secret(mocks, monkeypatch):
+    # The mock monitor strips secret markers from resource inputs, so look at the
+    # value where the writer hands it to the Secret's properties.
+    values = []
+    real = azure_native.keyvault.SecretPropertiesArgs
+
+    def record(**kwargs):
+        values.append(kwargs["value"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(azure_native.keyvault, "SecretPropertiesArgs", record)
+    _create(mocks)
+    assert len(values) == 9
+    flags = []
+
+    @pulumi.runtime.test
+    def check():
+        async def gather():
+            flags.extend([await v.is_secret() for v in values])
+
+        return gather()
+
+    check()
+    assert flags == [True] * 9
 
 
 def test_main_vault_access_policy_is_unchanged(mocks):

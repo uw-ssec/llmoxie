@@ -29,7 +29,7 @@ OIDC_SECRET = KEYCLOAK_SECRET_NAMES["client_console"]
 CALLER_SECRET = "console-broker-caller-secret"
 WEB_DB_URL = "console-web-db-url"
 BROKER_DB_URL = "console-broker-db-url"
-ACS_SECRET = "console-acs-connection-string"
+ACS_SECRET = "console-mail-connection"
 WEB_DB_PASSWORD = "console-web-db-password"
 BROKER_DB_PASSWORD = "console-broker-db-password"
 
