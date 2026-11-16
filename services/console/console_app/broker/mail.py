@@ -31,11 +31,14 @@ def _send_acs(to: str, subject: str, body: str) -> None:
     from azure.communication.email import EmailClient
 
     client = EmailClient.from_connection_string(os.environ["ACS_CONNECTION_STRING"])
-    client.begin_send({
+    poller = client.begin_send({
         "senderAddress": _from(),
         "recipients": {"to": [{"address": to}]},
         "content": {"subject": subject, "plainText": body},
-    }).result(timeout=ACS_TIMEOUT)
+    })
+    poller.result(timeout=ACS_TIMEOUT)  # on a timeout azure-core returns instead of raising
+    if not poller.done():
+        raise TimeoutError(f"the send was still pending after {ACS_TIMEOUT} s")
 
 
 def send(to: str, subject: str, body: str) -> None:

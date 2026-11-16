@@ -1,6 +1,7 @@
 """The broker's outgoing mail: SMTP by default, Azure Communication Services when asked. No stack needed."""
 
 import smtplib
+from uuid import uuid4
 from email.message import EmailMessage
 
 import pytest
@@ -51,6 +52,9 @@ def fake_email_client(monkeypatch):
             seen["timeouts"].append(timeout)
             return {"status": "Succeeded"}
 
+        def done(self):
+            return True
+
     class Client:
         @classmethod
         def from_connection_string(cls, connection_string):
@@ -83,6 +87,32 @@ def test_acs_sends_with_connection_string(mail, monkeypatch, fake_email_client):
         "content": {"subject": "s", "plainText": "b"},
     }]
     assert fake_email_client["timeouts"] == [30]
+
+
+def test_acs_send_still_pending_after_the_timeout_is_a_mail_error(mail, monkeypatch):
+    import azure.communication.email as acs
+
+    class Poller:
+        def result(self, timeout=None):  # azure-core returns here when the wait times out
+            return None
+
+        def done(self):
+            return False
+
+    class Client:
+        @classmethod
+        def from_connection_string(cls, _):
+            return cls()
+
+        def begin_send(self, message):
+            return Poller()
+
+    monkeypatch.setattr(acs, "EmailClient", Client)
+    monkeypatch.setenv("MAIL_BACKEND", "acs")
+    monkeypatch.setenv("ACS_CONNECTION_STRING", "endpoint=https://acs.test/;accesskey=k")
+    with pytest.raises(mail.MailError) as caught:
+        mail.send(ADDRESS, "s", "b")
+    assert ADDRESS not in str(caught.value)
 
 
 def test_acs_failure_raises_mail_error_without_address(mail, monkeypatch):
@@ -169,3 +199,31 @@ def test_reinvite_after_mail_failure_works(app_client, invites):  # noqa: F811
     assert r.status_code == 200 and r.json() == {"invited": ADDRESS}
     # Each attempt revokes any pending invite for the address before it adds its own; mail went out once.
     assert invites["revoked"] == 2 and invites["created"] == 2 and invites["sent"] == 1
+
+
+def test_failed_rotation_notice_does_not_fail_the_rotation(app_client, calls, monkeypatch, capsys):  # noqa: F811
+    from console_app.broker import app as broker, db, litellm, mail
+
+    key = {"id": str(uuid4()), "name": "laptop", "key_alias": "alias", "email": ADDRESS}
+
+    class Conn:
+        def execute(self, sql, params=None):
+            from .test_knowledge_off import _Result
+            return _Result([key] if "FROM api_key k JOIN person" in sql else [])
+
+    class Tx(_Tx):
+        def __enter__(self):
+            return Conn()
+
+    def refuse(*_):
+        raise mail.MailError("the acs mail backend failed (RuntimeError)")
+
+    monkeypatch.setattr(db, "org_tx", lambda _org_id: Tx())
+    monkeypatch.setattr(litellm, "team_keys", lambda _team: {})
+    monkeypatch.setattr(litellm, "key_delete", lambda _aliases: None)
+    monkeypatch.setattr(mail, "send", refuse)
+    from .test_knowledge_off import TEAM_ID
+    r = app_client.post(f"/teams/{TEAM_ID}/keys/{key['id']}/rotate")
+    assert r.status_code == 200 and r.json() == {"rotated": True}
+    out = capsys.readouterr().out
+    assert '"team.rotate_key"' in out and ADDRESS not in out

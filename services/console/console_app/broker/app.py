@@ -134,7 +134,10 @@ def send_invite(email: str, token: str, what: str) -> None:
 def send_notice(email: str | None, subject: str, body: str) -> None:
     if not email:
         return
-    mail.send(email, subject, body)
+    try:
+        mail.send(email, subject, body)
+    except mail.MailError as exc:  # a notice is best-effort: what it reports has already happened
+        print(f"notice not sent: {exc}", file=sys.stderr, flush=True)
 
 
 def create_invite(conn, s: Session, *, org_id, team_id, kind: str, email: str) -> str:
