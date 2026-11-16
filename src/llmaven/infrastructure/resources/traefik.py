@@ -343,12 +343,15 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
             }
         }
         middlewares["litellm-admin-ip-allowlist"] = allowlist
+        # With an admin host, the gateway host keeps only the AI and health
+        # routers above; the UI and management API live on the admin host.
+        admin = f"Host(`{litellm.admin_hostname}`)" if litellm.admin_hostname else host
         if keycloak_on and litellm.login.enabled:
-            _add_litellm_login_routes(routers, middlewares, services, host, backends)
+            _add_litellm_login_routes(routers, middlewares, services, admin, backends)
         else:
             routers["litellm-admin"] = {
                 "entryPoints": [ENTRYPOINT],
-                "rule": host,
+                "rule": admin,
                 "priority": 1,
                 "middlewares": ["litellm-admin-ip-allowlist", "client-rate-limit"],
                 "service": "litellm",

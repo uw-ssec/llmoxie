@@ -654,6 +654,7 @@ def validate_config(
             name
             for name, value in (
                 ("litellm.hostname", config.litellm.hostname),
+                ("litellm.admin_hostname", config.litellm.admin_hostname),
                 ("litellm.admin_allowed_ips", config.litellm.admin_allowed_ips),
                 ("mlflow.hostname", config.mlflow.hostname),
             )

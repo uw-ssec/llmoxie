@@ -566,7 +566,7 @@ def create_pulumi_program(config_path: Path):
                 # The edge sends LiteLLM its internal FQDN as Host, so LiteLLM
                 # builds its login redirect from this instead; operator wins.
                 litellm_env_vars.setdefault(
-                    "PROXY_BASE_URL", f"https://{config.litellm.hostname}"
+                    "PROXY_BASE_URL", f"https://{config.litellm.ui_hostname}"
                 )
             if config.litellm.login.enabled:
                 # Admin UI sign-in through Keycloak. The browser-facing URL is
@@ -663,6 +663,10 @@ def create_pulumi_program(config_path: Path):
             # Export LiteLLM URL
             if config.edge.enabled:
                 pulumi.export("litellm_url", f"https://{config.litellm.hostname}")
+                if config.litellm.admin_hostname:
+                    pulumi.export(
+                        "litellm_admin_url", f"https://{config.litellm.admin_hostname}"
+                    )
             else:
                 pulumi.export(
                     "litellm_url",

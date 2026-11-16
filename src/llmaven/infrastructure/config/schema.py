@@ -640,6 +640,11 @@ class MLflowConfig(ContainerAppConfig):
     check_hostname = field_validator("hostname")(_check_hostname)
     default_login_role = _login_with_default_role("mlflow-user")
 
+    @property
+    def ui_hostname(self) -> str | None:
+        """Host that serves MLflow's UI (the same as its hostname)."""
+        return self.hostname
+
 
 # LiteLLM v1.106.6 inference routes that stay public behind the proxy, with
 # their aliases. Exact paths only: broad prefixes such as /v1/ would also expose
@@ -810,6 +815,12 @@ class LiteLLMConfig(ContainerAppConfig):
         description="Public hostname the edge routes to LiteLLM; must be one of "
         "edge.custom_domains",
     )
+    admin_hostname: str | None = Field(
+        default=None,
+        description="Optional second hostname for LiteLLM's UI and management "
+        "API behind the Keycloak login; must be one of edge.custom_domains. When "
+        "set, `hostname` serves only the AI and health paths",
+    )
     admin_allowed_ips: list[str] = Field(
         default_factory=list,
         description="Client CIDRs the edge lets reach non-public paths. Empty "
@@ -830,7 +841,13 @@ class LiteLLMConfig(ContainerAppConfig):
     )
 
     default_login_role = _login_with_default_role("litellm-admin")
-    check_hostname = field_validator("hostname")(_check_hostname)
+    check_hostname = field_validator("hostname", "admin_hostname")(_check_hostname)
+
+    @property
+    def ui_hostname(self) -> str | None:
+        """Host that serves LiteLLM's UI: the admin host when set."""
+        return self.admin_hostname or self.hostname
+
     # Same checks as LiteLLMProxyConfig, reused rather than copied.
     validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
     validate_paths = field_validator("public_paths", "health_paths")(_check_paths)
@@ -1420,6 +1437,11 @@ class LLMavenConfig(BaseModel):
                     f"keycloak.hostname and {name}.hostname are both "
                     f"{keycloak.hostname!r}: they must differ"
                 )
+        if self.litellm.admin_hostname == keycloak.hostname:
+            raise ValueError(
+                f"keycloak.hostname and litellm.admin_hostname are both "
+                f"{keycloak.hostname!r}: they must differ"
+            )
         if "keycloak_db" not in self.database.databases:
             self.database.databases.append("keycloak_db")
 
@@ -1515,6 +1537,21 @@ class LLMavenConfig(BaseModel):
                 f"litellm.hostname and mlflow.hostname are both {litellm.hostname!r}: "
                 "they must differ"
             )
+        if litellm.admin_hostname is not None:
+            if litellm.admin_hostname not in domains:
+                raise ValueError(
+                    f"litellm.admin_hostname {litellm.admin_hostname!r} is not "
+                    "listed in edge.custom_domains: add it there."
+                )
+            for name, host in (
+                ("litellm.hostname", litellm.hostname),
+                ("mlflow.hostname", mlflow.hostname),
+            ):
+                if host == litellm.admin_hostname:
+                    raise ValueError(
+                        f"litellm.admin_hostname and {name} are both {host!r}: "
+                        "they must differ"
+                    )
         if litellm.ip_security_restrictions:
             raise ValueError(
                 "litellm.ip_security_restrictions must be empty when the edge is "

@@ -203,14 +203,14 @@ def build_realm_document(config: LLMavenConfig) -> dict:
         clients.append(
             _web_client(
                 "litellm-gate",
-                f"https://{litellm.hostname}/oauth2/callback",
+                f"https://{litellm.ui_hostname}/oauth2/callback",
                 "LiteLLM sign-in",
             )
         )
         clients.append(
             _web_client(
                 "litellm",
-                f"https://{litellm.hostname}/sso/callback",
+                f"https://{litellm.ui_hostname}/sso/callback",
                 "LiteLLM SSO",
                 # LiteLLM's generic SSO sends no PKCE; it is a confidential client.
                 pkce=False,

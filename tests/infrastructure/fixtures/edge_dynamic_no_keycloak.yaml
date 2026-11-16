@@ -1,0 +1,60 @@
+http:
+  routers:
+    litellm-health:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && (Path(`/health/liveliness`) || Path(`/health/liveness`))
+      priority: 300
+      service: litellm
+    litellm-public:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && (Path(`/v1/chat/completions`) || Path(`/chat/completions`) || Path(`/v1/completions`) || Path(`/completions`) || Path(`/v1/embeddings`) || Path(`/embeddings`) || Path(`/v1/messages`) || Path(`/v1/messages/count_tokens`) || Path(`/v1/responses`) || Path(`/responses`) || Path(`/openai/v1/responses`) || Path(`/v1/rerank`) || Path(`/v2/rerank`) || Path(`/rerank`) || Path(`/v1/models`) || Path(`/models`))
+      priority: 200
+      service: litellm
+      middlewares:
+      - client-rate-limit
+    litellm-admin:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`)
+      priority: 1
+      middlewares:
+      - litellm-admin-ip-allowlist
+      - client-rate-limit
+      service: litellm
+    mlflow:
+      entryPoints:
+      - web
+      rule: Host(`mlflow.example.org`)
+      service: mlflow
+  middlewares:
+    client-rate-limit:
+      rateLimit:
+        average: 50
+        burst: 100
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+    litellm-admin-ip-allowlist:
+      ipAllowList:
+        sourceRange:
+        - 203.0.113.0/24
+        ipStrategy:
+          depth: 1
+  services:
+    litellm:
+      loadBalancer:
+        servers:
+        - url: https://litellm.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms
+    mlflow:
+      loadBalancer:
+        servers:
+        - url: https://mlflow.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms
