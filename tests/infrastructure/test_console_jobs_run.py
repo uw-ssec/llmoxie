@@ -170,7 +170,11 @@ class TestDeployRunsConsoleJobs:
         get_stack.return_value = _stack()
         order.realm.side_effect = DeploymentError("realm blew up")
 
-        with pytest.raises(DeploymentError, match="Keycloak realm was not applied"):
+        with pytest.raises(
+            DeploymentError,
+            match="Keycloak realm was not applied: realm blew up. The console "
+            "database and key jobs did not run",
+        ):
             deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
 
         order.job.assert_not_called()

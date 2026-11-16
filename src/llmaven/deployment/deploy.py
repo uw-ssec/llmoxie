@@ -764,9 +764,15 @@ def deploy_infrastructure(
                 try:
                     run_realm_job(config, job_output.value)
                 except DeploymentError as e:
+                    skipped = (
+                        ". The console database and key jobs did not run "
+                        "(console-db, console-init)."
+                        if config.console.enabled is True
+                        else ""
+                    )
                     raise DeploymentError(
                         "Infrastructure deployed, but the Keycloak realm was not "
-                        f"applied: {e}"
+                        f"applied: {e}{skipped}"
                     )
                 if config.console.enabled is True:
                     for output_name, purpose, failed, container in CONSOLE_JOBS:
