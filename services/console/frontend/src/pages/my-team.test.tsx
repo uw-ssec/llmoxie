@@ -52,12 +52,13 @@ it('shows keys, how to connect and usage once the terms are accepted', async () 
   expect(screen.getByRole('checkbox', { name: /used for research/ })).not.toBeChecked()
 })
 
-it('leaves out the shared knowledge when the organization has none', async () => {
+it("says knowledge isn't set up when the organization has none", async () => {
   serve({ ...me, ...page({ ...TEAM, knowledge_tools: null }) })
   await openApp('/teams/t1')
   expect(await screen.findByRole('heading', { name: 'How to connect' })).toBeInTheDocument()
   expect(screen.getByText('http://gateway.test/v1')).toBeInTheDocument()
-  expect(screen.queryByRole('heading', { name: 'Shared knowledge' })).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Shared knowledge' })).toBeInTheDocument()
+  expect(screen.getByText("Knowledge isn't set up on this console.")).toBeInTheDocument()
   expect(screen.queryByText('http://gateway.test/mcp')).toBeNull()
   expect(screen.queryByText(/okf_search/)).toBeNull()
 })
