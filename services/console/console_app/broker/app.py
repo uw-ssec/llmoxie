@@ -36,7 +36,9 @@ MAIL_FROM = os.environ.get("MAIL_FROM", "console@llmoxie.localhost")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    db.pool.open(wait=True)
+    # Not waiting: on a first deploy the broker starts before the database job has made its role and
+    # schema. The pool keeps trying in the background, and until then each request fails on its own.
+    db.pool.open()
     yield
     db.pool.close()
 
@@ -98,7 +100,7 @@ def find_team(team_id: UUID) -> dict | None:
     with db.system_tx() as conn:
         return conn.execute(
             """SELECT t.*, o.slug AS org_slug, o.name AS org_name, o.status AS org_status,
-                      o.budget_ceiling AS org_budget_ceiling
+                      o.budget_ceiling AS org_budget_ceiling, o.mcp_server_id AS org_mcp_server_id
                FROM team t JOIN org o ON o.id = t.org_id
                WHERE t.id = %s AND o.status <> 'removed' AND t.status <> 'removed'""",
             (team_id,)).fetchone()
@@ -321,12 +323,13 @@ def admin_org_create(body: OrgBody, s: Session = Depends(current_session)):
                            (body.name, body.slug, body.budget_ceiling)).fetchone()
         # The org's knowledge: a Keycloak client that may reach only this org's bundle in the hub, and an
         # MCP server in LiteLLM that signs in as that client. A failure here undoes the insert.
-        secret = keycloak.org_client_create(body.slug)
-        server_id = litellm.mcp_server_new(
-            body.slug, f"{keycloak.HUB_URL}/mcp?bundle={keycloak.bundle(body.slug)}", keycloak.TOKEN_URL,
-            keycloak.client_id(body.slug), secret)
-        org = conn.execute("UPDATE org SET mcp_server_id = %s WHERE id = %s RETURNING *",
-                           (server_id, org["id"])).fetchone()
+        if keycloak.ENABLED:
+            secret = keycloak.org_client_create(body.slug)
+            server_id = litellm.mcp_server_new(
+                body.slug, f"{keycloak.HUB_URL}/mcp?bundle={keycloak.bundle(body.slug)}", keycloak.TOKEN_URL,
+                keycloak.client_id(body.slug), secret)
+            org = conn.execute("UPDATE org SET mcp_server_id = %s WHERE id = %s RETURNING *",
+                               (server_id, org["id"])).fetchone()
     audit(s, "org.create", "ok", org_id=org["id"], target=body.slug)
     return org
 
@@ -340,7 +343,8 @@ def _set_org_status(s: Session, org_id: UUID, action: str, status: str):
         conn.execute("UPDATE org SET status = %s WHERE id = %s", (status, org_id))
         for team in conn.execute("SELECT id FROM team WHERE status = 'active'").fetchall():
             (litellm.team_block if status == "suspended" else litellm.team_unblock)(str(team["id"]))
-            litellm.team_set_knowledge(str(team["id"]), None if status == "suspended" else org["mcp_server_id"])
+            if org["mcp_server_id"]:  # an org made without knowledge has none to close or open
+                litellm.team_set_knowledge(str(team["id"]), None if status == "suspended" else org["mcp_server_id"])
     audit(s, action, "ok", org_id=org_id)
     return {"status": status}
 
@@ -380,7 +384,8 @@ def admin_org_remove(org_id: UUID, body: RemoveOrgBody, s: Session = Depends(cur
         conn.execute("UPDATE org_model SET removed_at = now() WHERE removed_at IS NULL")
         if org["mcp_server_id"]:
             litellm.mcp_server_delete(org["mcp_server_id"])
-        keycloak.org_client_delete(org["slug"])
+        if keycloak.ENABLED:
+            keycloak.org_client_delete(org["slug"])
         conn.execute("UPDATE invite SET status = 'revoked' WHERE status IN ('pending', 'needs_approval')")
         conn.execute("UPDATE team_member SET status = 'removed' WHERE status = 'active'")
         conn.execute("DELETE FROM org_lead")
@@ -586,6 +591,9 @@ def org_knowledge(org_id: UUID, s: Session = Depends(current_session)):
     """Everything in the org's knowledge base, for its leads. Members reach the same content through MCP."""
     org = find_org(org_id)
     require(s, "org.knowledge", org=org, target=org_id)
+    if not keycloak.ENABLED:
+        return JSONResponse({"error": "knowledge_off", "message": "Knowledge isn't set up on this console."},
+                            status_code=404)
     view = knowledge.bundle_view(org["slug"])
     audit(s, "org.knowledge", "ok", org_id=org_id, concepts=len(view["concepts"]))
     return {"org": {k: org[k] for k in ("id", "name", "slug", "status")}, "tools": litellm.mcp_server_name(org["slug"]),
@@ -879,7 +887,7 @@ def my_team(team_id: UUID, s: Session = Depends(current_session)):
         "team": {k: team[k] for k in ("id", "name", "org_name", "status", "org_status", "key_limit", "key_budget",
                                       "key_expiry_days", "consent_text")},
         "consent": consent, "keys": keys, "models": models,
-        "knowledge_tools": litellm.mcp_server_name(team["org_slug"]),
+        "knowledge_tools": litellm.mcp_server_name(team["org_slug"]) if team["org_mcp_server_id"] else None,
         "usage": usage or {"requests": 0, "failed": 0, "spend": 0.0, "tokens": 0},
     }
 

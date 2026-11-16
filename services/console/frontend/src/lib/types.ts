@@ -126,7 +126,7 @@ export type MyTeamPage = {
   consent: { terms_accepted: boolean; research_use: boolean } | null
   keys: { id: string; name: string; waiting: boolean; created_at: string }[]
   models: string[]
-  knowledge_tools: string
+  knowledge_tools: string | null // null when the organization has no knowledge
   usage: { requests: number; tokens: number; spend: number }
 }
 

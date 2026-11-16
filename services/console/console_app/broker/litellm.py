@@ -1,7 +1,8 @@
 """Every request the broker ever sends to LiteLLM.
 
 Each function is a fixed template: the caller supplies values, never a route, a
-role or a raw body. The admin key is read from a file written by console-init.
+role or a raw body. The admin key is read from a file written by console-init, on each call: on a
+first deploy the broker starts before console-init has run.
 """
 
 import os
@@ -11,7 +12,6 @@ from pathlib import Path
 import httpx
 
 _BASE = os.environ["LITELLM_URL"]
-_KEY_FILE = Path(os.environ["LITELLM_ADMIN_KEY_FILE"])
 NO_MODELS = ["no-default-models"]  # LiteLLM reads an empty list as "every model"
 NO_MCP_SERVER = "no-mcp-servers"   # likewise: names no server, so the team gets none
 
@@ -38,8 +38,19 @@ class LiteLLMError(Exception):
         self.operation, self.status = operation, status
 
 
+def admin_key() -> str:
+    """The LiteLLM admin key console-init wrote, or LiteLLMError while it has not written it yet."""
+    try:
+        key = Path(os.environ.get("LITELLM_ADMIN_KEY_FILE", "")).read_text().strip()
+    except OSError:
+        key = ""
+    if not key:
+        raise LiteLLMError("admin_key", 503)
+    return key
+
+
 def _call(operation: str, method: str, path: str, **kwargs) -> dict | list:
-    headers = {"Authorization": f"Bearer {_KEY_FILE.read_text().strip()}"}
+    headers = {"Authorization": f"Bearer {admin_key()}"}
     with httpx.Client(base_url=_BASE, timeout=30) as client:
         response = client.request(method, path, headers=headers, **kwargs)
     if response.status_code >= 400:

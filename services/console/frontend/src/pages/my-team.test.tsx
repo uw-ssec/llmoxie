@@ -52,6 +52,16 @@ it('shows keys, how to connect and usage once the terms are accepted', async () 
   expect(screen.getByRole('checkbox', { name: /used for research/ })).not.toBeChecked()
 })
 
+it('leaves out the shared knowledge when the organization has none', async () => {
+  serve({ ...me, ...page({ ...TEAM, knowledge_tools: null }) })
+  await openApp('/teams/t1')
+  expect(await screen.findByRole('heading', { name: 'How to connect' })).toBeInTheDocument()
+  expect(screen.getByText('http://gateway.test/v1')).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Shared knowledge' })).toBeNull()
+  expect(screen.queryByText('http://gateway.test/mcp')).toBeNull()
+  expect(screen.queryByText(/okf_search/)).toBeNull()
+})
+
 it('shows the new key once, in a code block, with the copy-now warning', async () => {
   const user = userEvent.setup()
   const { calls } = serve({ ...me, ...page(TEAM), 'POST /web-api/teams/t1/my/keys': { json: { key: { name: 'desk', key: KEY }, rotated: false } } })
