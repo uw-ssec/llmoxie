@@ -2,7 +2,10 @@
 # 5-user Admin UI SSO cap removed, built without the proprietary enterprise/
 # package. Pinned by digest; amd64 only. The version is unchanged from the
 # upstream pin (v1.108.6), so the advisories already checked for it still apply.
-FROM ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6@sha256:98070f3fcfb082155d5153bdaddbaa18a1fa05524990e7cb4b8c9fd42e68fbd3
+# This build (fork commit 3867628) also sends LiteLLM's own redirects to
+# PROXY_BASE_URL (llmoxie-litellm#13), which the edge needs, and has dnspython
+# 2.9.2 (#14).
+FROM ghcr.io/uw-ssec/llmoxie-litellm-fork:sha-386762834d2c9beea86b87a97d2be99c8885634d@sha256:bd61a2bd9aff04f21c003f123b33930ddaf423c31d3f531eb124eba104ae9d16
 
 # The venv has no pip executable, but the bundled ensurepip works. Do not
 # re-pin litellm here: that would replace the fork's patched package with

@@ -9,8 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPO_ROOT / "docker" / "dockerfiles" / "litellm.dockerfile"
 
 FORK_IMAGE = (
-    "ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6"
-    "@sha256:98070f3fcfb082155d5153bdaddbaa18a1fa05524990e7cb4b8c9fd42e68fbd3"
+    "ghcr.io/uw-ssec/llmoxie-litellm-fork:sha-386762834d2c9beea86b87a97d2be99c8885634d"
+    "@sha256:bd61a2bd9aff04f21c003f123b33930ddaf423c31d3f531eb124eba104ae9d16"
 )
 
 
