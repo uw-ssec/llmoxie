@@ -145,13 +145,15 @@ Every setting is an environment variable. Those without a default are required.
 | `LITELLM_URL`                                                          |                             | LiteLLM, internally                                                                                       |
 | `LITELLM_ADMIN_KEY_FILE`                                               |                             | The file `console-init` wrote                                                                             |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_JWKS_URL`                       |                             | As for `console-web`; the broker verifies every user token itself                                         |
+| `MAIL_BACKEND` | `smtp` | `smtp` (Mailpit and the local stack) or `acs` (Azure Communication Services) |
+| `ACS_CONNECTION_STRING` | | With `MAIL_BACKEND=acs`: the Communication Service's connection string |
 | `SMTP_HOST`                                                            |                             | The SMTP server                                                                                           |
 | `SMTP_PORT`                                                            | `25`                        | Its port                                                                                                  |
 | `MAIL_FROM`                                                            | `console@llmoxie.localhost` | The sender of the console's mail                                                                          |
 | `KEYCLOAK_ADMIN_URL`                                                   |                             | `<keycloak>/admin/realms/<realm>`                                                                         |
 | `KEYCLOAK_TOKEN_URL`                                                   |                             | The realm's token endpoint; LiteLLM fetches each organization's token here too                            |
 | `KEYCLOAK_PROVISIONER_CLIENT_ID`, `KEYCLOAK_PROVISIONER_CLIENT_SECRET` |                             | The client that creates each organization's client                                                        |
-| `KNOWLEDGE_HUB_URL`                                                    |                             | The hub, as LiteLLM reaches it; also the audience the hub expects                                         |
+| `KNOWLEDGE_HUB_URL` | | Optional. The hub, as LiteLLM reaches it; also the audience the hub expects. Unset turns knowledge off (see [Without the hub](#without-the-hub)) |
 | `KNOWLEDGE_READER_CLIENT_ID`, `KNOWLEDGE_READER_CLIENT_SECRET`         |                             | The client the broker reads the hub with, for the leads' knowledge page                                   |
 | `CONSOLE_DLP_AUDIT_FILE`                                               | none                        | The audit log ceil-dlp writes, mounted read-only; without it the Data protection page has nothing to show |
 | `CONSOLE_ENABLE_MOCK_PROVIDER`                                         | `false`                     | Development only: a provider `mock` that answers without a real provider key                              |
@@ -167,6 +169,31 @@ Every setting is an environment variable. Those without a default are required.
 
 It does nothing if the file already holds a working key, so it can run on every
 start.
+
+## Without the hub
+
+Knowledge is optional. With `KNOWLEDGE_HUB_URL` unset, the broker starts without
+any `KEYCLOAK_*` or `KNOWLEDGE_*` setting. Creating an organization skips its
+Keycloak `okf-org-*` client and its MCP server, teams get no MCP server, and
+suspending or removing an organization skips the knowledge steps it never had.
+The knowledge page and the team page say "Knowledge isn't set up on this
+console." Set `KNOWLEDGE_HUB_URL` and the rest to turn it on.
+
+## On Azure
+
+`llmaven infra deploy` runs the console from this image when `console.enabled`
+is set; see "The console" in `.agents/rules/infrastructure.md`. There:
+
+- `MAIL_BACKEND=acs`, with `ACS_CONNECTION_STRING` from a Key Vault secret. If
+  the sender domain isn't verified yet, an invitation fails with HTTP 502
+  `{"error": "mail_failed"}`, and inviting again works once mail does.
+- [`db_setup.py`](db_setup.py) replaces `db/console-db.sql`, which needs a
+  superuser. A Container Apps Job runs it on every deploy as the server's admin
+  login: it creates the roles and sets their passwords from Key Vault each run,
+  applies the schema once, and closes the other databases to the console roles.
+- `console-init` writes the broker's key to an Azure Files share mounted at
+  `/run/console`. The broker answers `/healthz` before the key and the schema
+  exist, so a first deploy doesn't crash-loop it.
 
 ## Using the console
 

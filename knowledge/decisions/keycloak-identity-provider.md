@@ -3,7 +3,7 @@ type: Decision
 title: Keycloak is the identity provider
 description: "Keycloak, with its realm applied from the YAML by keycloak-config-cli, replaces the Entra External ID plan; keycloak_db rides the Postgres point-in-time backups."
 tags: [keycloak, identity, auth, infra]
-generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-14T01:07:01Z" }
+generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-16T15:41:13Z" }
 status: stable
 governance: constraint
 code_refs: [src/llmaven/infrastructure/resources/keycloak.py, src/llmaven/infrastructure/resources/keycloak_realm.py, docker/dockerfiles/keycloak.dockerfile]
@@ -37,6 +37,10 @@ Run Keycloak 26.5.5 (optimized, `--cache=local`, one replica) as a Container App
 - Verified only locally with real containers over plain HTTP; TLS on internal FQDNs, Envoy peers and the hostname move are unverified until staging.
 
 See `.agents/rules/infrastructure.md`, "Keycloak and the logins".
+
+## Update 2026-11-16: the console's client
+
+With `console.enabled` the realm gains a `console` client: confidential, standard flow only, PKCE `S256`, redirect URI `https://<console.hostname>/auth/callback`, post-logout redirect to the console, an audience mapper adding `console-broker` and the email scope; its secret arrives as an `$(env:...)` placeholder from Key Vault. `console-provisioner` and `console-knowledge` wait for the knowledge hub. The realm has sign-up off and no mail, so operators create invitee accounts with `llmaven infra keycloak-users` (email verified, temporary password). The litellm and litellm-gate redirect URIs move to `litellm.admin_hostname` when it is set. Not yet verified on dev: that the console's access token carries `email`, `email_verified` and the `console-broker` audience. See `decisions/console-on-azure`.
 
 # Related Concepts
 - [Path-level access control uses a Traefik edge (or sidecar) with an allowlist](../requirements/traefik-sidecar-allowlist-and-client-ip.md): The edge allowlist and client-IP trust the Keycloak admin console and login routes depend on
