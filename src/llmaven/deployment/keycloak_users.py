@@ -54,15 +54,26 @@ def read_emails(csv_path: Path) -> list[str]:
 def _fail(response: httpx.Response, what: str) -> KeycloakUsersError:
     if response.status_code == 403:
         return KeycloakUsersError(ADMIN_HINT)
+    if response.status_code == 401:
+        return KeycloakUsersError(
+            f"{what} failed with HTTP 401: the admin token was refused, even after "
+            "a refresh. Check the keycloak-admin-password secret."
+        )
     return KeycloakUsersError(f"{what} failed with HTTP {response.status_code}")
 
 
 def plan_users(client: httpx.Client, realm: str, emails: list[str]) -> UserPlan:
     plan = UserPlan(create=[], existing=[])
     for email in emails:
-        r = client.get(
-            f"/admin/realms/{realm}/users", params={"email": email, "exact": "true"}
-        )
+        try:
+            r = client.get(
+                f"/admin/realms/{realm}/users",
+                params={"email": email, "exact": "true"},
+            )
+        except httpx.HTTPError as e:
+            raise KeycloakUsersError(
+                f"Looking up {email} failed: {type(e).__name__}. Nothing was created."
+            )
         if r.status_code != 200:
             raise _fail(r, f"Looking up {email}")
         (plan.existing if r.json() else plan.create).append(email)
@@ -70,12 +81,19 @@ def plan_users(client: httpx.Client, realm: str, emails: list[str]) -> UserPlan:
 
 
 def create_users(
-    client: httpx.Client, realm: str, emails: list[str], out: Path
+    client: httpx.Client,
+    realm: str,
+    emails: list[str],
+    out: Path,
+    existed: list[str] | None = None,
 ) -> int:
     """Create each user with a temporary password written to ``out``.
 
     ``out`` is created 0600 and refused if it exists, before any user is created.
-    Returns the number created (a 409 counts as already existing).
+    Returns the number created. A 409 is appended to ``existed`` (if given). An
+    ``out`` that would hold no passwords is removed. On failure the error says
+    how many were created (their passwords stay in ``out``) and what was not
+    attempted.
     """
     try:
         fd = os.open(out, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -84,36 +102,82 @@ def create_users(
     except OSError as e:
         raise KeycloakUsersError(f"Cannot create {out}: {e.strerror}")
     created = 0
+    failure: str | None = None
     with os.fdopen(fd, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["email", "temporary_password"])
         f.flush()
-        for email in emails:
+        for i, email in enumerate(emails):
             password = secrets.token_urlsafe(18)
-            r = client.post(
-                f"/admin/realms/{realm}/users",
-                json={
-                    "username": email,
-                    "email": email,
-                    "emailVerified": True,
-                    "enabled": True,
-                    "requiredActions": ["UPDATE_PASSWORD"],
-                    "credentials": [
-                        {"type": "password", "value": password, "temporary": True}
-                    ],
-                },
-            )
-            if r.status_code == 409:
-                continue
-            if r.status_code != 201:
-                raise _fail(r, f"Creating {email}")
-            writer.writerow([email, password])
-            f.flush()
-            created += 1
+            try:
+                r = client.post(
+                    f"/admin/realms/{realm}/users",
+                    json={
+                        "username": email,
+                        "email": email,
+                        "emailVerified": True,
+                        "enabled": True,
+                        "requiredActions": ["UPDATE_PASSWORD"],
+                        "credentials": [
+                            {"type": "password", "value": password, "temporary": True}
+                        ],
+                    },
+                )
+            except httpx.HTTPError as e:
+                failure = (
+                    f"failed at {email}: {type(e).__name__}; that account's state "
+                    "is unknown (no password was recorded for it). Check it in the "
+                    "Keycloak admin console, or rerun with --dry-run to see whether "
+                    "it exists, and reset its password there if it does"
+                )
+            else:
+                if r.status_code == 409:
+                    if existed is not None:
+                        existed.append(email)
+                    continue
+                if r.status_code != 201:
+                    failure = f"failed at {email}: {_fail(r, 'Creating').args[0]}"
+                else:
+                    writer.writerow([email, password])
+                    f.flush()
+                    created += 1
+                    continue
+            rest = ", ".join(emails[i + 1 :]) or "none"
+            kept = f"passwords in {out}" if created else "no password file kept"
+            failure = f"{created} created ({kept}); {failure}; not attempted: {rest}"
+            break
+    if created == 0:
+        out.unlink(missing_ok=True)
+    if failure:
+        raise KeycloakUsersError(failure)
     return created
 
 
-def open_admin_client(config_path: Path) -> tuple[httpx.Client, str]:
+class _AdminAuth(httpx.Auth):
+    """Bearer token fetched on first use and once more after a 401.
+
+    Keycloak's admin tokens last about a minute, so fetching one up front would
+    expire while an operator reads the confirmation prompt.
+    """
+
+    def __init__(self, fetch):
+        self._fetch = fetch
+        self._token: str | None = None
+
+    def auth_flow(self, request):
+        if self._token is None:
+            self._token = self._fetch()
+        request.headers["Authorization"] = f"Bearer {self._token}"
+        response = yield request
+        if response.status_code == 401:
+            self._token = self._fetch()
+            request.headers["Authorization"] = f"Bearer {self._token}"
+            yield request
+
+
+def open_admin_client(
+    config_path: Path, transport: httpx.BaseTransport | None = None
+) -> tuple[httpx.Client, str]:
     """An admin-authenticated client for the configured Keycloak, and its realm."""
     from ..infrastructure.config.loader import load_config
     from .deploy import DeploymentError, _run_az_command, get_stack
@@ -157,23 +221,38 @@ def open_admin_client(config_path: Path) -> tuple[httpx.Client, str]:
         raise KeycloakUsersError(str(e))
     admin_password = result.stdout.strip()
     base = f"https://{config.keycloak.hostname}"
-    try:
-        r = httpx.post(
+
+    def fetch_token() -> str:
+        try:
+            r = _post_token(base, admin_password, transport)
+        except httpx.HTTPError as e:
+            raise KeycloakUsersError(f"Could not reach {base}: {type(e).__name__}")
+        if r.status_code != 200:
+            raise _fail(r, "Getting the admin token")
+        try:
+            return r.json()["access_token"]
+        except (ValueError, KeyError, TypeError):
+            raise KeycloakUsersError(
+                f"{base} did not return an access token (HTTP 200 but not a token "
+                "response); check keycloak.hostname and the edge routing"
+            )
+
+    client = httpx.Client(
+        base_url=base, auth=_AdminAuth(fetch_token), timeout=30, transport=transport
+    )
+    return client, config.keycloak.realm.name
+
+
+def _post_token(
+    base: str, password: str, transport: httpx.BaseTransport | None
+) -> httpx.Response:
+    with httpx.Client(transport=transport, timeout=30) as c:
+        return c.post(
             f"{base}/realms/master/protocol/openid-connect/token",
             data={
                 "client_id": "admin-cli",
                 "grant_type": "password",
                 "username": "admin",
-                "password": admin_password,
+                "password": password,
             },
-            timeout=30,
         )
-    except httpx.HTTPError as e:
-        raise KeycloakUsersError(f"Could not reach {base}: {type(e).__name__}")
-    if r.status_code != 200:
-        raise _fail(r, "Getting the admin token")
-    token = r.json()["access_token"]
-    client = httpx.Client(
-        base_url=base, headers={"Authorization": f"Bearer {token}"}, timeout=30
-    )
-    return client, config.keycloak.realm.name

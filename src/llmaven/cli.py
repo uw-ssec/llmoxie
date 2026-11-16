@@ -437,12 +437,16 @@ def keycloak_users(
         client, realm = open_admin_client(config_path)
         with client:
             plan = plan_users(client, realm, emails)
-            console.print(
+            typer.echo(
                 f"{len(emails)} distinct addresses: {len(plan.create)} to create, "
-                f"{len(plan.existing)} already have an account"
+                f"{len(plan.existing)} already have an account (left alone)"
             )
+            for email in plan.create:
+                typer.echo(f"  create   {email}")
+            for email in plan.existing:
+                typer.echo(f"  existing {email}")
             if dry_run:
-                console.print("Dry run: nothing created.")
+                typer.echo("Dry run: nothing created.")
                 return
             if not plan.create:
                 return
@@ -450,12 +454,17 @@ def keycloak_users(
                 f"Create {len(plan.create)} accounts?", default=False
             ):
                 raise typer.Exit(code=1)
-            created = create_users(client, realm, plan.create, out)
+            existed: list[str] = []
+            created = create_users(client, realm, plan.create, out, existed)
     except KeycloakUsersError as e:
         console_err.print(f"[red]✗[/red] {e}")
         raise typer.Exit(code=1)
-    # typer.echo: Rich would wrap a long path
-    typer.echo(f"Created {created} accounts. Temporary passwords: {out}")
+    for email in existed:
+        typer.echo(f"  already existed {email}")
+    if created:
+        typer.echo(f"Created {created} accounts. Temporary passwords: {out}")
+    else:
+        typer.echo("Created no accounts; no password file was kept.")
 
 
 class ExtractSource(str, Enum):
