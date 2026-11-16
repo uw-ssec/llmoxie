@@ -14,6 +14,7 @@ from llmaven.cli import app
 from llmaven.deployment.keycloak_users import (
     open_admin_client,
     KeycloakUsersError,
+    _AdminAuth,
     create_users,
     plan_users,
     read_emails,
@@ -407,3 +408,73 @@ def test_open_admin_client_unexpected_token_body_is_a_clear_error():
         with pytest.raises(KeycloakUsersError, match="token") as e:
             client.get("/admin/realms/llmoxie/users")
     assert ADMIN_PASSWORD not in str(e.value)
+
+
+def _auth_client(handler, fetch) -> httpx.Client:
+    return httpx.Client(
+        base_url="https://kc.example.org",
+        auth=_AdminAuth(fetch),
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_token_refresh_failure_midway_is_reported_like_any_failure(tmp_path):
+    tokens = iter(["t1"])
+
+    def fetch():
+        try:
+            return next(tokens)
+        except StopIteration:
+            raise KeycloakUsersError("Getting the admin token failed with HTTP 503")
+
+    def handler(request):
+        email = json.loads(request.content)["email"]
+        if email == "a@x.org":
+            return httpx.Response(409)
+        if email == "b@x.org":
+            return httpx.Response(201)
+        return httpx.Response(401)
+
+    out = tmp_path / "out.csv"
+    with pytest.raises(KeycloakUsersError) as e:
+        create_users(
+            _auth_client(handler, fetch),
+            REALM,
+            ["a@x.org", "b@x.org", "c@x.org", "d@x.org"],
+            out,
+        )
+    msg = str(e.value)
+    assert "1 created" in msg and str(out) in msg
+    assert "failed at c@x.org" in msg and "503" in msg
+    assert "not attempted: d@x.org" in msg
+    assert "already existed: a@x.org" in msg
+
+
+def test_token_refresh_failure_with_nothing_created_removes_out(tmp_path):
+    def fetch():
+        raise KeycloakUsersError("Getting the admin token failed with HTTP 503")
+
+    out = tmp_path / "out.csv"
+    with pytest.raises(KeycloakUsersError, match="no password file kept"):
+        create_users(
+            _auth_client(lambda r: httpx.Response(201), fetch), REALM, ["a@x.org"], out
+        )
+    assert not out.exists()
+
+
+def test_persistent_401_is_bounded_and_names_the_cause(tmp_path):
+    requests, fetches = [], []
+
+    def fetch():
+        fetches.append(1)
+        return f"t{len(fetches)}"
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(401)
+
+    with pytest.raises(KeycloakUsersError, match="admin token was refused"):
+        create_users(
+            _auth_client(handler, fetch), REALM, ["a@x.org"], tmp_path / "o.csv"
+        )
+    assert len(requests) == 2 and len(fetches) == 2

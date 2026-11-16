@@ -101,6 +101,8 @@ def create_users(
         raise KeycloakUsersError(f"{out} already exists; refusing to overwrite it")
     except OSError as e:
         raise KeycloakUsersError(f"Cannot create {out}: {e.strerror}")
+    if existed is None:
+        existed = []
     created = 0
     failure: str | None = None
     with os.fdopen(fd, "w", newline="") as f:
@@ -123,6 +125,8 @@ def create_users(
                         ],
                     },
                 )
+            except KeycloakUsersError as e:
+                failure = f"failed at {email}: {e}"
             except httpx.HTTPError as e:
                 failure = (
                     f"failed at {email}: {type(e).__name__}; that account's state "
@@ -132,8 +136,7 @@ def create_users(
                 )
             else:
                 if r.status_code == 409:
-                    if existed is not None:
-                        existed.append(email)
+                    existed.append(email)
                     continue
                 if r.status_code != 201:
                     failure = f"failed at {email}: {_fail(r, 'Creating').args[0]}"
@@ -145,6 +148,8 @@ def create_users(
             rest = ", ".join(emails[i + 1 :]) or "none"
             kept = f"passwords in {out}" if created else "no password file kept"
             failure = f"{created} created ({kept}); {failure}; not attempted: {rest}"
+            if existed:
+                failure += f"; already existed: {', '.join(existed)}"
             break
     if created == 0:
         out.unlink(missing_ok=True)
