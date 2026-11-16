@@ -50,6 +50,8 @@ class ConsoleSecrets:
     # env var -> secret name in the main vault (console-db job)
     job_secret_names: dict[str, str]
     resources: list[pulumi.Resource]  # for depends_on
+    # The main vault's copy of the OIDC client secret, which the realm job reads.
+    main_oidc_secret: azure_native.keyvault.Secret
 
 
 def _password(name: str, environment: str) -> pulumi.Output[str]:
@@ -158,24 +160,24 @@ def create_console_secrets(
 
     def put(
         vault: azure_native.keyvault.Vault, label: str, name: str, value: pulumi.Input
-    ) -> None:
+    ) -> azure_native.keyvault.Secret:
         # The resource name carries the vault: one value is written to two
         # vaults under one secret name, and Pulumi names are program-unique.
-        secrets.append(
-            azure_native.keyvault.Secret(
-                f"kv-secret-console-{label}-{name}-{environment}",
-                resource_group_name=resource_group_name,
-                vault_name=vault.name,
-                secret_name=name,
-                properties=azure_native.keyvault.SecretPropertiesArgs(
-                    value=pulumi.Output.secret(value),
-                    content_type="text/plain",
-                    attributes=azure_native.keyvault.SecretAttributesArgs(enabled=True),
-                ),
-                tags=config.tags,
-                opts=pulumi.ResourceOptions(additional_secret_outputs=["properties"]),
-            )
+        secret = azure_native.keyvault.Secret(
+            f"kv-secret-console-{label}-{name}-{environment}",
+            resource_group_name=resource_group_name,
+            vault_name=vault.name,
+            secret_name=name,
+            properties=azure_native.keyvault.SecretPropertiesArgs(
+                value=pulumi.Output.secret(value),
+                content_type="text/plain",
+                attributes=azure_native.keyvault.SecretAttributesArgs(enabled=True),
+            ),
+            tags=config.tags,
+            opts=pulumi.ResourceOptions(additional_secret_outputs=["properties"]),
         )
+        secrets.append(secret)
+        return secret
 
     oidc = _password("oidc-client-secret", environment)
     caller = _password("broker-caller-secret", environment)
@@ -195,7 +197,7 @@ def create_console_secrets(
     put(broker_vault, "broker", CALLER_SECRET, caller)
     put(broker_vault, "broker", BROKER_DB_URL, db_url(BROKER_DB_ROLE, broker_pw))
     put(broker_vault, "broker", ACS_SECRET, mail_connection_string)
-    put(main_vault, "main", OIDC_SECRET, oidc)
+    main_oidc_secret = put(main_vault, "main", OIDC_SECRET, oidc)
     put(main_vault, "main", WEB_DB_PASSWORD, web_pw)
     put(main_vault, "main", BROKER_DB_PASSWORD, broker_pw)
     put(main_vault, "main", DB_ADMIN_PASSWORD, admin_password)
@@ -227,4 +229,5 @@ def create_console_secrets(
             broker_vault,
             *secrets,
         ],
+        main_oidc_secret=main_oidc_secret,
     )

@@ -16,6 +16,7 @@ from llmaven.infrastructure.config.schema import (
     CONSOLE_WEB_APP_SUFFIX,
     console_job_name,
     container_app_name,
+    realm_job_name,
 )
 from llmaven.infrastructure.resources import console as console_module
 from llmaven.infrastructure.resources import (
@@ -222,6 +223,15 @@ def test_apps_wait_for_the_console_secrets(console_run):
     assert secrets
     for name in (WEB, BROKER):
         assert secrets <= set(_depends_on(apps[name])), name
+
+
+def test_realm_job_waits_for_the_console_oidc_secret(console_run):
+    """The realm job reads console-oidc-client-secret from the main vault."""
+    apps, calls = console_run[2], console_run[3]
+    oidc = f"kv-secret-console-main-{console_secrets.OIDC_SECRET}-dev"
+    assert oidc in {r._name for r in calls["create_console_secrets.result"].resources}
+    realm = apps.jobs[realm_job_name("llmaven", "dev")]
+    assert oidc in [d._name for d in realm["opts"].depends_on]
 
 
 def test_edge_gets_the_console_backend_and_waits_for_it(console_run):

@@ -461,6 +461,33 @@ def create_pulumi_program(config_path: Path):
                     ),
                 )
 
+        # 8.4a. The console's mail and secrets. Before Keycloak: the realm job
+        # reads the console's OIDC client secret from the main vault.
+        console_secrets = None
+        if config.console.enabled:
+            from llmaven.infrastructure.resources.console_mail import (
+                create_console_mail,
+            )
+            from llmaven.infrastructure.resources.console_secrets import (
+                create_console_secrets,
+            )
+
+            pulumi.log.info("Creating the console...")
+            mail = create_console_mail(
+                config=config, resource_group_name=resource_group, tags=config.tags
+            )
+            console_secrets = create_console_secrets(
+                config=config,
+                resource_group_name=resource_group,
+                location=location,
+                tenant_id=config.azure.tenant_id,
+                deployer_object_id=deployer_object_id,
+                main_vault=key_vault,
+                postgres_host=postgres_server.fully_qualified_domain_name,
+                admin_password=admin_password,
+                mail_connection_string=mail.connection_string,
+            )
+
         # 8.4. Keycloak, its realm import and the oauth2-proxy login apps
         # Placed before LiteLLM, which needs Keycloak's internal FQDN and its
         # client secret for the Admin UI sign-in.
@@ -510,6 +537,11 @@ def create_pulumi_program(config_path: Path):
                         shared_kv_access_policy,
                         keycloak_app,
                         *keycloak_secrets.values(),
+                        *(
+                            [console_secrets.main_oidc_secret]
+                            if console_secrets
+                            else []
+                        ),
                     ]
                 ),
             )
@@ -677,33 +709,12 @@ def create_pulumi_program(config_path: Path):
                     ),
                 )
 
-        # 8.5. The console: mail, secrets, apps and jobs. After Keycloak and
-        # LiteLLM, whose FQDNs it needs, and before the edge that routes to it.
+        # 8.5. The console's apps and jobs. After Keycloak and LiteLLM, whose
+        # FQDNs they need, and before the edge that routes to them.
         console_apps = None
         if config.console.enabled:
             from llmaven.infrastructure.resources.console import create_console
-            from llmaven.infrastructure.resources.console_mail import (
-                create_console_mail,
-            )
-            from llmaven.infrastructure.resources.console_secrets import (
-                create_console_secrets,
-            )
 
-            pulumi.log.info("Creating the console...")
-            mail = create_console_mail(
-                config=config, resource_group_name=resource_group, tags=config.tags
-            )
-            console_secrets = create_console_secrets(
-                config=config,
-                resource_group_name=resource_group,
-                location=location,
-                tenant_id=config.azure.tenant_id,
-                deployer_object_id=deployer_object_id,
-                main_vault=key_vault,
-                postgres_host=postgres_server.fully_qualified_domain_name,
-                admin_password=admin_password,
-                mail_connection_string=mail.connection_string,
-            )
             console_apps = create_console(
                 config=config,
                 resource_group_name=resource_group,
