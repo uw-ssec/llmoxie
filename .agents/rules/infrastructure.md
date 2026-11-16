@@ -254,7 +254,13 @@ and a pinned `edge.revision_suffix` must fit the whole revision name,
 maximum suffix length (#228). With the edge on, LiteLLM gets
 `PROXY_BASE_URL=https://<litellm.hostname>` unless `litellm.env_vars` sets it,
 because Traefik sends LiteLLM its internal FQDN as `Host` and LiteLLM would
-otherwise redirect UI logins there.
+otherwise redirect UI logins there. `PROXY_BASE_URL` alone did not cover
+LiteLLM's trailing-slash redirects (`/ui` to `/ui/`, `/sso/key/generate/`),
+which Starlette builds from `Host`; on dev they sent the browser to
+`http://<app>.internal…`, an Azure 404. The fork build pinned in
+`docker/dockerfiles/litellm.dockerfile` includes uw-ssec/llmoxie-litellm#13,
+which rewrites any redirect back to the request's own host to `PROXY_BASE_URL`,
+so the edge needs that build or later.
 
 **Trust boundary.** Traefik's allowlist and rate limits apply only to traffic
 that passes through Traefik. With the edge on, LiteLLM and MLflow are reachable
@@ -445,7 +451,11 @@ grants, on the server.
 `keycloak-client-llmaven-cli`, `oauth2-proxy-cookie-mlflow` and
 `oauth2-proxy-cookie-litellm`. The client and cookie secrets exist only for the
 logins that are on. The bootstrap admin user is `admin`; its password is in
-`keycloak-admin-password`.
+`keycloak-admin-password`. **Don't delete it**, even though Keycloak's admin
+console asks you to replace the "temporary admin user": the realm job signs in
+as `admin` with that password on every deploy, so the next deploy would fail at
+the realm import. For a personal admin, add a user in the `master` realm with
+the `admin` realm role and keep `admin` for the job.
 
 **Realm management.** The realm is a document rendered from the config
 (`keycloak_realm.py`) and applied by keycloak-config-cli in a Container Apps Job
@@ -514,6 +524,40 @@ staging, see "Staging checks"). It does not demote `proxy_admin` in LiteLLM's
 database, and API keys they minted earlier keep the role LiteLLM gave them.
 Revoke those keys too.
 
+**One sign-in, SSO only.** With `litellm.login.enabled` the stack also sets
+`AUTO_REDIRECT_UI_LOGIN_TO_SSO=true`, so LiteLLM's own login page goes straight
+to Keycloak, which already has the gate's session, and adds
+`general_settings.disable_password_login_when_sso_enabled: true` to the mounted
+LiteLLM config (`apply_sso_only_login` in `resources/helpers.py`). The second
+turns off LiteLLM's username/password form, which otherwise accepts the master
+key as an admin password; LiteLLM shows an "Environment-credential login is
+enabled" banner while that form is live. An operator's own value for either
+wins. The master key still works on the API.
+
+**Master key and salt key.** LiteLLM refuses to start without a master key, so
+it can't be turned off; the most you can do is make it a break-glass secret that
+only Key Vault holds, with admins using their own virtual keys. LiteLLM also
+encrypts what it stores in its database (models, credentials) with
+`LITELLM_SALT_KEY`, falling back to the master key when that is unset (fork
+`get_salt_key()` in `litellm/proxy/common_utils/encrypt_decrypt_utils.py`). A
+salt key added to a database with stored values must equal the master key's
+current value; a fresh one makes every stored value unreadable (#200, and "never
+add a fresh salt key" in project memory). Once set it never changes.
+`llmaven infra validate` warns when the LiteLLM config has
+`store_model_in_db: true` and `LITELLM_SALT_KEY` is in neither
+`litellm.env_vars` nor `litellm.key_vault_secret_refs`. Dev has the salt key as
+Key Vault secret `litellm-salt-key` since 2026-11-15.
+
+After the salt key is set, rotate the master key **only by changing its value**
+(the `litellm-master-key` secret, then a deploy). The fork's startup migration
+sees the salt key and leaves stored values alone (`master_key_migration.py`).
+Don't use `/key/regenerate` with `new_master_key`: in the fork it re-encrypts
+stored models, `environment_variables` and MCP server credentials with the new
+master key while decryption keeps reading the salt key (only guardrail params
+check for it), which would corrupt them. That is read in the fork's
+`key_management_endpoints.py`, not tested. The rotation itself, and moving
+`infra extract` off the master key, are still to do on dev.
+
 **`llmaven infra extract`.** To pass the MLflow login, put both of these in the
 env file, next to the public MLflow hostname:
 `LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL` (the realm's token endpoint) and
@@ -534,9 +578,17 @@ the environment first. Staging first, then ISS and prod:
    `docker/dockerfiles/litellm.dockerfile`) and deploy it, before turning
    `litellm.login` on. Set `keycloak.image` to a built tag and its digest.
 2. Deploy with `keycloak.enabled: true` and both `login.enabled: false`.
-   Keycloak and the realm job come up; nothing is gated yet. Bind the Keycloak
-   hostname and its certificate the same way as the edge's hostnames (not yet
-   exercised for Keycloak). Check that the issuer
+   Keycloak and the realm job come up; nothing is gated yet. The Keycloak
+   hostname must be bound before this deploy, because the config has to list it
+   in `edge.custom_domains` with an existing certificate. On dev (2026-11-15):
+   add a DNS-only CNAME to the Traefik app's FQDN and the `asuid.<host>` TXT
+   record (the environment's `customDomainVerificationId`), run
+   `az containerapp hostname add` on the Traefik app, then
+   `az containerapp hostname bind --validation-method CNAME`. The first bind
+   failed with `CertificateProvisioningError` while the managed certificate was
+   Pending; a few minutes later it was Succeeded and a second bind worked. Put
+   the certificate's name in `edge.custom_domains`, then deploy. Check that the
+   issuer
    `https://<keycloak.hostname>/realms/<name>/.well-known/openid-configuration`
    answers. With the logins off the realm has no `mlflow-user` or
    `litellm-admin` role and no `llmaven-cli` client yet, and no client secrets
@@ -573,18 +625,22 @@ refused). Rolling LiteLLM back from the fork image is a separate step and needs
 the `pg_dump` from step 0.
 
 **Staging checks** (what the local run could not show; see also "What was
-tested"):
+tested"). Dev ran the LiteLLM half on 2026-11-15, with MLflow off:
 
 - A real LiteLLM Admin UI SSO login on the fork build. It exercises LiteLLM's
   call to Keycloak's userinfo on the internal address with a token whose issuer
-  is the public one.
+  is the public one. **Shown on dev**: one Keycloak sign-in lands in the Admin
+  UI as `proxy_admin`, once the fork build had the redirect fix (#13).
 - The realm job on a fresh stack finishes within its 300 s availability wait
   (`KEYCLOAK_AVAILABILITYCHECK_TIMEOUT`), when Keycloak is still on its first
-  boot and migrating its database.
+  boot and migrating its database. **Shown on dev**: the first run finished in
+  under 70 s.
 - The first realm import with the administrators created as in step 2, then a
-  sign-in with each.
+  sign-in with each. **Shown on dev** for one administrator on LiteLLM.
 - Role removal: remove `mlflow-user` (or `litellm-admin`) from a signed-in user;
-  their next request after the one-minute refresh gets 403.
+  their next request after the one-minute refresh gets 403. Not yet run.
+- The MLflow login, including the `llmaven-cli` bearer. Not run on dev, where
+  MLflow is off.
 
 **What was tested** (a local run with the real Keycloak, keycloak-config-cli,
 oauth2-proxy and Traefik images at the config's pinned versions, and `whoami`
@@ -607,4 +663,5 @@ patched in by hand), and an `X-Forwarded-For` header on each request to stand in
 for Envoy. Still unverified and needing staging: TLS on the internal FQDNs,
 Envoy as the real peer (with `KC_PROXY_HEADERS=xforwarded` and an `https`
 forwarded protocol), the hostname move, what real LiteLLM and MLflow do with
-forwarded requests, and a login against the real LiteLLM fork build.
+forwarded requests, and a login against the real LiteLLM fork build (since shown
+on dev for LiteLLM; see "Staging checks").
