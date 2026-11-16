@@ -1,4 +1,4 @@
-# The image needs only console_app/, init_admin_key.py, the requirements files, tests/ and the
+# The image needs only console_app/, init_admin_key.py, db_setup.py, db/console-db.sql, the requirements files, tests/ and the
 # front end's source. Its packages and its build are made inside the image, not copied in.
 .git
 .pixi

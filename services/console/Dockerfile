@@ -15,7 +15,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --disable-pip-version-check -r requirements.txt
 COPY console_app console_app
 COPY --from=ui /ui/dist console_app/web/dist
-COPY init_admin_key.py .
+COPY init_admin_key.py db_setup.py ./
+COPY db/console-db.sql db/console-db.sql
 # /run/console holds the LiteLLM admin key; the volume mounted there inherits this ownership.
 RUN useradd --uid 10001 --no-create-home console && mkdir /run/console && chown console /run/console
 USER console
