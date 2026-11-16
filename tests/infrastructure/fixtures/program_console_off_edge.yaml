@@ -1,0 +1,153 @@
+http:
+  routers:
+    litellm-health:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && (Path(`/health/liveliness`) || Path(`/health/liveness`))
+      priority: 300
+      service: litellm
+    litellm-public:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && (Path(`/v1/chat/completions`) || Path(`/chat/completions`) || Path(`/v1/completions`) || Path(`/completions`) || Path(`/v1/embeddings`) || Path(`/embeddings`) || Path(`/v1/messages`) || Path(`/v1/messages/count_tokens`) || Path(`/v1/responses`) || Path(`/responses`) || Path(`/openai/v1/responses`) || Path(`/v1/rerank`) || Path(`/v2/rerank`) || Path(`/rerank`) || Path(`/v1/models`) || Path(`/models`))
+      priority: 200
+      service: litellm
+      middlewares:
+      - client-rate-limit
+    litellm-oauth2:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && PathPrefix(`/oauth2/`)
+      priority: 150
+      middlewares:
+      - client-rate-limit
+      service: litellm-auth
+    litellm-session:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && HeaderRegexp(`Cookie`, `(^|;\s*)_llmoxie_litellm(_\d+)?=`)
+      priority: 100
+      middlewares:
+      - litellm-login
+      - client-rate-limit
+      service: litellm
+    litellm-bearer:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`) && HeaderRegexp(`Authorization`, `^Bearer `) && !HeaderRegexp(`Cookie`, `(^|;\s*)_llmoxie_litellm(_\d+)?=`) && !PathRegexp(`[%\\\x00;]`) && !(Path(`/ui`) || PathPrefix(`/ui/`) || Path(`/_next`) || PathPrefix(`/_next/`) || Path(`/litellm-asset-prefix`) || PathPrefix(`/litellm-asset-prefix/`) || Path(`/login`) || PathPrefix(`/login/`) || Path(`/v2/login`) || PathPrefix(`/v2/login/`) || Path(`/v3/login`) || PathPrefix(`/v3/login/`) || Path(`/fallback/login`) || PathPrefix(`/fallback/login/`) || Path(`/sso`) || PathPrefix(`/sso/`) || Path(`/onboarding`) || PathPrefix(`/onboarding/`) || Path(`/get_image`) || PathPrefix(`/get_image/`) || Path(`/get_logo_url`) || PathPrefix(`/get_logo_url/`) || Path(`/get_favicon`) || PathPrefix(`/get_favicon/`) || Path(`/.well-known/litellm-ui-config`) || PathPrefix(`/.well-known/litellm-ui-config/`) || Path(`/litellm/.well-known/litellm-ui-config`) || PathPrefix(`/litellm/.well-known/litellm-ui-config/`))
+      priority: 50
+      middlewares:
+      - litellm-admin-ip-allowlist
+      - client-rate-limit
+      service: litellm
+    litellm-admin:
+      entryPoints:
+      - web
+      rule: Host(`ai.example.org`)
+      priority: 1
+      middlewares:
+      - litellm-login
+      - client-rate-limit
+      service: litellm
+    mlflow:
+      entryPoints:
+      - web
+      rule: Host(`mlflow.example.org`)
+      service: mlflow
+      priority: 1
+      middlewares:
+      - mlflow-login
+    mlflow-oauth2:
+      entryPoints:
+      - web
+      rule: Host(`mlflow.example.org`) && PathPrefix(`/oauth2/`)
+      priority: 150
+      middlewares:
+      - client-rate-limit
+      service: mlflow-auth
+    keycloak-realms:
+      entryPoints:
+      - web
+      rule: Host(`auth.example.org`) && PathPrefix(`/realms/`)
+      middlewares:
+      - client-rate-limit
+      service: keycloak
+    keycloak-resources:
+      entryPoints:
+      - web
+      rule: Host(`auth.example.org`) && PathPrefix(`/resources/`)
+      middlewares:
+      - client-rate-limit
+      service: keycloak
+    keycloak-admin:
+      entryPoints:
+      - web
+      rule: Host(`auth.example.org`) && PathPrefix(`/admin/`)
+      middlewares:
+      - keycloak-admin-ip-allowlist
+      - client-rate-limit
+      service: keycloak
+  middlewares:
+    client-rate-limit:
+      rateLimit:
+        average: 50
+        burst: 100
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+    litellm-admin-ip-allowlist:
+      ipAllowList:
+        sourceRange: &id001
+        - 127.0.0.1/32
+        ipStrategy:
+          depth: 1
+    litellm-login:
+      forwardAuth:
+        address: https://llmaven-dev-llm-auth.internal.env.test/
+        trustForwardHeader: true
+    mlflow-login:
+      forwardAuth:
+        address: https://llmaven-dev-ml-auth.internal.env.test/
+        trustForwardHeader: true
+    keycloak-admin-ip-allowlist:
+      ipAllowList:
+        sourceRange: *id001
+        ipStrategy:
+          depth: 1
+  services:
+    litellm-auth:
+      loadBalancer:
+        servers:
+        - url: https://llmaven-dev-llm-auth.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms
+    litellm:
+      loadBalancer:
+        servers:
+        - url: https://llmaven-dev-litellm.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms
+    mlflow-auth:
+      loadBalancer:
+        servers:
+        - url: https://llmaven-dev-ml-auth.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms
+    mlflow:
+      loadBalancer:
+        servers:
+        - url: https://llmaven-dev-mlflow.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms
+    keycloak:
+      loadBalancer:
+        servers:
+        - url: https://llmaven-dev-keycloak.internal.env.test
+        passHostHeader: false
+        responseForwarding:
+          flushInterval: 100ms

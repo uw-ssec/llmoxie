@@ -11,7 +11,7 @@ import yaml
 
 from llmaven.infrastructure.config.schema import edge_app_base_name
 from llmaven.infrastructure.main import create_pulumi_program
-from llmaven.infrastructure.resources import helpers, keycloak
+from llmaven.infrastructure.resources import console, helpers, keycloak
 
 from .test_edge_app import _isolated_mocks
 
@@ -46,9 +46,14 @@ class _Mocks(pulumi.runtime.Mocks):
                 **outputs.get("properties", {}),
                 "vaultUri": "https://kv.vault.azure.net/",
             }
+        if args.typ == "azure-native:communication:Domain":
+            record = {"name": "@", "ttl": 3600, "type": "TXT", "value": "ms-verify=x"}
+            outputs["verificationRecords"] = {"domain": record, "sPF": record}
         return f"{args.name}-id", outputs
 
     def call(self, args: pulumi.runtime.MockCallArgs):
+        if args.token == "azure-native:communication:listCommunicationServiceKeys":
+            return {"primaryConnectionString": "endpoint=https://acs/;accesskey=k"}
         if args.token == "azure-native:storage:listStorageAccountKeys":
             return {"keys": [{"keyName": "key1", "value": "storage-key"}]}
         if args.token == "azure-native:authorization:getClientConfig":
@@ -88,6 +93,11 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
         # Env values may be Outputs (an FQDN); keep the resolved values too.
         resolved = kwargs["resolved_env"] = {}
         pulumi.Output.all(**(kwargs.get("env_vars") or {})).apply(resolved.update)
+        # The same for inline secrets (the edge's rendered Traefik config).
+        resolved_secrets = kwargs["resolved_secrets"] = {}
+        pulumi.Output.all(**(kwargs.get("inline_secrets") or {})).apply(
+            resolved_secrets.update
+        )
         suffix = ".env.test" if kwargs.get("ingress_external") else ".internal.env.test"
         fqdn = f"{kwargs['app_name']}{suffix}"
         # A real resource, so the program can list it in depends_on.
@@ -104,6 +114,9 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
     # keycloak.py imported the helper by name, so it is patched there as well.
     monkeypatch.setattr(
         keycloak, "create_container_app_with_key_vault_secrets", fake_create_app
+    )
+    monkeypatch.setattr(
+        console, "create_container_app_with_key_vault_secrets", fake_create_app
     )
 
     # The realm job carries a managed identity, which trips the mock serializer.

@@ -293,6 +293,7 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
     ``backends`` maps ``"litellm"`` / ``"mlflow"`` to a base URL, with a key
     only for enabled backends. With Keycloak on it may also carry ``"keycloak"``
     and the login apps ``"mlflow-auth"`` / ``"litellm-auth"``.
+    ``"console"`` adds the console's web app on its own hostname.
     """
     edge = config.edge
     routers: dict[str, dict] = {}
@@ -377,6 +378,15 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
             middlewares["mlflow-login"] = _forward_auth(backends["mlflow-auth"])
             services["mlflow-auth"] = _service(backends["mlflow-auth"])
         services["mlflow"] = _service(backends["mlflow"])
+    if "console" in backends:
+        # Signed in by the console itself (OIDC), so no ForwardAuth here.
+        routers["console"] = {
+            "entryPoints": [ENTRYPOINT],
+            "rule": f"Host(`{config.console.hostname}`)",
+            "middlewares": ["client-rate-limit"],
+            "service": "console",
+        }
+        services["console"] = _service(backends["console"])
     if keycloak_on:
         kc_host = f"Host(`{config.keycloak.hostname}`)"
         for name, prefix in (

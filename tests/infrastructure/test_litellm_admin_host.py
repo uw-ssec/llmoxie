@@ -21,6 +21,7 @@ from .test_edge_login_routing import (
     _carries,
     _config as _base_config,
     _http,
+    _matching,
     _winner,
 )
 from .test_edge_app import _isolated_mocks
@@ -156,3 +157,62 @@ def test_login_app_uses_ui_hostname():
         env = _create_login("litellm", _config())["env"]
     assert env["OAUTH2_PROXY_REDIRECT_URL"] == f"https://{ADMIN}/oauth2/callback"
     assert env["OAUTH2_PROXY_WHITELIST_DOMAINS"] == ADMIN
+
+
+# --- the console host ---------------------------------------------------------
+
+CONSOLE = "console.example.org"
+CONSOLE_BACKENDS = {**BACKENDS, "console": "https://console-web.internal.env.test"}
+CONSOLE_PATHS = [
+    "/",
+    "/console",
+    "/console/",
+    "/api/me",
+    "/api/keys",
+    "/auth/callback",
+    "/healthz",
+    "/static/app.js",
+]
+
+
+def _console_config(**litellm) -> LLMavenConfig:
+    from .test_console_config import _console_data
+
+    data = _console_data()
+    data["litellm"].update(litellm)
+    return LLMavenConfig.model_validate(data)
+
+
+@pytest.mark.parametrize("path", CONSOLE_PATHS)
+@pytest.mark.parametrize(
+    "headers", [{}, {"Authorization": "Bearer sk-x"}, {"Cookie": "_llmoxie_litellm=x"}]
+)
+def test_console_host_routes_only_to_console(path, headers):
+    http = _http(_console_config(), CONSOLE_BACKENDS)
+    assert _matching(http, CONSOLE, path, **headers) == ["console"]
+
+
+def test_console_router_has_no_forward_auth():
+    http = _http(_console_config(), CONSOLE_BACKENDS)
+    router = http["routers"]["console"]
+    assert router["middlewares"] == ["client-rate-limit"]
+    for name in router["middlewares"]:
+        assert "forwardAuth" not in http["middlewares"][name]
+    assert http["services"]["console"]["loadBalancer"]["servers"] == [
+        {"url": CONSOLE_BACKENDS["console"]}
+    ]
+
+
+@pytest.mark.parametrize("host", [GATEWAY, ADMIN])
+@pytest.mark.parametrize("path", CONSOLE_PATHS)
+def test_console_paths_on_the_gateway_and_admin_hosts_never_reach_the_console(
+    host, path
+):
+    http = _http(_console_config(), CONSOLE_BACKENDS)
+    assert "console" not in _matching(http, host, path)
+    if host == GATEWAY:
+        assert _winner(http, host, path) is None
+
+
+def test_console_off_adds_no_router():
+    assert "console" not in _http(_config(), BACKENDS)["routers"]
