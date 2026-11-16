@@ -111,7 +111,5 @@ def create_console_mail(
         domain=domain,
         sender_address=f"{mail.sender}@{mail.domain}",
         connection_string=pulumi.Output.secret(keys.primary_connection_string),
-        verification_records=domain.verification_records.apply(
-            _records_by_kind
-        ),
+        verification_records=domain.verification_records.apply(_records_by_kind),
     )
