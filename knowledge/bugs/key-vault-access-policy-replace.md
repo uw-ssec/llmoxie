@@ -3,7 +3,7 @@ type: Bug
 title: Key Vault access policies get wiped by two separate mechanisms
 description: "keyvault.AccessPolicy replaces rather than adds, and updating the Vault rewrites its list, so the stack uses one shared identity and ignores policy changes on the vault."
 tags: [azure, key-vault, pulumi]
-generated: { by: "claude-code:claude-sonnet-5-5", at: "2026-11-16T15:41:13Z" }
+generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-16T16:01:23Z" }
 status: stable
 governance: constraint
 code_refs: [src/llmaven/infrastructure/main.py, src/llmaven/infrastructure/resources/key_vault.py]
@@ -26,4 +26,4 @@ Not verified: the provider behavior comes from #127 and wasn't re-checked agains
 
 ## Update 2026-11-16: console vaults
 
-The console's two vaults (`kv-<project>-<env>-cw` and `-cb`) get around both mechanisms by being separate vaults whose two access policies (the app's identity and the deployer) are set inline when the vault is created. No `AccessPolicy` resource is added to any vault, and the main vault and its one policy are unchanged. See `decisions/console-on-azure`. The policies are written once at creation, so the same caveat applies: don't rely on changing them later on an existing vault.
+The console's two vaults (`kv-<project>-<env>-cw` and `-cb`) get around both mechanisms by being separate vaults whose two access policies (the app's identity and the deployer) are set inline when the vault is created. No `AccessPolicy` resource is added to any vault, and the main vault and its one policy are unchanged. See `decisions/console-on-azure`. Unlike the main vault they set no `ignore_changes`, so each deploy rewrites their policy list to match the program: the deployer entry names whoever runs `infra deploy` (from `get_client_config()`), and another operator's deploy replaces the previous operator's entry.

@@ -756,6 +756,11 @@ comes from separate vaults instead.
   no `AccessPolicy` resources, so the replace behavior in
   `bugs/key-vault-access-policy-replace` can't happen. The main vault is
   unchanged.
+- Unlike the main vault, the console vaults don't ignore changes to their
+  policies, so every deploy rewrites the list. The deployer entry comes from
+  whoever runs `infra deploy` (`get_client_config()`), so another operator's
+  deploy swaps the previous operator's entry for their own. Adding
+  `ignore_changes` would also freeze the identity entries, so it isn't set.
 - The web vault holds `console-oidc-client-secret`,
   `console-broker-caller-secret` and `console-web-db-url`. The broker vault
   holds `console-broker-caller-secret`, `console-broker-db-url` and
@@ -856,7 +861,9 @@ by an agent). Dev first:
    `Infrastructure deployed, but <purpose> did not finish` with the `az`
    commands to read the logs; fix the cause and deploy again, since all three
    are repeatable. `console_url`, `console_db_job` and `console_init_job` are
-   exported.
+   exported. The first console deploy may fail and need a re-run while the two
+   new identities' inline vault policies propagate (#171, as in
+   `bugs/key-vault-access-policy-replace`).
 5. Add the mail domain's records, start verification, set
    `console.mail.domain_verified: true` and deploy again (preview first, and
    check it is an in-place update, not a new connection string).
@@ -864,9 +871,13 @@ by an agent). Dev first:
 7. Run the end-to-end check in the design spec's "Done on dev".
 
 **Rollback.** Turn `console.enabled` off and deploy. The apps, jobs, share,
-identities, vaults and mail resources are removed; `console_db` is kept.
-Unsetting `litellm.admin_hostname` (after the console is off) returns LiteLLM to
-one host; move scripts back to the gateway host first.
+identities, vaults and mail resources are removed; `console_db` is kept. LiteLLM
+keeps the `console-broker` user (`proxy_admin`) and its keys; revoke them there.
+`init_admin_key.py` mints a new key whenever the key file is missing or holds a
+key that doesn't work, and never revokes the old ones, so each re-enable (a new,
+empty share) adds another key. Unsetting `litellm.admin_hostname` (after the
+console is off) returns LiteLLM to one host; move scripts back to the gateway
+host first.
 
 Turning the console **back on** after that needs a step first. Key Vault
 soft-delete keeps the deleted console vaults' names reserved, so the create
@@ -879,9 +890,15 @@ az keyvault recover --name kv-<project>-<env>-cb
 
 (or `az keyvault purge` for each, which works only if purge protection is off).
 Whether the program then adopts a recovered vault cleanly is unverified. The
-retained `console_db` is no longer in Pulumi state, so re-enabling would try to
-create it again and fail until it is imported (`pulumi import`), as for
-`keycloak_db`; that path is unverified.
+same applies, also unverified, to the console secrets deleted from the main
+vault: `console-oidc-client-secret`, `console-web-db-password`,
+`console-broker-db-password` and `console-db-admin-password`. Soft-delete keeps
+their names reserved, so recover or purge each before re-enabling
+(`az keyvault secret recover --vault-name <main vault> --name <secret>`, or
+`az keyvault secret purge` with the same arguments). The retained `console_db`
+is no longer in Pulumi state, so re-enabling would try to create it again and
+fail until it is imported (`pulumi import`), as for `keycloak_db`; that path is
+unverified.
 
 **Unverified until dev** (what the offline tests and local runs could not show):
 
