@@ -186,10 +186,13 @@ def invites(monkeypatch):
     return log
 
 
-def test_invite_mail_failure_is_502_mail_failed(app_client, invites):  # noqa: F811
+def test_invite_mail_failure_is_502_mail_failed(app_client, invites, capsys):  # noqa: F811
     r = app_client.post(f"/admin/orgs/{ORG_ID}/leads", json={"email": ADDRESS})
     assert r.status_code == 502
     assert r.json() == {"error": "mail_failed", "message": "The email could not be sent. Try again later."}
+    # The operator's clue to why (domain not linked, a bad key, a timeout): the error's text, no address.
+    err = capsys.readouterr().err
+    assert "the acs mail backend failed (RuntimeError)" in err and ADDRESS not in err
 
 
 def test_reinvite_after_mail_failure_works(app_client, invites):  # noqa: F811

@@ -58,6 +58,7 @@ def hub_failed(_, exc: knowledge.HubError):
 
 @app.exception_handler(mail.MailError)
 def mail_failed(_, exc: mail.MailError):
+    print(f"mail not sent: {exc}", file=sys.stderr, flush=True)  # never the address; see mail.MailError
     return JSONResponse(
         {"error": "mail_failed", "message": "The email could not be sent. Try again later."}, status_code=502)
 
