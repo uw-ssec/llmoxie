@@ -10,6 +10,7 @@ from pathlib import Path
 from ..infrastructure.config.loader import ConfigLoadError, load_config
 from ..infrastructure.config.litellm_models import (
     missing_foundry_deployments,
+    missing_salt_key,
     missing_spend_logger,
 )
 from ..infrastructure.config.schema import (
@@ -672,6 +673,24 @@ def validate_config(
             print(f"   ⚠️  {message}")
         if ignored:
             print()
+
+    # Keycloak with no admin allowlist leaves its admin console closed to all
+    if config.keycloak.enabled and not config.keycloak.admin_allowed_ips:
+        message = (
+            "keycloak.admin_allowed_ips is empty, so the Keycloak admin console "
+            "is closed to everyone"
+        )
+        warnings.append(message)
+        print(f"   ⚠️  {message}")
+        print()
+
+    # Stored model credentials are encrypted with the master key without a salt key
+    salt_messages = missing_salt_key(config, config_path)
+    for message in salt_messages:
+        warnings.append(message)
+        print(f"   ⚠️  {message}")
+    if salt_messages:
+        print()
 
     # 6. Production Validation
     if config.project.environment == "prod":

@@ -36,7 +36,10 @@ def _write_config(
             "alerts": {"email_receivers": receivers, "enabled_alerts": enabled},
         },
         "litellm": {
-            "config_file": str(litellm_config or REPO_ROOT / "docker" / "config.yaml")
+            "config_file": str(litellm_config or REPO_ROOT / "docker" / "config.yaml"),
+            # docker/config.yaml stores models in the database; without a salt
+            # key validate warns about that, which these tests aren't about.
+            "env_vars": {"LITELLM_SALT_KEY": "test-salt"},
         },
     }
     path = tmp_path / "llmaven-config.yaml"

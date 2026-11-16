@@ -11,7 +11,7 @@ import yaml
 
 from llmaven.infrastructure.config.schema import edge_app_base_name
 from llmaven.infrastructure.main import create_pulumi_program
-from llmaven.infrastructure.resources import helpers
+from llmaven.infrastructure.resources import helpers, keycloak
 
 from .test_edge_app import _isolated_mocks
 
@@ -85,6 +85,9 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
 
     def fake_create_app(**kwargs):
         apps[kwargs["app_name"]] = kwargs
+        # Env values may be Outputs (an FQDN); keep the resolved values too.
+        resolved = kwargs["resolved_env"] = {}
+        pulumi.Output.all(**(kwargs.get("env_vars") or {})).apply(resolved.update)
         suffix = ".env.test" if kwargs.get("ingress_external") else ".internal.env.test"
         fqdn = f"{kwargs['app_name']}{suffix}"
         # A real resource, so the program can list it in depends_on.
@@ -98,6 +101,22 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
     monkeypatch.setattr(
         helpers, "create_container_app_with_key_vault_secrets", fake_create_app
     )
+    # keycloak.py imported the helper by name, so it is patched there as well.
+    monkeypatch.setattr(
+        keycloak, "create_container_app_with_key_vault_secrets", fake_create_app
+    )
+
+    # The realm job carries a managed identity, which trips the mock serializer.
+    # monkeypatch undoes this stub at the end of each test.
+    jobs: dict[str, dict] = {}
+
+    def fake_job(resource_name, opts=None, **kwargs):
+        jobs[kwargs["job_name"]] = kwargs
+        job = pulumi.ComponentResource("test:index:Job", resource_name, opts=opts)
+        job.name = pulumi.Output.from_input(kwargs["job_name"])
+        return job
+
+    monkeypatch.setattr(keycloak.azure_native.app, "Job", fake_job)
 
     exports: dict = {}
     monkeypatch.setattr(
