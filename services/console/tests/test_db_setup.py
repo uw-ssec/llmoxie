@@ -54,11 +54,12 @@ def server():
         if run.returncode:
             pytest.skip(f"cannot start postgres:16: {run.stderr.strip()[-200:]}")
         host = "127.0.0.1"
-        port = subprocess.run(["docker", "port", name, "5432/tcp"], capture_output=True, text=True,
-                              check=True).stdout.split(":")[-1].strip()
     else:
         pytest.skip("Docker is not available")
     try:
+        if name:
+            port = subprocess.run(["docker", "port", name, "5432/tcp"], capture_output=True, text=True,
+                                  check=True).stdout.split(":")[-1].strip()
         for _ in range(60):
             try:
                 psycopg.connect(host=host, port=port, user="postgres", password=SUPER_PW, dbname="postgres",
@@ -87,12 +88,17 @@ def pg(server, monkeypatch):
     with superuser(server) as conn:
         for db in ("console_db", *OTHERS):
             conn.execute(f"DROP DATABASE IF EXISTS {db} WITH (FORCE)")
-        for role in ("console_web", "console_broker", "azadmin"):
+        for role in ("console_web", "console_broker", "azadmin", "pgadmin_group"):
             conn.execute(f"DROP ROLE IF EXISTS {role}")
         conn.execute(f"CREATE ROLE azadmin LOGIN CREATEROLE CREATEDB PASSWORD '{ADMIN_PW}'")
         conn.execute("GRANT azadmin TO postgres")
-        for db in ("console_db", *OTHERS):
-            conn.execute(f"CREATE DATABASE {db} OWNER azadmin")
+        # On Azure the other databases may belong to azure_pg_admin, of which the admin login is a member.
+        conn.execute("DROP ROLE IF EXISTS pgadmin_group")
+        conn.execute("CREATE ROLE pgadmin_group NOLOGIN")
+        conn.execute("GRANT pgadmin_group TO azadmin")
+        conn.execute("CREATE DATABASE console_db OWNER azadmin")
+        for db in OTHERS:
+            conn.execute(f"CREATE DATABASE {db} OWNER pgadmin_group")
     for key, value in {
         "PGHOST": host, "PGPORT": port, "PGUSER": "azadmin", "PGPASSWORD": ADMIN_PW,
         "PGSSLMODE": "disable",  # the throwaway server has no TLS; main() defaults to require
@@ -130,8 +136,15 @@ def test_changed_password_takes(pg, monkeypatch):
     monkeypatch.setenv("CONSOLE_WEB_DB_PASSWORD", PW["web-2"])
     assert main() == 0
     connect_as(pg, "console_web", PW["web-2"], "console_db").close()
-    with pytest.raises(psycopg.OperationalError):
+    with pytest.raises(psycopg.OperationalError, match="password authentication failed"):
         connect_as(pg, "console_web", PW["web-1"], "console_db")
+
+
+def test_passwords_are_stored_as_scram_verifiers(pg):
+    assert main() == 0
+    with superuser(pg) as conn:
+        rows = conn.execute("SELECT rolpassword FROM pg_authid WHERE rolname LIKE 'console_%'").fetchall()
+    assert len(rows) == 2 and all(r[0].startswith("SCRAM-SHA-256$") for r in rows)
 
 
 def test_console_roles_cannot_connect_elsewhere(pg):
@@ -147,6 +160,15 @@ def test_admin_keeps_connect_on_other_databases(pg):
     assert main() == 0
     for db in OTHERS:
         connect_as(pg, "azadmin", ADMIN_PW, db).close()
+    # Membership in the owning role would let azadmin in anyway, so also check the explicit grant:
+    # it is what keeps the access if the databases' ownership differs from this mimic.
+    with superuser(pg) as conn:
+        for db in OTHERS:
+            granted = conn.execute(
+                "SELECT count(*) FROM pg_database d, aclexplode(d.datacl) a "
+                "WHERE d.datname = %s AND a.grantee = 'azadmin'::regrole AND a.privilege_type = 'CONNECT'",
+                (db,)).fetchone()[0]
+            assert granted == 1, db
 
 
 def test_broker_sees_rls(pg):

@@ -14,7 +14,7 @@ them). It does what the local stack's superuser script (`db/console-db.sql`) doe
      before that line is a superuser's setup, replaced by steps 1 to 3. The schema ran unchanged under
      a non-superuser admin; nothing had to be adapted.
 
-Passwords are quoted by the driver and never printed. Failures name the step, never a value.
+Passwords reach the server only as SCRAM verifiers and are never printed. Failures name the step, never a value.
 """
 
 import os
@@ -55,9 +55,10 @@ def create_roles(conn: psycopg.Connection) -> None:
         exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
         if not exists:
             conn.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(role)))
-        conn.execute(
-            sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(os.environ[env]))
-        )
+        # Send a SCRAM verifier, as psql's \password does, so the cleartext never appears in a statement
+        # the server may log or keep (log_min_error_statement, pg_stat_statements, pgaudit).
+        verifier = conn.pgconn.encrypt_password(os.environ[env].encode(), role.encode(), b"scram-sha-256").decode()
+        conn.execute(sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(verifier)))
 
 
 def lock_down_console_db(conn: psycopg.Connection) -> None:
