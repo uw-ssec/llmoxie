@@ -1,3 +1,12 @@
+## 2026-11-16
+* **Update**: Linked `facts/keycloak-bootstrap-admin-is-the-realm-jobs-login.md` to `decisions/keycloak-identity-provider.md` (Operational constraint of the realm job).
+* **Update**: Linked `bugs/litellm-redirects-to-internal-host-behind-edge.md` to `decisions/keycloak-identity-provider.md` (Surfaced by the LiteLLM SSO login behind the edge).
+* **Update**: Linked `bugs/litellm-redirects-to-internal-host-behind-edge.md` to `decisions/litellm-image-digest-pin-and-one-way-upgrade.md` (The fix ships in the pinned fork build).
+* **Creation**: Documented concept `facts/keycloak-bootstrap-admin-is-the-realm-jobs-login.md` (Keycloak's temporary admin is the realm job's login, so don't delete it).
+* **Creation**: Documented concept `bugs/litellm-redirects-to-internal-host-behind-edge.md` (LiteLLM's own redirects pointed at its internal address behind the edge).
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
+* **Update**: Updated concept `requirements/litellm-master-and-salt-key.md`.
+
 ## 2026-11-14
 * **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
 * **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
