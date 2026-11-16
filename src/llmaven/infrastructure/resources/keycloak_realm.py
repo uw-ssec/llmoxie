@@ -17,6 +17,7 @@ CLIENT_SECRET_ENV: dict[str, str] = {
     "litellm-gate": "KC_CLIENT_SECRET_LITELLM_GATE",
     "litellm": "KC_CLIENT_SECRET_LITELLM",
     "llmaven-cli": "KC_CLIENT_SECRET_LLMAVEN_CLI",
+    "console": "KC_CLIENT_SECRET_CONSOLE",
 }
 
 # Where the access token carries the user's realm roles.
@@ -216,6 +217,31 @@ def build_realm_document(config: LLMavenConfig) -> dict:
                 pkce=False,
             )
         )
+    console = config.console
+    if console.enabled:
+        client = _web_client(
+            "console",
+            f"https://{console.hostname}/auth/callback",
+            "LLMoxie console",
+        )
+        client["attributes"]["post.logout.redirect.uris"] = (
+            f"https://{console.hostname}/*"
+        )
+        # A custom audience: included.client.audience would need a
+        # console-broker client in the realm.
+        client["protocolMappers"].append(
+            {
+                "name": "console-broker-audience",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper",
+                "config": {
+                    "included.custom.audience": "console-broker",
+                    "access.token.claim": "true",
+                    "id.token.claim": "false",
+                },
+            }
+        )
+        clients.append(client)
     roles = list({r["name"]: r for r in reversed(roles)}.values())[::-1]
     if roles:
         doc["roles"] = {"realm": roles}

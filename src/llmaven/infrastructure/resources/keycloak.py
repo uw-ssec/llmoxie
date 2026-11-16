@@ -46,6 +46,7 @@ _CLIENT_SECRET_KEY = {
     "llmaven-cli": "client_llmaven_cli",
     "litellm-gate": "client_litellm_gate",
     "litellm": "client_litellm",
+    "console": "client_console",
 }
 
 OAUTH2_PROXY_PORT = 4180
@@ -282,6 +283,10 @@ def _job_secret_refs(config: LLMavenConfig) -> dict[str, str]:
                 refs[CLIENT_SECRET_ENV[client]] = KEYCLOAK_SECRET_NAMES[
                     _CLIENT_SECRET_KEY[client]
                 ]
+    if config.console.enabled:
+        refs[CLIENT_SECRET_ENV["console"]] = KEYCLOAK_SECRET_NAMES[
+            _CLIENT_SECRET_KEY["console"]
+        ]
     refs.update(config.keycloak.realm.secret_refs)
     return refs
 
