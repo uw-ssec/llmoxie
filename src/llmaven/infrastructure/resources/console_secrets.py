@@ -32,6 +32,9 @@ BROKER_DB_URL = "console-broker-db-url"
 ACS_SECRET = "console-mail-connection"
 WEB_DB_PASSWORD = "console-web-db-password"
 BROKER_DB_PASSWORD = "console-broker-db-password"
+# The console-db job's copy of the server admin password, so the job never
+# depends on which name the operator gave that secret.
+DB_ADMIN_PASSWORD = "console-db-admin-password"
 
 PASSWORD_LENGTH = 40
 
@@ -113,6 +116,7 @@ def create_console_secrets(
     deployer_object_id: str | None,
     main_vault: azure_native.keyvault.Vault,
     postgres_host: pulumi.Input[str],
+    admin_password: pulumi.Input[str],
     mail_connection_string: pulumi.Input[str],
 ) -> ConsoleSecrets:
     """Create the console's identities, vaults and secrets (spec section 6)."""
@@ -194,6 +198,7 @@ def create_console_secrets(
     put(main_vault, "main", OIDC_SECRET, oidc)
     put(main_vault, "main", WEB_DB_PASSWORD, web_pw)
     put(main_vault, "main", BROKER_DB_PASSWORD, broker_pw)
+    put(main_vault, "main", DB_ADMIN_PASSWORD, admin_password)
 
     return ConsoleSecrets(
         web_identity=web_identity,
@@ -211,6 +216,7 @@ def create_console_secrets(
             "ACS_CONNECTION_STRING": ACS_SECRET,
         },
         job_secret_names={
+            "PGPASSWORD": DB_ADMIN_PASSWORD,
             "CONSOLE_WEB_DB_PASSWORD": WEB_DB_PASSWORD,
             "CONSOLE_BROKER_DB_PASSWORD": BROKER_DB_PASSWORD,
         },

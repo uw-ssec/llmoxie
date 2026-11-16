@@ -50,7 +50,6 @@ ADMIN_KEY_FILE = f"{RUN_DIR}/admin-key"
 SHARE_MOUNT_OPTIONS = "uid=10001,gid=10001,dir_mode=0700,file_mode=0600"
 _VOLUME = "console-run"
 
-PG_ADMIN_PASSWORD_SECRET = "postgresql-admin-password"
 MASTER_KEY_SECRET = "litellm-master-key"
 JOB_REPLICA_TIMEOUT = 600
 
@@ -414,10 +413,8 @@ def create_console(
                 d for d in config.database.databases if d != CONSOLE_DB
             ),
         },
-        secret_refs={
-            "PGPASSWORD": PG_ADMIN_PASSWORD_SECRET,
-            **secrets.job_secret_names,
-        },
+        # PGPASSWORD is the console's own copy of the server admin password.
+        secret_refs=secrets.job_secret_names,
         opts=after_secrets,
         **job_args,
     )

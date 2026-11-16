@@ -13,6 +13,7 @@ from .test_console_config import _config
 from .test_edge_app import _isolated_mocks
 
 HOST = "psql.example.postgres.database.azure.com"
+ADMIN_PASSWORD = "server-admin-password"
 TENANT = "11111111-1111-1111-1111-111111111111"
 DEPLOYER = "22222222-2222-2222-2222-222222222222"
 SECRET_TYPE = "azure-native:keyvault:Secret"
@@ -67,6 +68,7 @@ def _create(mocks, deployer=DEPLOYER):
             deployer_object_id=deployer,
             main_vault=main_vault,
             postgres_host=pulumi.Output.from_input(HOST),
+            admin_password=pulumi.Output.secret(ADMIN_PASSWORD),
             mail_connection_string=pulumi.Output.secret("endpoint=acs"),
         )
 
@@ -167,8 +169,10 @@ def test_main_vault_gets_the_client_secret_and_db_passwords(mocks):
         KEYCLOAK_SECRET_NAMES["client_console"],
         "console-web-db-password",
         "console-broker-db-password",
+        "console-db-admin-password",
     }
     assert cs.job_secret_names == {
+        "PGPASSWORD": "console-db-admin-password",
         "CONSOLE_WEB_DB_PASSWORD": "console-web-db-password",
         "CONSOLE_BROKER_DB_PASSWORD": "console-broker-db-password",
     }
@@ -208,6 +212,18 @@ def test_shared_secrets_have_one_value_in_both_places(mocks):
     assert value(web["console-oidc-client-secret"]) == value(
         main["console-oidc-client-secret"]
     )
+
+
+def test_main_vault_gets_the_admin_password_passed_in(mocks):
+    _, _, resources = _create(mocks)
+    (copy,) = [
+        r
+        for r in resources
+        if r.typ == SECRET_TYPE
+        and r.name.startswith("kv-secret-console-main-")
+        and r.inputs["secretName"] == "console-db-admin-password"
+    ]
+    assert _plain(copy.inputs["properties"]["value"]) == ADMIN_PASSWORD
 
 
 def test_database_urls_use_role_password_and_host(mocks):
@@ -272,7 +288,7 @@ def test_every_console_secret_value_is_a_pulumi_secret(mocks, monkeypatch):
 
     monkeypatch.setattr(azure_native.keyvault, "SecretPropertiesArgs", record)
     _create(mocks)
-    assert len(values) == 9
+    assert len(values) == 10
     flags = []
 
     @pulumi.runtime.test
@@ -283,7 +299,7 @@ def test_every_console_secret_value_is_a_pulumi_secret(mocks, monkeypatch):
         return gather()
 
     check()
-    assert flags == [True] * 9
+    assert flags == [True] * 10
 
 
 def test_main_vault_access_policy_is_unchanged(mocks):

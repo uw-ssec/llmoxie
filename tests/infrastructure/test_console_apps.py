@@ -40,7 +40,7 @@ APP_TYPE = "azure-native:app:ContainerApp"
 JOB_TYPE = "azure-native:app:Job"
 ENV_STORAGE_TYPE = "azure-native:app:ManagedEnvironmentsStorage"
 MASTER_KEY_SECRET = "litellm-master-key"
-PG_ADMIN_SECRET = "postgresql-admin-password"
+PG_ADMIN_SECRET = "console-db-admin-password"
 
 
 class _Mocks(pulumi.runtime.Mocks):
@@ -117,6 +117,7 @@ def _create(mocks, **console_overrides):
             deployer_object_id=DEPLOYER,
             main_vault=main_vault,
             postgres_host=pulumi.Output.from_input(PG_HOST),
+            admin_password=pulumi.Output.secret("server-admin-password"),
             mail_connection_string=pulumi.Output.secret("endpoint=acs"),
         )
         out["apps"] = create_console(
