@@ -171,6 +171,20 @@ def test_admin_keeps_connect_on_other_databases(pg):
             assert granted == 1, db
 
 
+def test_admin_keeps_connect_on_console_db_it_does_not_own(pg):
+    # ARM may make console_db owned by azure_pg_admin, not the admin login. Revoking PUBLIC must not
+    # leave the admin relying on that membership: it needs its own grant to apply the schema.
+    with superuser(pg) as conn:
+        conn.execute("ALTER DATABASE console_db OWNER TO pgadmin_group")
+    assert main() == 0
+    with superuser(pg) as conn:
+        granted = conn.execute(
+            "SELECT count(*) FROM pg_database d, aclexplode(d.datacl) a "
+            "WHERE d.datname = 'console_db' AND a.grantee = 'azadmin'::regrole AND a.privilege_type = 'CONNECT'"
+        ).fetchone()[0]
+    assert granted == 1
+
+
 def test_broker_sees_rls(pg):
     assert main() == 0
     with superuser(pg, "console_db") as conn:

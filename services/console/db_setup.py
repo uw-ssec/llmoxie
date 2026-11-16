@@ -7,7 +7,8 @@ them). It does what the local stack's superuser script (`db/console-db.sql`) doe
   1. create the roles `console_web` and `console_broker` if missing, and set their passwords every
      run, so a rotated secret takes effect (the admin created the roles, so it holds ADMIN OPTION on
      them, which PostgreSQL 16 requires to alter them)
-  2. close `console_db` to everyone but those two roles
+  2. close `console_db` to everyone but those two roles and the admin login, which is granted CONNECT
+     first, since ARM may have made the database owned by another role (azure_pg_admin)
   3. close the other databases on the server (`CONSOLE_OTHER_DATABASES`) to PUBLIC, keeping CONNECT
      for the admin login, so the console roles cannot reach them
   4. apply the schema, once: the text of `console-db.sql` after its `\\c console_db` line. Everything
@@ -63,6 +64,7 @@ def create_roles(conn: psycopg.Connection) -> None:
 
 def lock_down_console_db(conn: psycopg.Connection) -> None:
     db = sql.Identifier(DB)
+    conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(db, sql.Identifier(os.environ["PGUSER"])))
     conn.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(db))
     conn.execute(
         sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
