@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 import yaml
-from pydantic import ValidationError as PydanticValidationError
 
 from llmaven.deployment import validate as validate_mod
 from llmaven.deployment.validate import ValidationError, validate_config
