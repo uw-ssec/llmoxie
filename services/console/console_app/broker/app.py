@@ -11,12 +11,10 @@ import hashlib
 import json
 import os
 import secrets
-import smtplib
 import sys
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -24,14 +22,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from .. import policy
-from . import db, dlp, keycloak, knowledge, litellm
+from . import db, dlp, keycloak, knowledge, litellm, mail
 from .auth import WEB_CLIENT_ID, IntegrationSession, Session, current_session, integration_session, require_caller
 
 PUBLIC_URL = os.environ["CONSOLE_PUBLIC_URL"]
 INVITE_TTL = timedelta(hours=int(os.environ.get("CONSOLE_INVITE_TTL_HOURS", "72")))
-SMTP_HOST = os.environ["SMTP_HOST"]
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
-MAIL_FROM = os.environ.get("MAIL_FROM", "console@llmoxie.localhost")
 
 
 @asynccontextmanager
@@ -59,6 +54,12 @@ def keycloak_failed(_, exc: keycloak.KeycloakError):
 @app.exception_handler(knowledge.HubError)
 def hub_failed(_, exc: knowledge.HubError):
     return JSONResponse({"detail": str(exc)}, status_code=502)
+
+
+@app.exception_handler(mail.MailError)
+def mail_failed(_, exc: mail.MailError):
+    return JSONResponse(
+        {"error": "mail_failed", "message": "The email could not be sent. Try again later."}, status_code=502)
 
 
 @app.get("/healthz")
@@ -122,26 +123,18 @@ def require(s: Session, action: str, *, org: dict | None = None, team: dict | No
 
 
 def send_invite(email: str, token: str, what: str) -> None:
-    message = EmailMessage()
-    message["From"], message["To"] = MAIL_FROM, email
-    message["Subject"] = f"You are invited to {what}"
-    message.set_content(
+    mail.send(
+        email, f"You are invited to {what}",
         f"You have been invited to {what} on the LLMoxie console.\n\n"
         f"Open this link and sign in with this email address ({email}):\n\n"
         f"{PUBLIC_URL}/invite/{token}\n\n"
         f"The link works once and expires in {int(INVITE_TTL.total_seconds() // 3600)} hours.\n")
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-        smtp.send_message(message)
 
 
 def send_notice(email: str | None, subject: str, body: str) -> None:
     if not email:
         return
-    message = EmailMessage()
-    message["From"], message["To"], message["Subject"] = MAIL_FROM, email, subject
-    message.set_content(body)
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-        smtp.send_message(message)
+    mail.send(email, subject, body)
 
 
 def create_invite(conn, s: Session, *, org_id, team_id, kind: str, email: str) -> str:
