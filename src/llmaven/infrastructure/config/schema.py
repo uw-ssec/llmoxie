@@ -27,7 +27,7 @@ KEY_VAULT_NAME_MAX = 24
 # Azure caps a Container App or Job name at 32 characters.
 CONTAINER_APP_NAME_MAX = 32
 # Clients the stack's realm import defines; realm.overrides cannot redefine them.
-STACK_CLIENT_IDS = ("mlflow-gate", "litellm-gate", "litellm", "llmaven-cli")
+STACK_CLIENT_IDS = ("mlflow-gate", "litellm-gate", "litellm", "llmaven-cli", "console")
 _APP_ENVIRONMENTS = ("dev", "staging", "prod", "test")
 
 

@@ -424,7 +424,8 @@ enabling Keycloak means setting `keycloak.image` to a built tag and its digest.
 - `keycloak.hostname and <app>.hostname are both ...`: the hostnames must
   differ.
 - `realm.overrides.clients redefines the stack's client ...` (the stack owns
-  `mlflow-gate`, `litellm-gate`, `litellm` and `llmaven-cli`), and
+  `mlflow-gate`, `litellm-gate`, `litellm`, `llmaven-cli` and `console`, the
+  last even with the console off), and
   `... has clientId ... with a $( substitution`.
 - `Azure caps these names at 32 characters: ... Shorten project.name.` for the
   Keycloak app, the realm job and the login apps.
