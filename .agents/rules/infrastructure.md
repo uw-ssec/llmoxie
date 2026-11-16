@@ -788,9 +788,10 @@ signs people in itself. `console-db` (`python db_setup.py`) and `console-init`
 `console_web` and `console_broker` and sets their passwords on every run (so a
 rotated secret takes), applies the schema only if `console_db` has none, and
 revokes `CONNECT` on the other databases from `PUBLIC` after granting it to the
-admin login. The broker starts and answers `/healthz` before the key file and
-the schema exist, so on a first deploy it answers errors per request for about a
-minute rather than crash-looping.
+admin login. Both apps start and answer `/healthz` before the database job has
+made their roles, and the broker also before the key file and the schema exist,
+so on a first deploy they answer errors per request for about a minute rather
+than crash-looping.
 
 **Mail.** Pulumi creates an Email Communication Service, a customer-managed
 domain (`console.mail.domain`), a sender username and a Communication Service
@@ -887,8 +888,9 @@ create it again and fail until it is imported (`pulumi import`), as for
   that `GRANT CONNECT` then `REVOKE CONNECT FROM PUBLIC` works on Azure.
 - The Azure Files mount with those uid, gid and mode options: that
   `console-init` can write `/run/console/admin-key` and the broker can read it.
-- The broker answering `/healthz` 200 in a real container before the jobs run,
-  and its connection pool reconnecting once the database and schema exist.
+- The broker and console-web answering `/healthz` 200 in a real container before
+  the jobs run, and their connection pools reconnecting once the database roles
+  and schema exist.
 - A real Azure Communication Services send, the error before the domain is
   linked, and that flipping `domain_verified` is an in-place update with no
   connection-string rotation.

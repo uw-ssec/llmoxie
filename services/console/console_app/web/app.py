@@ -30,7 +30,9 @@ DIST = Path(__file__).parent / "dist"  # the built application: index.html and a
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    sessions.pool.open(wait=True)
+    # Not waiting, as in the broker: on a first deploy console-web starts before the database job has
+    # made its role. The pool keeps trying in the background, and until then each request fails on its own.
+    sessions.pool.open(wait=False)
     yield
     sessions.pool.close()
 

@@ -236,3 +236,11 @@ def test_web_still_hides_why_something_was_not_found(visit, monkeypatch):
     with pytest.raises(visit.ApiError) as refused:
         v.broker("GET", f"/orgs/{ORG_ID}")
     assert (refused.value.status, refused.value.message) == (404, visit.NOT_FOUND)
+
+
+def test_web_healthz_before_its_database_role_exists(visit, monkeypatch):
+    monkeypatch.setenv("GATEWAY_PUBLIC_URL", "http://gateway.test")
+    from console_app.web.app import app
+
+    with TestClient(app) as client:  # runs the lifespan: the database job has not made console_web yet
+        assert client.get("/healthz").status_code == 200

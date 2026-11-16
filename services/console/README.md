@@ -192,8 +192,9 @@ is set; see "The console" in `.agents/rules/infrastructure.md`. There:
   login: it creates the roles and sets their passwords from Key Vault each run,
   applies the schema once, and closes the other databases to the console roles.
 - `console-init` writes the broker's key to an Azure Files share mounted at
-  `/run/console`. The broker answers `/healthz` before the key and the schema
-  exist, so a first deploy doesn't crash-loop it.
+  `/run/console`. Both services answer `/healthz` before the database job has
+  made their roles, and the broker also before the key and the schema exist, so
+  a first deploy doesn't crash-loop them.
 
 ## Using the console
 
