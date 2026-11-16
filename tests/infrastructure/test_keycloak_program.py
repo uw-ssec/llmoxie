@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 
 import pytest
+import yaml
 
 from llmaven.infrastructure import resources
 from llmaven.infrastructure.config.schema import (
@@ -16,6 +17,7 @@ from llmaven.infrastructure.config.schema import (
 )
 from llmaven.infrastructure.resources import SecretsManager
 from llmaven.infrastructure.resources import keycloak as keycloak_module
+from llmaven.infrastructure.resources.helpers import SSO_ONLY_LOGIN_SETTING
 from llmaven.infrastructure.resources.secrets_manager import KEYCLOAK_SECRET_NAMES
 
 from . import PINNED_KEYCLOAK_IMAGE
@@ -209,6 +211,12 @@ def test_litellm_sso_env(keycloak_run):
         "keycloak-client-litellm"
     )
     assert "GENERIC_CLIENT_SECRET" not in env
+    # One Keycloak sign-in, and no master-key login form behind it.
+    assert env["AUTO_REDIRECT_UI_LOGIN_TO_SSO"] == "true"
+    general = yaml.safe_load(kwargs["inline_secrets"]["config-yaml"])[
+        "general_settings"
+    ]
+    assert general[SSO_ONLY_LOGIN_SETTING] is True
 
 
 def test_litellm_sso_env_operator_wins(tmp_path, monkeypatch):
@@ -219,17 +227,29 @@ def test_litellm_sso_env_operator_wins(tmp_path, monkeypatch):
     ) = _run(
         tmp_path,
         monkeypatch,
-        **_keycloak(env_vars={"GENERIC_SCOPE": "openid", "GENERIC_CLIENT_ID": "x"}),
+        **_keycloak(
+            env_vars={
+                "GENERIC_SCOPE": "openid",
+                "GENERIC_CLIENT_ID": "x",
+                "AUTO_REDIRECT_UI_LOGIN_TO_SSO": "false",
+            }
+        ),
     )
     env = apps["llmaven-dev-litellm"]["env_vars"]
     assert env["GENERIC_SCOPE"] == "openid"
     assert env["GENERIC_CLIENT_ID"] == "x"
+    assert env["AUTO_REDIRECT_UI_LOGIN_TO_SSO"] == "false"
 
 
 def test_litellm_sso_env_absent_without_login(tmp_path, monkeypatch):
     _, _, apps = _run(tmp_path, monkeypatch, **_keycloak(litellm_login=False))
     kwargs = apps["llmaven-dev-litellm"]
     assert not [k for k in kwargs["env_vars"] if k.startswith("GENERIC_")]
+    assert "AUTO_REDIRECT_UI_LOGIN_TO_SSO" not in kwargs["env_vars"]
+    general = yaml.safe_load(kwargs["inline_secrets"]["config-yaml"])[
+        "general_settings"
+    ]
+    assert SSO_ONLY_LOGIN_SETTING not in general
     assert "GENERIC_CLIENT_SECRET" not in kwargs["key_vault_secret_refs"]
     assert LLM_AUTH not in apps and ML_AUTH in apps
 

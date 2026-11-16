@@ -1,10 +1,12 @@
 """Helper functions for creating Azure resources with LLMaven configuration."""
 
+import io
 from pathlib import Path
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
+from ruamel.yaml import YAML
 
 from ..config.schema import (
     CustomDomainConfig,
@@ -301,6 +303,45 @@ def create_mlflow_app(
     )
 
 
+SSO_ONLY_LOGIN_SETTING = "disable_password_login_when_sso_enabled"
+
+
+def apply_sso_only_login(config_text: str) -> str:
+    """Turn off LiteLLM's username/password UI login when the Keycloak login is on.
+
+    LiteLLM's login form otherwise accepts the master key as the admin
+    password. The setting goes into ``general_settings`` of the mounted copy
+    only; a value the operator already set there is kept, and the rest of the
+    file (including comments) is unchanged.
+
+    Args:
+        config_text: LiteLLM config YAML
+
+    Returns:
+        The config YAML with ``general_settings.disable_password_login_when_sso_enabled``
+    """
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    data = yaml.load(config_text)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError("LiteLLM config must be a YAML mapping")
+
+    general_settings = data.get("general_settings")
+    if general_settings is None:
+        data["general_settings"] = {SSO_ONLY_LOGIN_SETTING: True}
+    elif isinstance(general_settings, dict):
+        general_settings.setdefault(SSO_ONLY_LOGIN_SETTING, True)
+    else:
+        raise ValueError("LiteLLM config general_settings must be a mapping")
+
+    out = io.StringIO()
+    yaml.dump(data, out)
+    return out.getvalue()
+
+
 def create_litellm_app(
     name: str,
     resource_group_name: Output[str],
@@ -326,6 +367,7 @@ def create_litellm_app(
     custom_domains: list[CustomDomainConfig] | None = None,
     redis_enabled: bool = False,
     redis_clustering_policy: str = "EnterpriseCluster",
+    sso_only_login: bool = False,
     proxy: LiteLLMProxyConfig | None = None,
     ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
     ingress_external: bool = True,
@@ -357,6 +399,8 @@ def create_litellm_app(
         redis_enabled: Add router_settings.redis_* to the mounted LiteLLM config
         redis_clustering_policy: Redis clustering policy, which decides whether
             LiteLLM must group rate-limit keys by hash slot
+        sso_only_login: Add general_settings.disable_password_login_when_sso_enabled
+            to the mounted LiteLLM config, unless the file already sets it
         proxy: Traefik sidecar settings. When enabled, ingress targets Traefik,
             LiteLLM listens on 127.0.0.1 only, and LiteLLM's probes go through
             Traefik's health route.
@@ -428,6 +472,8 @@ def create_litellm_app(
                 content = apply_redis_router_settings(
                     content, clustering_policy=redis_clustering_policy
                 )
+            if sso_only_login and file_path == Path(config_file):
+                content = apply_sso_only_login(content)
             inline_secrets[secret_name] = content
             secret_volume_items.append(
                 azure_native.app.SecretVolumeItemArgs(

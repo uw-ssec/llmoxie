@@ -604,6 +604,9 @@ def create_pulumi_program(config_path: Path):
                     "GENERIC_ROLE_MAPPINGS_ROLES": repr(
                         {"proxy_admin": [config.litellm.login.role]}
                     ),
+                    # The gate has already signed the user in at Keycloak, so
+                    # LiteLLM's own login page would only add a second click.
+                    "AUTO_REDIRECT_UI_LOGIN_TO_SSO": "true",
                 }.items():
                     litellm_env_vars.setdefault(key, value)
                 # An operator's plain value or own secret ref wins; both would
@@ -651,6 +654,7 @@ def create_pulumi_program(config_path: Path):
                 custom_domains=config.litellm.custom_domains,
                 redis_enabled=bool(config.redis.enabled),
                 redis_clustering_policy=config.redis.clustering_policy,
+                sso_only_login=config.litellm.login.enabled,
                 proxy=config.litellm.proxy,
                 ip_security_restrictions=config.litellm.ip_security_restrictions,
                 ingress_external=not config.edge.enabled,
