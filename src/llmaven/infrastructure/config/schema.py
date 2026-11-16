@@ -19,6 +19,11 @@ EDGE_APP_SUFFIX = "traefik"
 KEYCLOAK_APP_SUFFIX = "keycloak"
 MLFLOW_LOGIN_APP_SUFFIX = "ml-auth"
 LITELLM_LOGIN_APP_SUFFIX = "llm-auth"
+CONSOLE_WEB_APP_SUFFIX = "con-web"
+CONSOLE_BROKER_APP_SUFFIX = "con-broker"
+CONSOLE_DB = "console_db"
+# Azure caps a Key Vault name at 24 characters.
+KEY_VAULT_NAME_MAX = 24
 # Azure caps a Container App or Job name at 32 characters.
 CONTAINER_APP_NAME_MAX = 32
 # Clients the stack's realm import defines; realm.overrides cannot redefine them.
@@ -47,6 +52,20 @@ def container_app_name(project_name: str, environment: str, suffix: str) -> str:
     """A stack Container App's real name, as Azure sees it."""
     base = f"{project_name}-{environment}-{suffix}"
     return f"{base}-{container_app_environment(base)}"
+
+
+def console_job_name(
+    project_name: str, environment: str, kind: Literal["db", "init"]
+) -> str:
+    """A console Container Apps Job's name: the database job or the init job."""
+    return f"{project_name}-con{kind}-{environment}"
+
+
+def console_vault_name(
+    project_name: str, environment: str, which: Literal["web", "broker"]
+) -> str:
+    """The console web or broker Key Vault's name."""
+    return f"kv-{project_name}-{environment}-c{which[0]}"[:24]
 
 
 def edge_app_name(project_name: str, environment: str) -> str:
@@ -1042,6 +1061,74 @@ class KeycloakConfig(BaseModel):
     validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
 
 
+class ConsoleAppSize(BaseModel):
+    """Size of one console Container App."""
+
+    cpu: float = Field(default=0.25, description="CPU cores", ge=0.25)
+    memory: str = Field(default="0.5Gi", description="Memory")
+    min_replicas: int = Field(default=1, description="Minimum replicas", ge=0)
+    max_replicas: int = Field(default=1, description="Maximum replicas", ge=1)
+
+
+class ConsoleMailConfig(BaseModel):
+    """Azure Communication Services mail for the console's invitations."""
+
+    domain: str | None = Field(
+        default=None,
+        description="Customer-managed email domain the console sends from",
+    )
+    sender: str = Field(
+        default="console", description="Sender username at the mail domain"
+    )
+    display_name: str = Field(
+        default="LLMoxie console", description="Sender display name"
+    )
+    domain_verified: bool = Field(
+        default=False,
+        description="Set true once the domain's DNS records are verified, so the "
+        "sender can be linked to it",
+    )
+
+    check_domain = field_validator("domain")(_check_hostname)
+
+
+class ConsoleConfig(BaseModel):
+    """The LLMoxie console: web app, broker, their database and mail."""
+
+    enabled: bool = Field(default=False, description="Run the console behind the edge")
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to the console; must be one "
+        "of edge.custom_domains",
+    )
+    image: str = Field(
+        default="ghcr.io/uw-ssec/llmoxie-console:latest",
+        description="Console image. The default is a moving tag, which is fine "
+        "while the console is off; once console.enabled is true it must be "
+        "<name>:<tag>@sha256:<digest>",
+    )
+    admin_subjects: list[str] = Field(
+        default_factory=list,
+        description="Keycloak subjects (sub claims) that administer the console",
+    )
+    invite_ttl_hours: int = Field(
+        default=72, description="Hours an invitation stays valid", ge=1
+    )
+    mail: ConsoleMailConfig = Field(default_factory=ConsoleMailConfig)
+    web: ConsoleAppSize = Field(default_factory=lambda: ConsoleAppSize(max_replicas=2))
+    broker: ConsoleAppSize = Field(
+        default_factory=lambda: ConsoleAppSize(cpu=0.5, memory="1Gi")
+    )
+    revision_suffix: str | None = Field(
+        default=None, description="Console revision name suffix"
+    )
+    refresh_trigger: str | None = Field(
+        default=None, description="Fixed REFRESH_TRIGGER value for the console apps"
+    )
+
+    check_hostname = field_validator("hostname")(_check_hostname)
+
+
 class LLMavenAPIConfig(ContainerAppConfig):
     """LLMaven API-specific configuration."""
 
@@ -1292,6 +1379,10 @@ class LLMavenConfig(BaseModel):
         default_factory=KeycloakConfig,
         description="Keycloak sign-in behind the edge",
     )
+    console: ConsoleConfig = Field(
+        default_factory=ConsoleConfig,
+        description="LLMoxie console behind the edge",
+    )
     llmaven_api: LLMavenAPIConfig = Field(
         default_factory=LLMavenAPIConfig, description="LLMaven API container app"
     )
@@ -1396,6 +1487,7 @@ class LLMavenConfig(BaseModel):
 
         self._validate_edge()
         self._validate_keycloak()
+        self._validate_console()
         self._validate_app_names()
 
     def _validate_keycloak(self) -> None:
@@ -1445,6 +1537,60 @@ class LLMavenConfig(BaseModel):
         if "keycloak_db" not in self.database.databases:
             self.database.databases.append("keycloak_db")
 
+    def _validate_console(self) -> None:
+        console = self.console
+        if not console.enabled:
+            return
+        for flag, ok in (
+            ("edge.enabled", self.edge.enabled),
+            ("keycloak.enabled", self.keycloak.enabled),
+            ("litellm.enabled", self.litellm.enabled),
+            ("litellm.login.enabled", self.litellm.login.enabled),
+        ):
+            if not ok:
+                raise ValueError(
+                    f"console.enabled needs {flag}: the console is reached "
+                    "through the edge and signs users in through Keycloak."
+                )
+        if self.litellm.admin_hostname is None:
+            raise ValueError(
+                "console.enabled needs litellm.admin_hostname: the console "
+                "manages LiteLLM keys through the admin host."
+            )
+        if console.hostname is None:
+            raise ValueError(
+                "console.enabled is true but console.hostname is not set: the "
+                "edge routes to the console by hostname."
+            )
+        if console.hostname not in {d.name for d in self.edge.custom_domains}:
+            raise ValueError(
+                f"console.hostname {console.hostname!r} is not listed in "
+                "edge.custom_domains: add it there."
+            )
+        for name, other in (
+            ("litellm.hostname", self.litellm.hostname),
+            ("litellm.admin_hostname", self.litellm.admin_hostname),
+            ("mlflow.hostname", self.mlflow.hostname),
+            ("keycloak.hostname", self.keycloak.hostname),
+        ):
+            if other == console.hostname:
+                raise ValueError(
+                    f"console.hostname and {name} are both {other!r}: they must differ"
+                )
+        _check_digest(console.image, "console.image")
+        if not console.admin_subjects:
+            raise ValueError(
+                "console.enabled is true but console.admin_subjects is empty: "
+                "name at least one Keycloak subject to administer the console."
+            )
+        if console.mail.domain is None:
+            raise ValueError(
+                "console.enabled is true but console.mail.domain is not set: "
+                "invitations are sent from that domain."
+            )
+        if CONSOLE_DB not in self.database.databases:
+            self.database.databases.append(CONSOLE_DB)
+
     def _validate_app_names(self) -> None:
         """Azure caps Container App and Job names; check those that will exist."""
         project, env = self.project.name, self.project.environment
@@ -1473,14 +1619,38 @@ class LLMavenConfig(BaseModel):
                     container_app_name(project, env, LITELLM_LOGIN_APP_SUFFIX),
                 )
             )
+        if self.console.enabled:
+            names += [
+                (
+                    "console web app",
+                    container_app_name(project, env, CONSOLE_WEB_APP_SUFFIX),
+                ),
+                (
+                    "console broker app",
+                    container_app_name(project, env, CONSOLE_BROKER_APP_SUFFIX),
+                ),
+                ("console database job", console_job_name(project, env, "db")),
+                ("console init job", console_job_name(project, env, "init")),
+            ]
         too_long = [
             f"{kind} {name!r} is {len(name)} characters"
             for kind, name in names
             if len(name) > CONTAINER_APP_NAME_MAX
         ]
+        if self.console.enabled:
+            # Test the untruncated name: console_vault_name cuts at 24, which
+            # would let the web and broker vaults collide.
+            for which in ("web", "broker"):
+                vault = f"kv-{project}-{env}-c{which[0]}"
+                if len(vault) > KEY_VAULT_NAME_MAX:
+                    too_long.append(
+                        f"console {which} Key Vault {vault!r} is {len(vault)} "
+                        f"characters (limit {KEY_VAULT_NAME_MAX})"
+                    )
         if too_long:
             raise ValueError(
-                f"Azure caps these names at {CONTAINER_APP_NAME_MAX} characters: "
+                f"Azure caps these names (apps and jobs at {CONTAINER_APP_NAME_MAX} "
+                "characters, Key Vaults at 24): "
                 + "; ".join(too_long)
                 + ". Shorten project.name."
             )

@@ -177,3 +177,19 @@ def missing_salt_key(config: LLMavenConfig, config_path: Path) -> list[str]:
         "Vault secret ref in litellm.key_vault_secret_refs) to the current master "
         "key's value, deploy, and never change it"
     ]
+
+
+def litellm_stores_models(config: LLMavenConfig, config_path: Path) -> bool:
+    """Whether the LiteLLM config sets ``general_settings.store_model_in_db: true``."""
+    try:
+        litellm_config = yaml.safe_load(
+            resolve_litellm_config_file(config, config_path).read_text()
+        )
+    except (OSError, yaml.YAMLError):
+        return False
+    settings = (
+        litellm_config.get("general_settings")
+        if isinstance(litellm_config, dict)
+        else None
+    )
+    return isinstance(settings, dict) and settings.get("store_model_in_db") is True
