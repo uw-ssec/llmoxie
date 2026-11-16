@@ -52,6 +52,7 @@ def create_pulumi_program(config_path: Path):
         import pulumi_azure_native as azure_native
 
         from llmaven.infrastructure.config.loader import ConfigLoadError, load_config
+        from llmaven.infrastructure.config.schema import edge_app_base_name
         from llmaven.infrastructure.resources import (
             BACKUP_STORAGE_SECRET_NAME,
             REDIS_ENV_VARS,
@@ -61,12 +62,15 @@ def create_pulumi_program(config_path: Path):
             create_backup_job,
             create_container_apps_environment,
             create_databases,
+            create_edge_app,
             create_key_vault,
+            create_keycloak_app,
             create_litellm_app,
             create_log_analytics_workspace,
             create_mlflow_app,
             create_monitoring,
             create_postgres_server,
+            create_realm_job,
             create_redis,
             create_storage_account,
             create_virtual_network,
@@ -124,6 +128,11 @@ def create_pulumi_program(config_path: Path):
             model_errors = missing_foundry_deployments(config, config_path)
             if model_errors:
                 raise ValueError("; ".join(model_errors))
+
+        from llmaven.infrastructure.config.litellm_models import missing_spend_logger
+
+        for message in missing_spend_logger(config, config_path):
+            pulumi.log.warn(message)
 
         container_apps_subnet = azure_native.network.Subnet(
             "container-apps-subnet",
@@ -403,6 +412,7 @@ def create_pulumi_program(config_path: Path):
         mlflow_app = litellm_app = backup_job = None
 
         # 8.1. MLflow Container App
+        mlflow_tracking_uri_secret = None
         if config.mlflow and config.mlflow.enabled:
             pulumi.log.info("Creating MLflow Container App...")
 
@@ -426,6 +436,7 @@ def create_pulumi_program(config_path: Path):
                     depends_on=[shared_kv_access_policy, storage_conn_str_secret]
                 ),
                 custom_domains=config.mlflow.custom_domains,
+                ingress_external=not config.edge.enabled,
             )
 
             mlflow_fqdn = mlflow_app.configuration.apply(
@@ -433,15 +444,100 @@ def create_pulumi_program(config_path: Path):
             )
 
             # Create MLflow tracking URI secret
-            secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
+            mlflow_tracking_uri_secret = (
+                secrets_manager.create_mlflow_tracking_uri_secret(mlflow_fqdn)
+            )
 
             # Export MLflow URL
-            pulumi.export(
-                "mlflow_url",
-                mlflow_app.configuration.apply(
-                    lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
+            if config.edge.enabled:
+                pulumi.export("mlflow_url", f"https://{config.mlflow.hostname}")
+            else:
+                pulumi.export(
+                    "mlflow_url",
+                    mlflow_app.configuration.apply(
+                        lambda c: (
+                            f"https://{c.ingress.fqdn}" if c and c.ingress else None
+                        )
+                    ),
+                )
+
+        # 8.4. Keycloak, its realm import and the oauth2-proxy login apps
+        # Placed before LiteLLM, which needs Keycloak's internal FQDN and its
+        # client secret for the Admin UI sign-in.
+        from llmaven.infrastructure.resources.keycloak import create_login_app
+        from llmaven.infrastructure.resources.secrets_manager import (
+            KEYCLOAK_SECRET_NAMES,
+        )
+
+        keycloak_app = realm_job = None
+        keycloak_secrets: dict = {}
+        login_apps: dict = {}
+        keycloak_fqdn = None
+        if config.keycloak.enabled:
+            pulumi.log.info("Creating Keycloak, the realm import and logins...")
+            keycloak_secrets = secrets_manager.create_keycloak_secrets(
+                postgres_host=postgres_server.fully_qualified_domain_name,
+                admin_login=config.database.admin_login,
+                admin_password=admin_password,
+                config=config,
+            )
+            keycloak_app = create_keycloak_app(
+                resource_group_name=resource_group,
+                location=location,
+                container_env_id=container_env.id,
+                key_vault=key_vault,
+                config=config,
+                managed_identity_id=shared_managed_identity.id,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[shared_kv_access_policy, *keycloak_secrets.values()]
                 ),
             )
+            keycloak_fqdn = keycloak_app.configuration.apply(
+                lambda c: c.ingress.fqdn if c and c.ingress else None
+            )
+            realm_job = create_realm_job(
+                resource_group_name=resource_group,
+                location=location,
+                container_env_id=container_env.id,
+                key_vault=key_vault,
+                config=config,
+                keycloak_fqdn=keycloak_fqdn,
+                managed_identity_id=shared_managed_identity.id,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[
+                        shared_kv_access_policy,
+                        keycloak_app,
+                        *keycloak_secrets.values(),
+                    ]
+                ),
+            )
+            for kind in ("mlflow", "litellm"):
+                if getattr(config, kind).login.enabled:
+                    login_apps[kind] = create_login_app(
+                        kind,
+                        resource_group_name=resource_group,
+                        location=location,
+                        container_env_id=container_env.id,
+                        key_vault=key_vault,
+                        config=config,
+                        keycloak_fqdn=keycloak_fqdn,
+                        managed_identity_id=shared_managed_identity.id,
+                        tags=config.tags,
+                        opts=pulumi.ResourceOptions(
+                            depends_on=[
+                                shared_kv_access_policy,
+                                *keycloak_secrets.values(),
+                            ]
+                        ),
+                    )
+
+            realm_url = f"https://{config.keycloak.hostname}/realms/{config.keycloak.realm.name}"
+            pulumi.export("keycloak_url", f"https://{config.keycloak.hostname}")
+            pulumi.export("keycloak_issuer", realm_url)
+            pulumi.export("keycloak_realm", config.keycloak.realm.name)
+            pulumi.export("keycloak_realm_job", realm_job.name)
 
         # 8.2. LiteLLM Container App
         if config.litellm and config.litellm.enabled:
@@ -457,12 +553,68 @@ def create_pulumi_program(config_path: Path):
 
             # Add the adl_logger.py as an extra module
             adl_logger_path = Path(__file__).parent / Path("resources/adl_logger.py")
+            spend_logger_path = Path(__file__).parent / Path(
+                "resources/spend_logger.py"
+            )
 
             litellm_env_vars = dict(config.litellm.env_vars)
             litellm_secret_refs = dict(config.litellm.key_vault_secret_refs)
             if config.redis.enabled:
                 litellm_env_vars.update(REDIS_ENV_VARS)
                 litellm_secret_refs.update(REDIS_KEY_VAULT_SECRET_REFS)
+            if config.edge.enabled and config.litellm.hostname:
+                # The edge sends LiteLLM its internal FQDN as Host, so LiteLLM
+                # builds its login redirect from this instead; operator wins.
+                litellm_env_vars.setdefault(
+                    "PROXY_BASE_URL", f"https://{config.litellm.hostname}"
+                )
+            if config.litellm.login.enabled:
+                # Admin UI sign-in through Keycloak. The browser-facing URL is
+                # the public host; the token and userinfo calls are made by
+                # LiteLLM itself, so they go to Keycloak's internal FQDN.
+                oidc = f"realms/{config.keycloak.realm.name}/protocol/openid-connect"
+                for key, value in {
+                    "GENERIC_CLIENT_ID": "litellm",
+                    "GENERIC_AUTHORIZATION_ENDPOINT": (
+                        f"https://{config.keycloak.hostname}/{oidc}/auth"
+                    ),
+                    "GENERIC_TOKEN_ENDPOINT": pulumi.Output.concat(
+                        "https://", keycloak_fqdn, f"/{oidc}/token"
+                    ),
+                    "GENERIC_USERINFO_ENDPOINT": pulumi.Output.concat(
+                        "https://", keycloak_fqdn, f"/{oidc}/userinfo"
+                    ),
+                    "GENERIC_SCOPE": "openid email profile",
+                    "GENERIC_USER_ID_ATTRIBUTE": "preferred_username",
+                    "GENERIC_USER_EMAIL_ATTRIBUTE": "email",
+                    "GENERIC_USER_DISPLAY_NAME_ATTRIBUTE": "name",
+                    # Role mapping, read in the uw-ssec fork (branch sso-enabled,
+                    # litellm/proxy/management_endpoints/ui_sso.py):
+                    # _setup_role_mappings (~1443-1452) reads these three env vars
+                    # and parses GENERIC_ROLE_MAPPINGS_ROLES with ast.literal_eval
+                    # (a Python dict literal, not JSON). generic_response_convertor
+                    # (~1247-1283) reads the groups at the dotted path of
+                    # GROUP_CLAIM in the userinfo response, which the realm fills
+                    # with realm_access.roles; determine_role_from_groups (~845)
+                    # picks the highest matching role. The role goes into the
+                    # user update on every login (~2006-2015), not only at
+                    # creation. With a mapping set, GENERIC_USER_ROLE_ATTRIBUTE
+                    # is only a fallback for no match, so it is not set.
+                    "GENERIC_ROLE_MAPPINGS_GROUP_CLAIM": "realm_access.roles",
+                    "GENERIC_ROLE_MAPPINGS_ROLES": repr(
+                        {"proxy_admin": [config.litellm.login.role]}
+                    ),
+                    # The gate has already signed the user in at Keycloak, so
+                    # LiteLLM's own login page would only add a second click.
+                    "AUTO_REDIRECT_UI_LOGIN_TO_SSO": "true",
+                }.items():
+                    litellm_env_vars.setdefault(key, value)
+                # An operator's plain value or own secret ref wins; both would
+                # put the variable in the container twice.
+                if "GENERIC_CLIENT_SECRET" not in litellm_env_vars:
+                    litellm_secret_refs.setdefault(
+                        "GENERIC_CLIENT_SECRET", KEYCLOAK_SECRET_NAMES["client_litellm"]
+                    )
 
             litellm_app = create_litellm_app(
                 name=f"{stack_name}-litellm",
@@ -488,22 +640,80 @@ def create_pulumi_program(config_path: Path):
                         storage_conn_str_secret,
                         *foundry_dependencies,
                         *redis_dependencies,
+                        *keycloak_secrets.values(),
+                        *(
+                            [mlflow_tracking_uri_secret]
+                            if mlflow_tracking_uri_secret is not None
+                            else []
+                        ),
                     ]
                 ),
-                extra_modules=[adl_logger_path],
+                extra_modules=[adl_logger_path, spend_logger_path],
                 revision_suffix=config.litellm.revision_suffix,
                 refresh_trigger=config.litellm.refresh_trigger,
                 custom_domains=config.litellm.custom_domains,
                 redis_enabled=bool(config.redis.enabled),
                 redis_clustering_policy=config.redis.clustering_policy,
+                sso_only_login=config.litellm.login.enabled,
                 proxy=config.litellm.proxy,
                 ip_security_restrictions=config.litellm.ip_security_restrictions,
+                ingress_external=not config.edge.enabled,
             )
 
             # Export LiteLLM URL
+            if config.edge.enabled:
+                pulumi.export("litellm_url", f"https://{config.litellm.hostname}")
+            else:
+                pulumi.export(
+                    "litellm_url",
+                    litellm_app.configuration.apply(
+                        lambda c: (
+                            f"https://{c.ingress.fqdn}" if c and c.ingress else None
+                        )
+                    ),
+                )
+
+        # 8.3. Traefik edge Container App (the only public entry point)
+        edge_app = None
+        if config.edge.enabled:
+            pulumi.log.info("Creating Traefik edge Container App...")
+            backends = {
+                key: app.configuration.apply(
+                    lambda c: c.ingress.fqdn if c and c.ingress else None
+                )
+                for key, app in (
+                    ("litellm", litellm_app),
+                    ("mlflow", mlflow_app),
+                    ("keycloak", keycloak_app),
+                    ("mlflow-auth", login_apps.get("mlflow")),
+                    ("litellm-auth", login_apps.get("litellm")),
+                )
+                if app is not None
+            }
+            edge_app = create_edge_app(
+                name=edge_app_base_name(project_name, environment),
+                resource_group_name=resource_group,
+                location=location,
+                container_env_id=container_env.id,
+                config=config,
+                backends=backends,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[
+                        a
+                        for a in (
+                            mlflow_app,
+                            litellm_app,
+                            keycloak_app,
+                            *login_apps.values(),
+                        )
+                        if a is not None
+                    ]
+                ),
+            )
             pulumi.export(
-                "litellm_url",
-                litellm_app.configuration.apply(
+                "edge_url",
+                edge_app.configuration.apply(
                     lambda c: f"https://{c.ingress.fqdn}" if c and c.ingress else None
                 ),
             )
@@ -568,6 +778,7 @@ def create_pulumi_program(config_path: Path):
             log_analytics_workspace=log_analytics,
             litellm_app=litellm_app,
             mlflow_app=mlflow_app,
+            edge_app=edge_app,
             postgres_server=postgres_server,
             backup_job=backup_job,
             tags=config.tags,

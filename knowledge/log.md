@@ -1,3 +1,20 @@
+## 2026-11-16
+* **Update**: Linked `facts/keycloak-bootstrap-admin-is-the-realm-jobs-login.md` to `decisions/keycloak-identity-provider.md` (Operational constraint of the realm job).
+* **Update**: Linked `bugs/litellm-redirects-to-internal-host-behind-edge.md` to `decisions/keycloak-identity-provider.md` (Surfaced by the LiteLLM SSO login behind the edge).
+* **Update**: Linked `bugs/litellm-redirects-to-internal-host-behind-edge.md` to `decisions/litellm-image-digest-pin-and-one-way-upgrade.md` (The fix ships in the pinned fork build).
+* **Creation**: Documented concept `facts/keycloak-bootstrap-admin-is-the-realm-jobs-login.md` (Keycloak's temporary admin is the realm job's login, so don't delete it).
+* **Creation**: Documented concept `bugs/litellm-redirects-to-internal-host-behind-edge.md` (LiteLLM's own redirects pointed at its internal address behind the edge).
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
+* **Update**: Updated concept `requirements/litellm-master-and-salt-key.md`.
+
+## 2026-11-14
+* **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
+* **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
+* **Update**: Linked `decisions/keycloak-identity-provider.md` to `decisions/stay-on-oss-litellm-gateway.md` (LiteLLM SSO for the Admin UI uses the uw-ssec fork and Keycloak).
+* **Update**: Linked `decisions/keycloak-identity-provider.md` to `requirements/traefik-sidecar-allowlist-and-client-ip.md` (The edge allowlist and client-IP trust the Keycloak admin console and login routes depend on).
+* **Creation**: Documented concept `decisions/keycloak-identity-provider.md` (Keycloak is the identity provider).
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
+
 ## 2026-11-13
 * **Update**: Updated concept `decisions/console-design-direction.md`.
 * **Update**: Linked `decisions/console-design-direction.md` to `decisions/console-dashboard-layout.md` (The direction and review behind the dashboard layout that concept describes).
@@ -8,8 +25,15 @@
 * **Update**: Linked `decisions/console-react-front-end.md` to `decisions/platform-only-scope.md` (The console this front end belongs to is in the repo's scope by that decision).
 * **Creation**: Documented concept `decisions/console-react-front-end.md` (The console's pages are a React application served by console-web, under a policy that allows nothing inline).
 * **Update**: Updated concept `decisions/platform-only-scope.md`.
+* **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
+* **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
+* **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
+* **Update**: Updated concept `decisions/no-op-deploy-controls.md`.
+* **Update**: Updated concept `requirements/traefik-sidecar-allowlist-and-client-ip.md`.
+* **Update**: Updated concept `decisions/monitoring-alerts-config.md`.
 
 ## 2026-11-12
+* **Update**: Updated concept `decisions/monitoring-alerts-config.md`.
 * **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
 * **Update**: Updated concept `bugs/failed-pg-dump-can-consume-retention.md`.
 * **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.

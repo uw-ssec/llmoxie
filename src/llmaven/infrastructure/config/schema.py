@@ -11,6 +11,54 @@ from typing import Any, Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# Azure caps a revision name, "<container app name>--<suffix>", at 54 characters.
+MAX_REVISION_NAME_LENGTH = 54
+# A pinned edge suffix gets "-p<POLICY_SUFFIX_LENGTH hex>" (the policy digest).
+POLICY_SUFFIX_LENGTH = 8
+EDGE_APP_SUFFIX = "traefik"
+KEYCLOAK_APP_SUFFIX = "keycloak"
+MLFLOW_LOGIN_APP_SUFFIX = "ml-auth"
+LITELLM_LOGIN_APP_SUFFIX = "llm-auth"
+# Azure caps a Container App or Job name at 32 characters.
+CONTAINER_APP_NAME_MAX = 32
+# Clients the stack's realm import defines; realm.overrides cannot redefine them.
+STACK_CLIENT_IDS = ("mlflow-gate", "litellm-gate", "litellm", "llmaven-cli")
+_APP_ENVIRONMENTS = ("dev", "staging", "prod", "test")
+
+
+def container_app_environment(name: str) -> str:
+    """Environment suffix the Container App helper adds to an app's name.
+
+    The first of dev/staging/prod/test found among the name's dash-separated
+    parts, else "dev".
+    """
+    for part in name.split("-"):
+        if part in _APP_ENVIRONMENTS:
+            return part
+    return "dev"
+
+
+def edge_app_base_name(project_name: str, environment: str) -> str:
+    """Name the deploy passes for the edge, before the environment suffix."""
+    return f"{project_name}-{environment}-{EDGE_APP_SUFFIX}"
+
+
+def container_app_name(project_name: str, environment: str, suffix: str) -> str:
+    """A stack Container App's real name, as Azure sees it."""
+    base = f"{project_name}-{environment}-{suffix}"
+    return f"{base}-{container_app_environment(base)}"
+
+
+def edge_app_name(project_name: str, environment: str) -> str:
+    """The edge Container App's real name, as Azure sees it."""
+    return container_app_name(project_name, environment, EDGE_APP_SUFFIX)
+
+
+def realm_job_name(project_name: str, environment: str) -> str:
+    """The Keycloak realm-import Container Apps Job's name."""
+    return f"{project_name}-realm-{environment}"
+
+
 class ProjectConfig(BaseModel):
     """Project information configuration."""
 
@@ -240,10 +288,11 @@ AlertName = Literal[
     "db_cpu",
     "backup_job_failures",
     "cloud_budget",
+    "llm_spend",
 ]
 ALL_ALERTS: tuple[AlertName, ...] = get_args(AlertName)
 # Alerts that query Log Analytics, so they need monitoring.enable_log_analytics.
-LOG_BASED_ALERTS: frozenset[AlertName] = frozenset({"backup_job_failures"})
+LOG_BASED_ALERTS: frozenset[AlertName] = frozenset({"backup_job_failures", "llm_spend"})
 # Evaluation window sizes (minutes) Azure Monitor metric alerts accept.
 ALLOWED_WINDOW_MINUTES = (1, 5, 15, 30, 60, 360, 720, 1440)
 
@@ -339,6 +388,41 @@ class CloudBudgetAlert(BaseModel):
         return v
 
 
+class LlmSpendAlert(BaseModel):
+    """LLM spend alert on hourly and/or daily cost thresholds (USD)."""
+
+    max_usd_per_hour: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        description="Max LLM spend per hour (USD); null to skip",
+    )
+    max_usd_per_day: float | None = Field(
+        default=50,
+        gt=0,
+        allow_inf_nan=False,
+        description="Max LLM spend per day (USD); null to skip",
+    )
+
+    @model_validator(mode="after")
+    def _at_least_one_threshold(self) -> "LlmSpendAlert":
+        """Reject an alert with no threshold, since it could never fire."""
+        if self.max_usd_per_hour is None and self.max_usd_per_day is None:
+            raise ValueError(
+                "llm_spend needs max_usd_per_hour or max_usd_per_day (or both)"
+            )
+        return self
+
+    def thresholds(self) -> dict[str, float]:
+        """Non-null thresholds keyed by window: {"hourly": x, "daily": y}."""
+        result: dict[str, float] = {}
+        if self.max_usd_per_hour is not None:
+            result["hourly"] = self.max_usd_per_hour
+        if self.max_usd_per_day is not None:
+            result["daily"] = self.max_usd_per_day
+        return result
+
+
 class AlertsConfig(BaseModel):
     """Alert rules and who is notified. Alerting is off unless enabled_alerts is set."""
 
@@ -357,6 +441,7 @@ class AlertsConfig(BaseModel):
         default_factory=BackupJobFailuresAlert
     )
     cloud_budget: CloudBudgetAlert = Field(default_factory=CloudBudgetAlert)
+    llm_spend: LlmSpendAlert = Field(default_factory=LlmSpendAlert)
 
     @field_validator("email_receivers")
     @classmethod
@@ -485,6 +570,41 @@ class ContainerAppConfig(BaseModel):
     )
 
 
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    r"(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
+)
+
+
+def _check_hostname(v: str | None) -> str | None:
+    if v is not None and not _HOSTNAME_RE.fullmatch(v):
+        raise ValueError(
+            f"Invalid hostname {v!r}: use a lower-case DNS name with no scheme, "
+            "port, path or backtick"
+        )
+    return v
+
+
+class LoginConfig(BaseModel):
+    """Keycloak sign-in in front of an app, through an oauth2-proxy app."""
+
+    enabled: bool = Field(
+        default=False, description="Require a Keycloak login for this app"
+    )
+    role: str = Field(description="Realm role a user needs to be let in")
+
+
+def _login_with_default_role(role: str):
+    """Before-validator: a `login:` block that omits `role` gets the app's."""
+
+    def fill(v: Any) -> Any:
+        if isinstance(v, dict) and "role" not in v:
+            return {**v, "role": role}
+        return v
+
+    return field_validator("login", mode="before")(staticmethod(fill))
+
+
 class MLflowConfig(ContainerAppConfig):
     """MLflow-specific configuration."""
 
@@ -506,6 +626,19 @@ class MLflowConfig(ContainerAppConfig):
         },
         description="MLflow Key Vault secret references",
     )
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to MLflow; must be one of "
+        "edge.custom_domains",
+    )
+
+    login: LoginConfig = Field(
+        default_factory=lambda: LoginConfig(role="mlflow-user"),
+        description="Keycloak login for the MLflow UI",
+    )
+
+    check_hostname = field_validator("hostname")(_check_hostname)
+    default_login_role = _login_with_default_role("mlflow-user")
 
 
 # LiteLLM v1.106.6 inference routes that stay public behind the proxy, with
@@ -534,6 +667,19 @@ DEFAULT_PUBLIC_PATHS = [
 # because the platform probes reach LiteLLM through the proxy. Other /health/*
 # routes expose configuration and admin actions, so they stay allowlisted.
 DEFAULT_HEALTH_PATHS = ["/health/liveliness", "/health/liveness"]
+
+
+def _check_cidrs(v: list[str] | None) -> list[str] | None:
+    for cidr in v or []:
+        ipaddress.ip_network(cidr, strict=False)
+    return v
+
+
+def _check_paths(v: list[str]) -> list[str]:
+    for path in v:
+        if not path.startswith("/") or "`" in path:
+            raise ValueError(f"Invalid path {path!r}: must start with '/'")
+    return v
 
 
 class LiteLLMProxyConfig(BaseModel):
@@ -597,17 +743,12 @@ class LiteLLMProxyConfig(BaseModel):
     @field_validator("admin_allowed_ips", "trusted_proxy_ips")
     @classmethod
     def validate_cidrs(cls, v: list[str] | None) -> list[str] | None:
-        for cidr in v or []:
-            ipaddress.ip_network(cidr, strict=False)
-        return v
+        return _check_cidrs(v)
 
     @field_validator("public_paths", "health_paths")
     @classmethod
     def validate_paths(cls, v: list[str]) -> list[str]:
-        for path in v:
-            if not path.startswith("/") or "`" in path:
-                raise ValueError(f"Invalid path {path!r}: must start with '/'")
-        return v
+        return _check_paths(v)
 
 
 class LiteLLMConfig(ContainerAppConfig):
@@ -664,6 +805,224 @@ class LiteLLMConfig(ContainerAppConfig):
         default_factory=LiteLLMProxyConfig,
         description="Optional Traefik sidecar for path-level access control",
     )
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to LiteLLM; must be one of "
+        "edge.custom_domains",
+    )
+    admin_allowed_ips: list[str] = Field(
+        default_factory=list,
+        description="Client CIDRs the edge lets reach non-public paths. Empty "
+        "blocks the admin surface for everyone",
+    )
+    public_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_PUBLIC_PATHS),
+        description="Exact paths the edge serves to any IP",
+    )
+    health_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_HEALTH_PATHS),
+        description="Exact unauthenticated health paths the edge serves to any IP",
+    )
+
+    login: LoginConfig = Field(
+        default_factory=lambda: LoginConfig(role="litellm-admin"),
+        description="Keycloak login for the LiteLLM UI",
+    )
+
+    default_login_role = _login_with_default_role("litellm-admin")
+    check_hostname = field_validator("hostname")(_check_hostname)
+    # Same checks as LiteLLMProxyConfig, reused rather than copied.
+    validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
+    validate_paths = field_validator("public_paths", "health_paths")(_check_paths)
+
+
+class EdgeConfig(ContainerAppConfig):
+    """Standalone Traefik edge: the only public entry point of the stack.
+
+    Routes by hostname to LiteLLM and MLflow, which then take internal ingress.
+    """
+
+    enabled: bool = Field(default=False, description="Run the Traefik edge")
+    image: str = Field(
+        default=LiteLLMProxyConfig.model_fields["image"].default,
+        description="Traefik image, pinned by digest",
+    )
+    port: int = Field(default=8080, ge=1, le=65535, description="Traefik port")
+    ping_port: int = Field(
+        default=8082, ge=1, le=65535, description="Traefik ping (health) port"
+    )
+    max_replicas: int = Field(default=3, description="Maximum replicas", ge=1)
+    trusted_proxy_ips: list[str] | None = Field(
+        default=None,
+        description="Peers whose X-Forwarded-For Traefik keeps. Required when the "
+        "edge is on, with no default: set it to the range the environment's "
+        "Envoy peers connect from (100.100.0.0/17 in the workload-profile "
+        "environment of #229). Never include the replica range "
+        "(100.100.192.0/19 there); see the infrastructure rule",
+    )
+    rate_limit_average: int = Field(
+        default=50,
+        ge=1,
+        description="Requests per second per client IP, per replica",
+    )
+    rate_limit_burst: int = Field(
+        default=100, ge=1, description="Burst size per client IP, per replica"
+    )
+    log_forwarded_for: bool = Field(
+        default=False,
+        description="Temporary staging diagnostic: JSON access logs with the raw "
+        "peer (ClientAddr) and X-Forwarded-For; other headers stay dropped",
+    )
+
+    validate_cidrs = field_validator("trusted_proxy_ips")(_check_cidrs)
+
+
+# Env var names the realm job sets itself (resources/keycloak.py
+# create_realm_job): keycloak-config-cli's KEYCLOAK_* and IMPORT_* settings, the
+# per-client KC_CLIENT_SECRET_* secrets, and the realm digest. A test asserts
+# every name the job sets is covered.
+_RESERVED_REALM_ENV_PREFIXES = ("KEYCLOAK_", "IMPORT_", "KC_CLIENT_SECRET_")
+_RESERVED_REALM_ENV_NAMES = frozenset({"REALM_DOCUMENT_SHA256"})
+
+
+def is_reserved_realm_env(name: str) -> bool:
+    """Whether the realm job sets this env var itself."""
+    upper = name.upper()
+    return upper in _RESERVED_REALM_ENV_NAMES or upper.startswith(
+        _RESERVED_REALM_ENV_PREFIXES
+    )
+
+
+class KeycloakRealmConfig(BaseModel):
+    """The realm the stack imports into Keycloak."""
+
+    name: str = Field(
+        default="llmoxie",
+        pattern=r"^[a-z][a-z0-9-]{1,30}$",
+        description="Realm name",
+    )
+    display_name: str = Field(default="LLMoxie", description="Realm display name")
+    secret_refs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Realm-import env var name to Key Vault secret name. Names "
+        "the realm job sets itself are reserved",
+    )
+    overrides: dict = Field(
+        default_factory=dict,
+        description="Realm JSON merged over the stack's realm. It cannot "
+        f"redefine the stack's clients ({', '.join(STACK_CLIENT_IDS)})",
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if v == "master":
+            raise ValueError(
+                "realm.name cannot be 'master': that is Keycloak's own admin realm"
+            )
+        return v
+
+    @field_validator("secret_refs")
+    @classmethod
+    def validate_secret_refs(cls, v: dict[str, str]) -> dict[str, str]:
+        reserved = sorted(n for n in v if is_reserved_realm_env(n))
+        if reserved:
+            raise ValueError(
+                f"realm.secret_refs uses reserved env var names {reserved}: the "
+                "realm job sets these itself (reserved: names starting with "
+                f"{', '.join(_RESERVED_REALM_ENV_PREFIXES)}, and "
+                f"{', '.join(sorted(_RESERVED_REALM_ENV_NAMES))})"
+            )
+        return v
+
+    @field_validator("overrides")
+    @classmethod
+    def validate_overrides(cls, v: dict) -> dict:
+        for key in ("realm", "id"):
+            if key in v:
+                raise ValueError(
+                    f"realm.overrides sets {key!r}, which would rename the "
+                    "imported realm while the issuer URLs, exports and rename "
+                    "guard still use the configured name. Set keycloak.realm.name "
+                    "instead."
+                )
+        for client in v.get("clients") or []:
+            client_id = client.get("clientId") if isinstance(client, dict) else None
+            if isinstance(client_id, str) and "$(" in client_id:
+                raise ValueError(
+                    f"realm.overrides.clients has clientId {client_id!r} with a "
+                    "$( substitution: it could resolve to one of the stack's "
+                    "clients. Use a literal clientId."
+                )
+            if isinstance(client_id, str) and client_id.lower() in STACK_CLIENT_IDS:
+                raise ValueError(
+                    f"realm.overrides.clients redefines the stack's client "
+                    f"{client_id!r}; the stack owns {', '.join(STACK_CLIENT_IDS)}. "
+                    "Add clients under a new clientId instead."
+                )
+        return v
+
+
+_PINNED_IMAGE_RE = re.compile(r"^[^@\s]*[^@\s/]:[^@\s/:]+@sha256:[0-9a-f]{64}$")
+
+
+def _check_digest(v: str, field: str = "Image") -> str:
+    if not _PINNED_IMAGE_RE.fullmatch(v):
+        raise ValueError(
+            f"{field} {v!r} must be pinned as <name>:<tag>@sha256:<64 hex digits>: "
+            "this stack runs it with credentials, so a moving tag is not accepted"
+        )
+    return v
+
+
+class KeycloakConfig(BaseModel):
+    """Keycloak behind the edge, plus the realm import and the login proxies."""
+
+    enabled: bool = Field(default=False, description="Run Keycloak behind the edge")
+    image: str = Field(
+        default="ghcr.io/uw-ssec/llmoxie-keycloak:latest",
+        description="Keycloak image. The default is a moving tag, which is fine "
+        "while Keycloak is off; once keycloak.enabled is true it must be "
+        "<name>:<tag>@sha256:<digest>, because Keycloak's database migrations "
+        "are one-way",
+    )
+    hostname: str | None = Field(
+        default=None,
+        description="Public hostname the edge routes to Keycloak; must be one of "
+        "edge.custom_domains",
+    )
+    admin_allowed_ips: list[str] = Field(
+        default_factory=list,
+        description="Client CIDRs the edge lets reach the Keycloak admin console. "
+        "Empty closes it to everyone",
+    )
+    # keycloak-config-cli 6.5.1-26.5.5: the newest tag built for Keycloak 26.x
+    # (adorsys/keycloak-config-cli, published 2026-05-22), by its multi-arch
+    # index digest.
+    config_cli_image: str = Field(
+        default="docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5"
+        "@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274",
+        description="keycloak-config-cli image, pinned by digest",
+    )
+    # oauth2-proxy v7.15.6, by its multi-arch index digest; the version the
+    # local prototype uses and the newest v7.15.x.
+    oauth2_proxy_image: str = Field(
+        default="quay.io/oauth2-proxy/oauth2-proxy:v7.15.6"
+        "@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048",
+        description="oauth2-proxy image, pinned by digest",
+    )
+    cpu: float = Field(default=1.0, description="Keycloak CPU cores", ge=0.25)
+    memory: str = Field(default="2Gi", description="Keycloak memory")
+    realm: KeycloakRealmConfig = Field(default_factory=KeycloakRealmConfig)
+    revision_suffix: str | None = Field(
+        default=None, description="Keycloak revision name suffix"
+    )
+    refresh_trigger: str | None = Field(
+        default=None, description="Fixed REFRESH_TRIGGER value for Keycloak"
+    )
+
+    check_hostname = field_validator("hostname")(_check_hostname)
+    validate_cidrs = field_validator("admin_allowed_ips")(_check_cidrs)
 
 
 class LLMavenAPIConfig(ContainerAppConfig):
@@ -908,6 +1267,14 @@ class LLMavenConfig(BaseModel):
     litellm: LiteLLMConfig = Field(
         default_factory=LiteLLMConfig, description="LiteLLM container app"
     )
+    edge: EdgeConfig = Field(
+        default_factory=EdgeConfig,
+        description="Standalone Traefik edge in front of LiteLLM and MLflow",
+    )
+    keycloak: KeycloakConfig = Field(
+        default_factory=KeycloakConfig,
+        description="Keycloak sign-in behind the edge",
+    )
     llmaven_api: LLMavenAPIConfig = Field(
         default_factory=LLMavenAPIConfig, description="LLMaven API container app"
     )
@@ -1008,6 +1375,191 @@ class LLMavenConfig(BaseModel):
             _check_consumption_total(
                 self.litellm.cpu + proxy.cpu,
                 _memory_gi(self.litellm.memory) + _memory_gi(proxy.memory),
+            )
+
+        self._validate_edge()
+        self._validate_keycloak()
+        self._validate_app_names()
+
+    def _validate_keycloak(self) -> None:
+        keycloak, edge = self.keycloak, self.edge
+        for name, app in (("mlflow", self.mlflow), ("litellm", self.litellm)):
+            if app.login.enabled and not keycloak.enabled:
+                raise ValueError(
+                    f"{name}.login.enabled is true but keycloak.enabled is false: "
+                    "the login signs users in through Keycloak."
+                )
+            if app.login.enabled and not app.enabled:
+                raise ValueError(
+                    f"{name}.login.enabled is true but {name}.enabled is false: "
+                    "there is no app to put a login in front of."
+                )
+        if not keycloak.enabled:
+            return
+        if not edge.enabled:
+            raise ValueError(
+                "keycloak.enabled needs edge.enabled: Keycloak is reached only "
+                "through the edge."
+            )
+        _check_digest(keycloak.image, "keycloak.image")
+        _check_digest(keycloak.config_cli_image, "keycloak.config_cli_image")
+        _check_digest(keycloak.oauth2_proxy_image, "keycloak.oauth2_proxy_image")
+        if keycloak.hostname is None:
+            raise ValueError(
+                "keycloak.enabled is true but keycloak.hostname is not set: the "
+                "edge routes to Keycloak by hostname."
+            )
+        if keycloak.hostname not in {d.name for d in edge.custom_domains}:
+            raise ValueError(
+                f"keycloak.hostname {keycloak.hostname!r} is not listed in "
+                "edge.custom_domains: add it there."
+            )
+        for name, app in (("litellm", self.litellm), ("mlflow", self.mlflow)):
+            if app.hostname == keycloak.hostname:
+                raise ValueError(
+                    f"keycloak.hostname and {name}.hostname are both "
+                    f"{keycloak.hostname!r}: they must differ"
+                )
+        if "keycloak_db" not in self.database.databases:
+            self.database.databases.append("keycloak_db")
+
+    def _validate_app_names(self) -> None:
+        """Azure caps Container App and Job names; check those that will exist."""
+        project, env = self.project.name, self.project.environment
+        names: list[tuple[str, str]] = []
+        if self.edge.enabled:
+            names.append(("edge app", edge_app_name(project, env)))
+        if self.keycloak.enabled:
+            names.append(("realm job", realm_job_name(project, env)))
+            names.append(
+                (
+                    "Keycloak app",
+                    container_app_name(project, env, KEYCLOAK_APP_SUFFIX),
+                )
+            )
+        if self.mlflow.login.enabled:
+            names.append(
+                (
+                    "MLflow login app",
+                    container_app_name(project, env, MLFLOW_LOGIN_APP_SUFFIX),
+                )
+            )
+        if self.litellm.login.enabled:
+            names.append(
+                (
+                    "LiteLLM login app",
+                    container_app_name(project, env, LITELLM_LOGIN_APP_SUFFIX),
+                )
+            )
+        too_long = [
+            f"{kind} {name!r} is {len(name)} characters"
+            for kind, name in names
+            if len(name) > CONTAINER_APP_NAME_MAX
+        ]
+        if too_long:
+            raise ValueError(
+                f"Azure caps these names at {CONTAINER_APP_NAME_MAX} characters: "
+                + "; ".join(too_long)
+                + ". Shorten project.name."
+            )
+
+    def _validate_edge(self) -> None:
+        edge = self.edge
+        if not edge.enabled:
+            return
+        litellm, mlflow = self.litellm, self.mlflow
+        names = [d.name for d in edge.custom_domains]
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        if duplicates:
+            raise ValueError(
+                f"edge.custom_domains lists {duplicates} more than once: each "
+                "hostname must appear once."
+            )
+        domains = set(names)
+
+        if litellm.proxy.enabled:
+            raise ValueError(
+                "edge.enabled and litellm.proxy.enabled are both true. The edge "
+                "replaces the sidecar: set litellm.proxy.enabled to false and move "
+                "its policy to litellm.hostname and litellm.admin_allowed_ips."
+            )
+        backends = []
+        if litellm.enabled:
+            backends.append(("litellm", litellm))
+        if mlflow.enabled:
+            backends.append(("mlflow", mlflow))
+        if not backends:
+            raise ValueError(
+                "edge.enabled needs at least one enabled backend: enable "
+                "litellm or mlflow, or turn the edge off."
+            )
+        for name, app in backends:
+            if app.hostname is None:
+                raise ValueError(
+                    f"edge.enabled is true but {name}.hostname is not set: the "
+                    f"edge routes to {name} by hostname."
+                )
+            if app.hostname not in domains:
+                raise ValueError(
+                    f"{name}.hostname {app.hostname!r} is not listed in "
+                    "edge.custom_domains: add it there."
+                )
+        for name, app in (("litellm", litellm), ("mlflow", mlflow)):
+            if app.custom_domains:
+                raise ValueError(
+                    f"{name}.custom_domains must be empty when the edge is on: "
+                    f"move those hostnames to edge.custom_domains."
+                )
+        if litellm.enabled and mlflow.enabled and litellm.hostname == mlflow.hostname:
+            raise ValueError(
+                f"litellm.hostname and mlflow.hostname are both {litellm.hostname!r}: "
+                "they must differ"
+            )
+        if litellm.ip_security_restrictions:
+            raise ValueError(
+                "litellm.ip_security_restrictions must be empty when the edge is "
+                "on: LiteLLM ingress becomes internal, so use "
+                "litellm.admin_allowed_ips instead."
+            )
+        if litellm.enabled and not litellm.health_paths:
+            raise ValueError(
+                "litellm.health_paths must not be empty when the edge is on: the "
+                "platform probes reach LiteLLM through the first health path"
+            )
+        if edge.port == edge.ping_port:
+            raise ValueError("edge.port and edge.ping_port must differ")
+        if edge.env_vars or edge.key_vault_secret_refs:
+            raise ValueError(
+                "edge.env_vars and edge.key_vault_secret_refs must be empty: the "
+                "edge builds its own configuration and ignores them"
+            )
+        if edge.min_replicas < 1:
+            raise ValueError(
+                "edge.min_replicas must be at least 1: the edge is the front "
+                "door and must not scale to zero"
+            )
+        if edge.revision_suffix:
+            app_name = edge_app_name(self.project.name, self.project.environment)
+            # "<app>--<suffix>-p<hex>"
+            overhead = len(app_name) + len("--") + len("-p") + POLICY_SUFFIX_LENGTH
+            budget = MAX_REVISION_NAME_LENGTH - overhead
+            if len(edge.revision_suffix) > budget:
+                raise ValueError(
+                    f"edge.revision_suffix {edge.revision_suffix!r} is too long: "
+                    f"Azure caps the revision name at {MAX_REVISION_NAME_LENGTH} "
+                    f"characters, and {app_name}--<suffix>-p"
+                    f"{'x' * POLICY_SUFFIX_LENGTH} leaves room for at most "
+                    f"{max(budget, 0)} characters of suffix (#228)."
+                )
+        if not edge.trusted_proxy_ips:
+            raise ValueError(
+                "edge.trusted_proxy_ips is required when the edge is on: set it "
+                "to the range the environment's Envoy peers connect from. In the "
+                "workload-profile environment observed in #229 that is "
+                "100.100.0.0/17. Do not include the replica range (100.100.192.0/19 "
+                "observed there): replicas must stay untrusted, or one workload "
+                "could forge an allowlisted X-Forwarded-For. See issue #229 and "
+                ".agents/rules/infrastructure.md."
             )
 
 

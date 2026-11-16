@@ -3,7 +3,7 @@ type: Requirement
 title: "Never add a fresh salt key to an existing database, and rotate the master key by migration"
 description: "With no LITELLM_SALT_KEY the master key encrypts stored credentials, so replacing it needs a migration, and adding a salt key to existing data breaks decryption."
 tags: [litellm, secrets, encryption]
-generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-05T22:22:48Z" }
+generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-16T01:51:45Z" }
 status: draft
 governance: constraint
 code_refs: [docker/config.yaml, docker/.env.example, src/llmaven/infrastructure/config/schema.py, src/llmaven/infrastructure/resources/secrets_manager.py]
@@ -16,6 +16,12 @@ sources:
 ---
 
 **Status at e248584:** no salt key is provisioned. #200 is open.
+
+**Update 2026-11-15:** the stack still provisions no salt key, but `llmaven infra validate` now warns when the LiteLLM config has `store_model_in_db: true` and `LITELLM_SALT_KEY` is in neither `litellm.env_vars` nor `litellm.key_vault_secret_refs` (`missing_salt_key` in `config/litellm_models.py`). Dev adopted one by hand: `LLMAVEN_SECRETS_LITELLM_SALT_KEY` set to the master key's value (checked by SHA-256 against the `litellm-master-key` secret, never printed) and `LITELLM_SALT_KEY: "litellm-salt-key"` added to `litellm.key_vault_secret_refs`. That satisfies the rule below because the value is the old master key, not a fresh one. Dev had no stored models, so there was nothing to decrypt either way.
+
+**Rotating after a salt key is set** (read in the pinned fork, uw-ssec/llmoxie-litellm at 3867628; not tested): change only the master key value. The boot-time `LITELLM_MIGRATE_FROM_MASTER_KEY` migration sees `LITELLM_SALT_KEY` and does nothing (`litellm/proxy/db/master_key_migration.py`). `/key/regenerate` with `new_master_key` is unsafe: it re-encrypts stored models, the `environment_variables` config row and MCP server credentials with the new master key (`key_management_endpoints.py`, `_experimental/mcp_server/db.py`), while decryption reads the salt key first, so those values would become unreadable; only guardrail params check for the salt key. This is #200's suspected hazard, now seen in the fork's code.
+
+LiteLLM cannot run without a master key at all, so "turning it off" means making it a break-glass secret held only in Key Vault.
 
 `store_model_in_db: true` makes LiteLLM encrypt stored provider credentials with `LITELLM_SALT_KEY`, or with the master key when that's unset. LLMoxie provisions no salt key, so the master key is both the admin credential and the data-encryption key.
 

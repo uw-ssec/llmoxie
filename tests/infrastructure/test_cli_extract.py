@@ -1457,3 +1457,475 @@ class TestInfraExtractMLflow:
         )
         assert kwargs["max_results"] == 1000
         assert kwargs["page_token"] is None
+
+
+TOKEN_URL = "https://auth.example.org/realms/llmoxie/protocol/openid-connect/token"
+CLI_SECRET = "fake-client-value-for-tests"
+ACCESS_TOKEN = "tok-abc-123"
+
+
+def _keycloak_secrets(**overrides: str) -> dict:
+    secrets = {
+        "mlflow-tracking-uri": "http://mlflow",
+        "keycloak-token-url": TOKEN_URL,
+        "keycloak-cli-client-secret": CLI_SECRET,
+    }
+    secrets.update(overrides)
+    return {k: v for k, v in secrets.items() if v is not None}
+
+
+def _run_mlflow_extract(runner: CliRunner, tmp_path: Path) -> Result:
+    return invoke_extract(
+        runner,
+        from_date="2026-01-01",
+        to_date="2026-01-01",
+        source="mlflow",
+        output_file=tmp_path / "out.zip",
+    )
+
+
+class TestInfraExtractMLflowKeycloak:
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+
+    @pytest.mark.parametrize("previous", [None, "previous-token"])
+    @patch("llmaven.cli._fetch_mlflow_experiment_ids_for_date_range")
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    @patch("httpx.post")
+    def test_mlflow_extract_uses_keycloak_token(
+        self,
+        mock_post,
+        _mock_set_uri,
+        _mock_client,
+        mock_ids,
+        previous,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        if previous is not None:
+            monkeypatch.setenv("MLFLOW_TRACKING_TOKEN", previous)
+        mock_post.return_value = Mock(
+            status_code=200, json=lambda: {"access_token": ACCESS_TOKEN}
+        )
+        seen: list[str | None] = []
+
+        def _ids(*_a, **_k):
+            seen.append(os.environ.get("MLFLOW_TRACKING_TOKEN"))
+            return []
+
+        mock_ids.side_effect = _ids
+
+        with patch(
+            "llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()
+        ):
+            result = _run_mlflow_extract(runner, tmp_path)
+
+        assert result.exit_code == 0, result.output
+        args, kwargs = mock_post.call_args
+        assert (args[0] if args else kwargs["url"]) == TOKEN_URL
+        assert kwargs["data"] == {
+            "grant_type": "client_credentials",
+            "client_id": "llmaven-cli",
+            "client_secret": CLI_SECRET,
+        }
+        assert kwargs["timeout"]
+        assert seen == [ACCESS_TOKEN]
+        assert os.environ.get("MLFLOW_TRACKING_TOKEN") == previous
+        assert CLI_SECRET not in result.output
+        assert ACCESS_TOKEN not in result.output
+
+    @patch("llmaven.cli._fetch_mlflow_experiment_ids_for_date_range")
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    @patch("httpx.post")
+    def test_token_restored_when_extract_fails(
+        self,
+        mock_post,
+        _mock_set_uri,
+        _mock_client,
+        mock_ids,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("MLFLOW_TRACKING_TOKEN", "previous-token")
+        mock_post.return_value = Mock(
+            status_code=200, json=lambda: {"access_token": ACCESS_TOKEN}
+        )
+        mock_ids.side_effect = RuntimeError("boom")
+
+        with patch(
+            "llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()
+        ):
+            result = _run_mlflow_extract(runner, tmp_path)
+
+        assert result.exit_code == 1
+        assert os.environ["MLFLOW_TRACKING_TOKEN"] == "previous-token"
+
+    @patch("llmaven.cli._fetch_mlflow_experiment_ids_for_date_range", return_value=[])
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    @patch("httpx.post")
+    def test_mlflow_extract_without_keycloak_entries_is_unchanged(
+        self,
+        mock_post,
+        _mock_set_uri,
+        _mock_client,
+        _mock_ids,
+        runner: CliRunner,
+        tmp_path: Path,
+    ):
+        secrets = {"mlflow-tracking-uri": "http://mlflow"}
+        with patch("llmaven.cli._get_llmaven_secrets", return_value=secrets):
+            result = _run_mlflow_extract(runner, tmp_path)
+
+        assert result.exit_code == 0, result.output
+        mock_post.assert_not_called()
+        assert "MLFLOW_TRACKING_TOKEN" not in os.environ
+
+    @pytest.mark.parametrize(
+        ("missing", "env_name"),
+        [
+            ("keycloak-token-url", "LLMAVEN_SECRETS_KEYCLOAK_TOKEN_URL"),
+            (
+                "keycloak-cli-client-secret",
+                "LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET",
+            ),
+        ],
+    )
+    @patch("httpx.post")
+    def test_one_entry_without_the_other_fails(
+        self, mock_post, missing, env_name, runner: CliRunner, tmp_path: Path
+    ):
+        secrets = _keycloak_secrets(**{missing: None})
+        with patch("llmaven.cli._get_llmaven_secrets", return_value=secrets):
+            result = _run_mlflow_extract(runner, tmp_path)
+
+        assert result.exit_code == 1
+        assert f"Missing: {env_name}" in result.output
+        mock_post.assert_not_called()
+
+    @patch("httpx.post")
+    def test_token_error_is_reported_without_the_secret(
+        self, mock_post, runner: CliRunner, tmp_path: Path
+    ):
+        mock_post.return_value = Mock(
+            status_code=401,
+            text=f"bad {CLI_SECRET}",
+            json=lambda: {"error": CLI_SECRET},
+        )
+        with patch(
+            "llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()
+        ):
+            result = _run_mlflow_extract(runner, tmp_path)
+
+        assert result.exit_code == 1
+        assert "401" in result.output
+        assert CLI_SECRET not in result.output
+        assert "MLFLOW_TRACKING_TOKEN" not in os.environ
+
+    @patch("httpx.post")
+    def test_token_request_failure_does_not_leak_secret(
+        self, mock_post, runner: CliRunner, tmp_path: Path
+    ):
+        import httpx
+
+        mock_post.side_effect = httpx.ConnectError(f"cannot reach {CLI_SECRET}")
+        with patch(
+            "llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()
+        ):
+            result = _run_mlflow_extract(runner, tmp_path)
+
+        assert result.exit_code == 1
+        assert CLI_SECRET not in result.output
+
+
+class TestKeycloakTokenHardening:
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+
+    def _run(self, runner, tmp_path, secrets):
+        with patch("llmaven.cli._get_llmaven_secrets", return_value=secrets):
+            return _run_mlflow_extract(runner, tmp_path)
+
+    @pytest.mark.parametrize(
+        "case",
+        ["invalid_url", "non_json", "non_string_token"],
+    )
+    def test_malformed_token_exchange_fails_cleanly(
+        self, case, runner: CliRunner, tmp_path: Path
+    ):
+        secrets = _keycloak_secrets()
+        if case == "invalid_url":
+            secrets["keycloak-token-url"] = (
+                f"https://user:{CLI_SECRET}@[bad/token?x={CLI_SECRET}"
+            )
+            patcher = patch("httpx.post", side_effect=ValueError(CLI_SECRET))
+        elif case == "non_json":
+            patcher = patch(
+                "httpx.post",
+                return_value=Mock(
+                    status_code=200,
+                    json=Mock(side_effect=ValueError(CLI_SECRET)),
+                ),
+            )
+        else:
+            patcher = patch(
+                "httpx.post",
+                return_value=Mock(status_code=200, json=lambda: {"access_token": 5}),
+            )
+        with patcher:
+            result = self._run(runner, tmp_path, secrets)
+
+        assert result.exit_code == 1
+        assert CLI_SECRET not in result.output
+        assert "Keycloak token request failed" in result.output
+        # No chained context on the exit that reaches Typer.
+        # SystemExit wraps the typer Exit; the Exit itself carries no chain.
+        exit_exc = result.exception.__context__
+        assert exit_exc is not None
+        assert exit_exc.__context__ is None
+        assert exit_exc.__cause__ is None
+        assert "MLFLOW_TRACKING_TOKEN" not in os.environ
+
+    def test_token_url_in_message_has_no_userinfo_or_query(
+        self, runner: CliRunner, tmp_path: Path
+    ):
+        secrets = _keycloak_secrets(
+            **{
+                "keycloak-token-url": f"https://u:{CLI_SECRET}@auth.example.org/t?q={CLI_SECRET}#f"
+            }
+        )
+        with patch("httpx.post", side_effect=RuntimeError("x")):
+            result = self._run(runner, tmp_path, secrets)
+
+        assert "https://auth.example.org/t" in result.output
+        assert CLI_SECRET not in result.output
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://auth.example.org/token",
+            f"http://u:{CLI_SECRET}@auth.example.org/token?q={CLI_SECRET}",
+            "ftp://auth.example.org/token",
+            "auth.example.org/token",
+        ],
+    )
+    def test_non_https_token_url_is_refused_before_any_request(
+        self, url, runner: CliRunner, tmp_path: Path
+    ):
+        # The client secret is sent to this URL, so it must be https.
+        secrets = _keycloak_secrets(**{"keycloak-token-url": url})
+        with patch("httpx.post") as mock_post:
+            result = self._run(runner, tmp_path, secrets)
+
+        assert result.exit_code == 1
+        assert "keycloak-token-url must start with https://" in result.output
+        assert CLI_SECRET not in result.output
+        mock_post.assert_not_called()
+
+    def test_repr_hides_secret(self):
+        from llmaven.cli import _KeycloakToken
+
+        assert CLI_SECRET not in repr(_KeycloakToken(TOKEN_URL, CLI_SECRET))
+
+    def test_markup_in_message_is_not_interpreted(
+        self, runner: CliRunner, tmp_path: Path
+    ):
+        secrets = _keycloak_secrets(
+            **{"keycloak-token-url": "https://auth.example.org/[red]t"}
+        )
+        with patch("httpx.post", side_effect=RuntimeError("x")):
+            result = self._run(runner, tmp_path, secrets)
+
+        assert "/[red]t" in result.output
+
+    @patch("httpx.post")
+    def test_missing_tracking_uri_fails_before_token_request(
+        self, mock_post, runner: CliRunner, tmp_path: Path
+    ):
+        secrets = _keycloak_secrets(**{"mlflow-tracking-uri": None})
+        result = self._run(runner, tmp_path, secrets)
+
+        assert result.exit_code == 1
+        assert "Missing: LLMAVEN_SECRETS_MLFLOW_TRACKING_URI" in result.output
+        mock_post.assert_not_called()
+
+    def _source(self, tokens, clock):
+        from llmaven.cli import _KeycloakToken
+
+        responses = [
+            Mock(
+                status_code=200,
+                json=lambda t=t: {"access_token": t, "expires_in": 300},
+            )
+            for t in tokens
+        ]
+        source = _KeycloakToken(TOKEN_URL, CLI_SECRET)
+        return source, responses
+
+    def test_refreshes_only_near_expiry(self, monkeypatch: pytest.MonkeyPatch):
+        now = [1000.0]
+        monkeypatch.setattr("time.monotonic", lambda: now[0])
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+        source, responses = self._source(["t1", "t2"], now)
+
+        with patch("httpx.post", side_effect=responses) as mock_post:
+            assert source.ensure_fresh() == "t1"
+            now[0] += 100  # well inside lifetime
+            assert source.ensure_fresh() == "t1"
+            assert mock_post.call_count == 1
+            now[0] += 150  # 250s of 300s: within the 60s margin
+            assert source.ensure_fresh() == "t2"
+            assert mock_post.call_count == 2
+        assert os.environ["MLFLOW_TRACKING_TOKEN"] == "t2"
+
+    @patch(
+        "llmaven.cli._fetch_mlflow_experiment_ids_for_date_range", return_value=["1"]
+    )
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    def test_refresh_during_extract_changes_env_and_restores(
+        self,
+        _set_uri,
+        _client,
+        _ids,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        now = [1000.0]
+        monkeypatch.setattr("time.monotonic", lambda: now[0])
+        monkeypatch.setenv("MLFLOW_TRACKING_TOKEN", "previous-token")
+        seen: list[str | None] = []
+
+        def _fetch(**kwargs):
+            kwargs["before_request"]()
+            seen.append(os.environ.get("MLFLOW_TRACKING_TOKEN"))
+            now[0] += 400  # token expires before the next day
+            return []
+
+        responses = [
+            Mock(
+                status_code=200, json=lambda: {"access_token": "t1", "expires_in": 300}
+            ),
+            Mock(
+                status_code=200, json=lambda: {"access_token": "t2", "expires_in": 300}
+            ),
+        ]
+        with (
+            patch(
+                "llmaven.cli._fetch_mlflow_experiment_traces_in_date_range",
+                side_effect=_fetch,
+            ),
+            patch("httpx.post", side_effect=responses),
+            patch("llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()),
+        ):
+            result = invoke_extract(
+                runner,
+                from_date="2026-01-01",
+                to_date="2026-01-02",
+                source="mlflow",
+                output_file=tmp_path / "out.zip",
+            )
+
+        assert result.exit_code == 0, result.output
+        assert seen == ["t1", "t2"]
+        assert os.environ["MLFLOW_TRACKING_TOKEN"] == "previous-token"
+
+
+class TestTracebackLocalsAndExperimentRefresh:
+    def test_unexpected_secret_loading_error_does_not_show_secret(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+        env_file = tmp_path / "env"
+        env_file.write_text(
+            f"LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET={CLI_SECRET}\n",
+            encoding="utf-8",
+        )
+        secret_holder = {"value": CLI_SECRET}  # a local that would show in a frame
+
+        def _boom(path):
+            env_vars = {"LLMAVEN_SECRETS_KEYCLOAK_CLI_CLIENT_SECRET": CLI_SECRET}  # noqa: F841
+            raise ValueError("embedded null byte")
+
+        with patch("llmaven.infrastructure.utils.secrets.load_env_file", _boom):
+            result = runner.invoke(
+                app,
+                [
+                    "infra",
+                    "extract",
+                    "--source",
+                    "mlflow",
+                    "--from",
+                    "2026-01-01",
+                    "--to",
+                    "2026-01-01",
+                    "--out",
+                    str(tmp_path / "o.zip"),
+                    "--env-file",
+                    str(env_file),
+                ],
+            )
+
+        assert secret_holder["value"] == CLI_SECRET
+        assert result.exit_code != 0
+        assert CLI_SECRET not in result.output
+        assert CLI_SECRET not in repr(result.exception)
+
+    @patch("mlflow.MlflowClient")
+    @patch("mlflow.set_tracking_uri")
+    def test_token_refreshed_between_experiment_pages(
+        self,
+        _set_uri,
+        mock_client_cls,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        now = [1000.0]
+        monkeypatch.setattr("time.monotonic", lambda: now[0])
+        monkeypatch.delenv("MLFLOW_TRACKING_TOKEN", raising=False)
+        seen: list[str | None] = []
+
+        def _search(**_kwargs):
+            seen.append(os.environ.get("MLFLOW_TRACKING_TOKEN"))
+            now[0] += 400
+            page = MockPagedList([], token="next" if len(seen) == 1 else None)
+            return page
+
+        mock_client_cls.return_value.search_experiments.side_effect = _search
+        responses = [
+            Mock(
+                status_code=200, json=lambda: {"access_token": "t1", "expires_in": 300}
+            ),
+            Mock(
+                status_code=200, json=lambda: {"access_token": "t2", "expires_in": 300}
+            ),
+        ]
+        with (
+            patch("httpx.post", side_effect=responses),
+            patch("llmaven.cli._get_llmaven_secrets", return_value=_keycloak_secrets()),
+        ):
+            result = invoke_extract(
+                runner,
+                from_date="2026-01-01",
+                to_date="2026-01-01",
+                source="mlflow",
+                output_file=tmp_path / "out.zip",
+            )
+
+        assert result.exit_code == 0, result.output
+        assert seen == ["t1", "t2"]
+        assert "MLFLOW_TRACKING_TOKEN" not in os.environ
+
+    def test_typer_apps_do_not_show_traceback_locals(self):
+        from llmaven.cli import backup_infra_app, infra_app
+
+        for typer_app in (app, infra_app, backup_infra_app):
+            assert typer_app.pretty_exceptions_show_locals is False

@@ -1,25 +1,36 @@
 """Helper functions for creating Azure resources with LLMaven configuration."""
 
+import io
 from pathlib import Path
 
 import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
+from ruamel.yaml import YAML
 
 from ..config.schema import (
     CustomDomainConfig,
     IPSecurityRestrictionConfig,
     LiteLLMProxyConfig,
+    LLMavenConfig,
+    container_app_environment,
 )
 from .container_apps import create_container_app_with_key_vault_secrets
 from .redis import apply_redis_router_settings
 from .traefik import (
+    EDGE_PING_PATH,
+    POLICY_DIGEST_ENV,
+    TRAEFIK_CONFIG_DIR,
     TRAEFIK_DYNAMIC_SECRET,
+    TRAEFIK_VOLUME_NAME,
+    build_edge_static_args,
     build_traefik_container,
     build_traefik_volume,
+    edge_policy_digest,
     policy_digest,
     policy_revision_suffix,
     render_dynamic_config,
+    render_edge_dynamic_config,
 )
 
 
@@ -218,6 +229,7 @@ def create_mlflow_app(
     tags: dict[str, str] | None = None,
     opts: pulumi.ResourceOptions | None = None,
     custom_domains: list[CustomDomainConfig] | None = None,
+    ingress_external: bool = True,
 ) -> azure_native.app.ContainerApp:
     """Create MLflow Container App.
 
@@ -284,10 +296,50 @@ def create_mlflow_app(
         environment=environment,
         tags=tags,
         enable_ingress=True,
-        ingress_external=True,
+        ingress_external=ingress_external,
         custom_domains=custom_domains,
+        health_probe_path="/health",
         opts=opts,
     )
+
+
+SSO_ONLY_LOGIN_SETTING = "disable_password_login_when_sso_enabled"
+
+
+def apply_sso_only_login(config_text: str) -> str:
+    """Turn off LiteLLM's username/password UI login when the Keycloak login is on.
+
+    LiteLLM's login form otherwise accepts the master key as the admin
+    password. The setting goes into ``general_settings`` of the mounted copy
+    only; a value the operator already set there is kept, and the rest of the
+    file (including comments) is unchanged.
+
+    Args:
+        config_text: LiteLLM config YAML
+
+    Returns:
+        The config YAML with ``general_settings.disable_password_login_when_sso_enabled``
+    """
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    data = yaml.load(config_text)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError("LiteLLM config must be a YAML mapping")
+
+    general_settings = data.get("general_settings")
+    if general_settings is None:
+        data["general_settings"] = {SSO_ONLY_LOGIN_SETTING: True}
+    elif isinstance(general_settings, dict):
+        general_settings.setdefault(SSO_ONLY_LOGIN_SETTING, True)
+    else:
+        raise ValueError("LiteLLM config general_settings must be a mapping")
+
+    out = io.StringIO()
+    yaml.dump(data, out)
+    return out.getvalue()
 
 
 def create_litellm_app(
@@ -315,8 +367,10 @@ def create_litellm_app(
     custom_domains: list[CustomDomainConfig] | None = None,
     redis_enabled: bool = False,
     redis_clustering_policy: str = "EnterpriseCluster",
+    sso_only_login: bool = False,
     proxy: LiteLLMProxyConfig | None = None,
     ip_security_restrictions: list[IPSecurityRestrictionConfig] | None = None,
+    ingress_external: bool = True,
 ) -> azure_native.app.ContainerApp:
     """Create LiteLLM Container App.
 
@@ -345,6 +399,8 @@ def create_litellm_app(
         redis_enabled: Add router_settings.redis_* to the mounted LiteLLM config
         redis_clustering_policy: Redis clustering policy, which decides whether
             LiteLLM must group rate-limit keys by hash slot
+        sso_only_login: Add general_settings.disable_password_login_when_sso_enabled
+            to the mounted LiteLLM config, unless the file already sets it
         proxy: Traefik sidecar settings. When enabled, ingress targets Traefik,
             LiteLLM listens on 127.0.0.1 only, and LiteLLM's probes go through
             Traefik's health route.
@@ -416,6 +472,8 @@ def create_litellm_app(
                 content = apply_redis_router_settings(
                     content, clustering_policy=redis_clustering_policy
                 )
+            if sso_only_login and file_path == Path(config_file):
+                content = apply_sso_only_login(content)
             inline_secrets[secret_name] = content
             secret_volume_items.append(
                 azure_native.app.SecretVolumeItemArgs(
@@ -483,7 +541,7 @@ def create_litellm_app(
         environment=environment,
         tags=tags,
         enable_ingress=True,
-        ingress_external=True,
+        ingress_external=ingress_external,
         revision_suffix=revision_suffix,
         refresh_trigger=refresh_trigger,
         custom_domains=custom_domains,
@@ -494,5 +552,90 @@ def create_litellm_app(
         if proxy_enabled
         else "/health/liveliness",
         ip_security_restrictions=ip_security_restrictions,
+        opts=opts,
+    )
+
+
+def create_edge_app(
+    name: str,
+    resource_group_name: Output[str],
+    location: str,
+    container_env_id: Output[str],
+    config: LLMavenConfig,
+    backends: dict[str, pulumi.Input[str]],
+    tags: dict[str, str] | None = None,
+    opts: pulumi.ResourceOptions | None = None,
+) -> azure_native.app.ContainerApp:
+    """Create the standalone Traefik edge Container App.
+
+    The edge is the stack's only public entry point. It routes by Host to the
+    backends, which take internal ingress.
+
+    Args:
+        name: Container app name
+        resource_group_name: Resource group name
+        location: Azure region
+        container_env_id: Container Apps Environment ID
+        config: Full stack config (the edge, LiteLLM and MLflow sections)
+        backends: Backend FQDNs keyed "litellm" / "mlflow", for enabled backends
+            only. They become https:// URLs in the rendered Traefik config.
+        tags: Resource tags
+        opts: Pulumi resource options
+
+    Returns:
+        ContainerApp resource
+    """
+    edge = config.edge
+
+    environment = container_app_environment(name)
+
+    def render(fqdns: dict[str, str]) -> dict[str, str]:
+        dynamic_config = render_edge_dynamic_config(
+            config, {key: f"https://{fqdn}" for key, fqdn in fqdns.items()}
+        )
+        return {
+            "dynamic": dynamic_config,
+            "digest": edge_policy_digest(edge, dynamic_config),
+        }
+
+    rendered = Output.all(**backends).apply(render)
+    digest = rendered.apply(lambda r: r["digest"])
+    revision_suffix = (
+        digest.apply(lambda d: policy_revision_suffix(edge.revision_suffix, d))
+        if edge.revision_suffix
+        else None
+    )
+
+    return create_container_app_with_key_vault_secrets(
+        app_name=name,
+        resource_group_name=resource_group_name,
+        location=location,
+        managed_environment_id=container_env_id,
+        # The edge holds no Key Vault secrets, so the URI is never read.
+        key_vault_uri=Output.from_input(""),
+        container_image=edge.image,
+        container_port=edge.port,
+        cpu=edge.cpu,
+        memory=edge.memory,
+        min_replicas=edge.min_replicas,
+        max_replicas=edge.max_replicas,
+        env_vars={POLICY_DIGEST_ENV: digest},
+        inline_secrets={TRAEFIK_DYNAMIC_SECRET: rendered.apply(lambda r: r["dynamic"])},
+        command_args=build_edge_static_args(edge),
+        volumes=[build_traefik_volume()],
+        volume_mounts=[
+            azure_native.app.VolumeMountArgs(
+                volume_name=TRAEFIK_VOLUME_NAME, mount_path=TRAEFIK_CONFIG_DIR
+            )
+        ],
+        environment=environment,
+        tags=tags,
+        enable_ingress=True,
+        ingress_external=True,
+        revision_suffix=revision_suffix,
+        refresh_trigger=edge.refresh_trigger,
+        custom_domains=edge.custom_domains,
+        health_probe_port=edge.ping_port,
+        health_probe_path=EDGE_PING_PATH,
         opts=opts,
     )

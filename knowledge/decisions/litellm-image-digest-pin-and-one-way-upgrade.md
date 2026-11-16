@@ -1,9 +1,9 @@
 ---
 type: Decision
 title: "LiteLLM is pinned by version and digest, and upgrades across migrations are one-way"
-description: "The image is v1.108.6 by digest because of upstream compromises and advisories; check advisories per exact version, and Prisma migrations are one-way, so rollback means restoring a pg_dump."
+description: "The image is the uw-ssec fork of v1.108.6 by digest (amd64 only; no SSO cap); check advisories per exact version, and Prisma migrations are one-way, so rollback means restoring a pg_dump."
 tags: [litellm, supply-chain, upgrade]
-generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-12T19:50:50Z" }
+generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-16T01:52:02Z" }
 status: stable
 governance: constraint
 code_refs: [docker/dockerfiles/litellm.dockerfile]
@@ -15,6 +15,12 @@ sources:
 ---
 
 **Status at a7e7d32:** implemented (#148, then #235). Released as llmoxie `v2026.11.5`; prod and ISS run it since 2026-11-12.
+
+**Update 2026-11-15 (redirect fix):** the pin moved to `ghcr.io/uw-ssec/llmoxie-litellm-fork:sha-386762834d2c9beea86b87a97d2be99c8885634d@sha256:bd61a2bd…9d16`, still LiteLLM v1.108.6, so the advisory check is unchanged. It adds uw-ssec/llmoxie-litellm#13 (redirects back to the request's own host go to `PROXY_BASE_URL`; see the redirect bug in project memory) and #14 (dnspython 2.9.2 for GHSA-vvf4-9x63-8xvv). The fork's Publish image workflow is manual (`workflow_dispatch` on `sso-enabled`), runs a grype scan that fails on any fixable High or Critical, and pushes both `sha-<commit>` and `v<version>`, so **the `v1.108.6` tag moves on every publish**: pin the `sha-` tag and digest, never the version tag alone. The first publish of #13 failed that scan on a dnspython advisory published two days earlier, which #14 fixed. Dev runs this build since 2026-11-15; the previous fork digest was `98070f3f…fbd3`.
+
+**Update 2026-11-13 (SSO stage):** the pinned image is now the uw-ssec fork, `ghcr.io/uw-ssec/llmoxie-litellm-fork:v1.108.6@sha256:98070f3f…fbd3` (branch `sso-enabled` of uw-ssec/llmoxie-litellm), amd64 only, so the published llmoxie LiteLLM image is amd64-only too (build-services.yml gives litellm `platforms: linux/amd64`; the other images stay multi-arch) and Apple Silicon/ARM hosts need emulation. The pinned version is unchanged (v1.108.6), so no new advisories apply beyond those already checked for it; the digest is the fork's own, not the upstream index below. The fork is upstream v1.108.6 plus commit `3f4f5a05`, which deletes the 5-user SSO cap and drops the proprietary `enterprise/` package; its compare against upstream `v1.108.6` touches no Prisma schema or migration file (only `.dockerignore`, `Dockerfile`, `pyproject.toml`, `uv.lock`, `README.md`, `litellm/proxy/management_endpoints/ui_sso.py`, `docker/Dockerfile.mlflow`, CI workflows and watcher script, and removed `dist/` artifacts), so the migration facts below are unchanged. Taking on the fork's maintenance was a deliberate choice: a later bump means merging upstream into the fork, publishing a new image and re-pinning its digest here, after re-checking advisories for the exact version. The Dockerfile asserts at build time that `_raise_if_sso_exceeds_free_user_limit` is absent from `ui_sso`.
+
+The upstream digest and `cosign` notes below describe the previous base; the fork's image is not signed by upstream.
 
 The base image is `v1.108.6` (LTS) by tag and digest (`sha256:c64fe10f…3ec3`, the multi-arch index). Floating tags are out: upstream reports malicious releases, including `v1.107.0` and the floating `latest`, `main-latest` and `main-stable` Docker tags. **Don't move to a newer tag without checking advisories for that exact version.** That check changed the target twice:
 
@@ -31,6 +37,6 @@ The base image is `v1.108.6` (LTS) by tag and digest (`sha256:c64fe10f…3ec3`, 
 
 Known gaps: add-ons still resolve from PyPI without hash pinning (`--require-hashes` would close it).
 
-**Superseded:** v1.106.6 (`sha256:37e2dafb…0b06`) was the pin from #148 until #235. The note that the runtime check was ARM64 only applied to #148; #235 was checked on both architectures.
+**Superseded:** the upstream image `ghcr.io/berriai/litellm:v1.108.6@sha256:c64fe10f…3ec3` (pin until the SSO stage; replaced by the fork above). v1.106.6 (`sha256:37e2dafb…0b06`) was the pin from #148 until #235. The note that the runtime check was ARM64 only applied to #148; #235 was checked on both architectures.
 
 **Sources:** PRs #148, #235; release v2026.11.5; llmaven-deploy PRs #54, #55; docker/dockerfiles/litellm.dockerfile; https://github.com/BerriAI/litellm/security/advisories/GHSA-7hp6-4w63-5g45; https://github.com/BerriAI/litellm/security/advisories/GHSA-2rwg-2wh4-7c4f; https://docs.litellm.ai/blog/security-incident-oct-21-2026

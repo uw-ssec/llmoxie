@@ -128,9 +128,9 @@ def create_container_app_with_key_vault_secrets(
     memory: str,
     min_replicas: int,
     max_replicas: int,
-    env_vars: dict[str, str] | None = None,
+    env_vars: dict[str, pulumi.Input[str]] | None = None,
     key_vault_secret_refs: dict[str, str] | None = None,
-    inline_secrets: dict[str, str] | None = None,
+    inline_secrets: dict[str, pulumi.Input[str]] | None = None,
     command_args: list | None = None,
     volumes: list | None = None,
     volume_mounts: list | None = None,
@@ -139,7 +139,7 @@ def create_container_app_with_key_vault_secrets(
     tags: dict[str, str] | None = None,
     enable_ingress: bool = True,
     ingress_external: bool = True,
-    revision_suffix: str | None = None,
+    revision_suffix: pulumi.Input[str] | None = None,
     refresh_trigger: str | None = None,
     custom_domains: list[CustomDomainConfig] | None = None,
     sidecars: list[azure_native.app.ContainerArgs] | None = None,
@@ -189,7 +189,8 @@ def create_container_app_with_key_vault_secrets(
             health_probe_path on this port instead of TCP checks on container_port.
             Use it when the main container listens only on localhost, which the
             platform probes cannot reach.
-        health_probe_path: Health path for health_probe_port probes
+        health_probe_path: Health path for health_probe_port probes, and for
+            the Startup probe when health_probe_port is unset
         ip_security_restrictions: Ingress IP rules for the whole app
 
     Returns:
@@ -329,7 +330,7 @@ def create_container_app_with_key_vault_secrets(
             azure_native.app.ContainerAppProbeArgs(
                 type="Startup",
                 http_get=azure_native.app.ContainerAppProbeHttpGetArgs(
-                    path="/health/liveliness",
+                    path=health_probe_path,
                     port=container_port,
                 ),
                 initial_delay_seconds=10,

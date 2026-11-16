@@ -331,7 +331,7 @@ monitoring:
     # Replace the placeholder address with a real one before deploying.
     email_receivers:{receivers_block}
     # gateway_errors, gateway_latency, replica_restarts, db_storage, db_cpu,
-    # backup_job_failures, cloud_budget
+    # backup_job_failures, cloud_budget, llm_spend
     enabled_alerts:{enabled_block}
     cloud_budget:
       monthly_usd: {alerts.cloud_budget.monthly_usd:g}

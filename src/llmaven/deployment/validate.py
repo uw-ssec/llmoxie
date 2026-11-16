@@ -8,7 +8,11 @@ import subprocess
 from pathlib import Path
 
 from ..infrastructure.config.loader import ConfigLoadError, load_config
-from ..infrastructure.config.litellm_models import missing_foundry_deployments
+from ..infrastructure.config.litellm_models import (
+    missing_foundry_deployments,
+    missing_salt_key,
+    missing_spend_logger,
+)
 from ..infrastructure.config.schema import (
     FOUNDRY_MANAGED_SECRETS,
     LLMavenConfig,
@@ -389,7 +393,8 @@ def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
     """Return the monthly cost of the enabled alert rules.
 
     Gateway alerts only exist when LiteLLM is enabled. replica_restarts is
-    created once per enabled container app (LiteLLM, MLflow). cloud_budget is free.
+    created once per enabled container app (LiteLLM, MLflow). llm_spend adds one
+    log rule per non-null threshold when LiteLLM is enabled. cloud_budget is free.
     """
     enabled = set(config.monitoring.alerts.enabled_alerts)
     metric_count = len(enabled & {"db_storage", "db_cpu"})
@@ -402,6 +407,8 @@ def estimate_alerts_monthly_cost(config: LLMavenConfig) -> float:
     log_count = (
         1 if "backup_job_failures" in enabled and config.backup_job.enabled else 0
     )
+    if "llm_spend" in enabled and config.litellm.enabled:
+        log_count += len(config.monitoring.alerts.llm_spend.thresholds())
     return metric_count * METRIC_ALERT_MONTHLY_COST + log_count * LOG_ALERT_MONTHLY_COST
 
 
@@ -615,6 +622,9 @@ def validate_config(
                 f"   ✓ {len(alerts.enabled_alerts)} alert(s) notify "
                 f"{len(alerts.email_receivers)} address(es)"
             )
+        for message in missing_spend_logger(config, config_path):
+            warnings.append(message)
+            print(f"   ⚠️  {message}")
         print()
 
     # 5. Cost Estimation
@@ -638,6 +648,50 @@ def validate_config(
 
     print()
 
+    # Edge-only settings with the edge off have no effect
+    if not config.edge.enabled:
+        ignored = [
+            name
+            for name, value in (
+                ("litellm.hostname", config.litellm.hostname),
+                ("litellm.admin_allowed_ips", config.litellm.admin_allowed_ips),
+                ("mlflow.hostname", config.mlflow.hostname),
+            )
+            if value
+        ]
+        for name in ignored:
+            message = (
+                f"{name} is set but edge.enabled is false, so it has no effect"
+                + (
+                    "; the admin surface is not restricted unless the proxy "
+                    "sidecar or ingress restrictions do it"
+                    if name == "litellm.admin_allowed_ips"
+                    else ""
+                )
+            )
+            warnings.append(message)
+            print(f"   ⚠️  {message}")
+        if ignored:
+            print()
+
+    # Keycloak with no admin allowlist leaves its admin console closed to all
+    if config.keycloak.enabled and not config.keycloak.admin_allowed_ips:
+        message = (
+            "keycloak.admin_allowed_ips is empty, so the Keycloak admin console "
+            "is closed to everyone"
+        )
+        warnings.append(message)
+        print(f"   ⚠️  {message}")
+        print()
+
+    # Stored model credentials are encrypted with the master key without a salt key
+    salt_messages = missing_salt_key(config, config_path)
+    for message in salt_messages:
+        warnings.append(message)
+        print(f"   ⚠️  {message}")
+    if salt_messages:
+        print()
+
     # 6. Production Validation
     if config.project.environment == "prod":
         print("6. Production Environment Checks")
@@ -657,6 +711,13 @@ def validate_config(
                 "Production environment should enable geo-redundant backups"
             )
             print("   ⚠️  Geo-redundant backup not enabled")
+
+        if config.edge.enabled and config.edge.min_replicas < 2:
+            warnings.append(
+                "Production environment should run the edge with edge.min_replicas "
+                "of at least 2: it is the single entry point"
+            )
+            print("   ⚠️  edge.min_replicas is below 2")
 
         print()
 

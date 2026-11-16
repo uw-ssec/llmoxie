@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from llmaven.deployment.validate import (
+    LOG_ALERT_MONTHLY_COST,
     METRIC_ALERT_MONTHLY_COST,
     STATE_STORE_MAX_COST,
     STATE_STORE_MIN_COST,
@@ -20,6 +21,7 @@ from llmaven.infrastructure.config.schema import (
     BackupJobConfig,
     DatabaseConfig,
     LiteLLMConfig,
+    LlmSpendAlert,
     LLMavenAPIConfig,
     LLMavenConfig,
     MLflowConfig,
@@ -101,3 +103,36 @@ def test_alerts_add_their_rule_costs():
     base_lo, base_hi = estimate_monthly_cost(_minimal_config())
     assert lo - base_lo == pytest.approx(2 * METRIC_ALERT_MONTHLY_COST)
     assert hi - base_hi == pytest.approx(2 * METRIC_ALERT_MONTHLY_COST)
+
+
+def _llm_spend_cost_delta(
+    litellm_enabled: bool, spend: LlmSpendAlert | None = None
+) -> float:
+    cfg = _minimal_config()
+    cfg.litellm = LiteLLMConfig(enabled=litellm_enabled)
+    cfg.monitoring.alerts = AlertsConfig(
+        email_receivers=["a@b.org"],
+        enabled_alerts=["llm_spend"],
+        llm_spend=spend or LlmSpendAlert(),
+    )
+    lo, _ = estimate_monthly_cost(cfg)
+    # LiteLLM's own container-app cost is not part of the alert price.
+    ref = _minimal_config()
+    ref.litellm = LiteLLMConfig(enabled=litellm_enabled)
+    ref_lo, _ = estimate_monthly_cost(ref)
+    return lo - ref_lo
+
+
+def test_llm_spend_default_adds_one_log_rule():
+    assert _llm_spend_cost_delta(True) == pytest.approx(LOG_ALERT_MONTHLY_COST)
+
+
+def test_llm_spend_both_thresholds_add_two_log_rules():
+    spend = LlmSpendAlert(max_usd_per_hour=5, max_usd_per_day=50)
+    assert _llm_spend_cost_delta(True, spend) == pytest.approx(
+        2 * LOG_ALERT_MONTHLY_COST
+    )
+
+
+def test_llm_spend_adds_nothing_when_litellm_disabled():
+    assert _llm_spend_cost_delta(False) == pytest.approx(0.0)
