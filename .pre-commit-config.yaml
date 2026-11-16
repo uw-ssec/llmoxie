@@ -25,7 +25,9 @@ repos:
       - id: prettier
         types_or: [yaml, markdown, html, css, scss, javascript, json]
         args: [--prose-wrap=always]
-        exclude: ^knowledge/ # okf owns this format; prettier folds frontmatter
+        # okf owns knowledge/ and prettier folds its frontmatter; the golden
+        # render fixtures must match the program's output byte for byte
+        exclude: ^(knowledge/|tests/infrastructure/fixtures/)
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: "v0.17.3"
