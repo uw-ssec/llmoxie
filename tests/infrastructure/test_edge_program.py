@@ -66,6 +66,12 @@ class _Mocks(pulumi.runtime.Mocks):
         return {}
 
 
+class _Apps(dict):
+    """The stubbed container apps by name; ``jobs`` holds the stubbed jobs."""
+
+    jobs: dict[str, dict]
+
+
 def _run(tmp_path: Path, monkeypatch, **overrides):
     """Run the program; return (resources, exports, container app kwargs)."""
     config = {
@@ -86,7 +92,7 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
     # Container apps are stubbed: their identity input trips the mock
     # serializer. The fake mirrors the platform FQDN, which is internal
     # (".internal.") when the app's ingress is not external.
-    apps: dict[str, dict] = {}
+    apps = _Apps()
 
     def fake_create_app(**kwargs):
         apps[kwargs["app_name"]] = kwargs
@@ -124,7 +130,7 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
     jobs: dict[str, dict] = {}
 
     def fake_job(resource_name, opts=None, **kwargs):
-        jobs[kwargs["job_name"]] = kwargs
+        jobs[kwargs["job_name"]] = {**kwargs, "opts": opts}
         job = pulumi.ComponentResource("test:index:Job", resource_name, opts=opts)
         job.name = pulumi.Output.from_input(kwargs["job_name"])
         return job
@@ -148,6 +154,7 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
             )
 
         run()
+    apps.jobs = jobs
     return mocks.resources, exports, apps
 
 

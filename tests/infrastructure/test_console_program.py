@@ -18,7 +18,11 @@ from llmaven.infrastructure.config.schema import (
     container_app_name,
 )
 from llmaven.infrastructure.resources import console as console_module
-from llmaven.infrastructure.resources import SecretsManager, console_mail, console_secrets
+from llmaven.infrastructure.resources import (
+    SecretsManager,
+    console_mail,
+    console_secrets,
+)
 
 from . import PINNED_CONSOLE_IMAGE
 from .test_edge_program import LITELLM_HOST, _run
@@ -100,16 +104,33 @@ def _depends_on(kwargs) -> list[str]:
 # --- the console off renders as the base code did ---------------------------
 
 
-def _normalised(value) -> str:
-    """Canonical JSON: sorted keys, and no memory address in an object repr.
+def _plain(value):
+    """A JSON-ready copy: Azure input classes become their fields.
 
-    Both are properties of the run, not of the program: dict key order follows
-    set iteration, which changes between runs, and a repr carries an address.
+    A memory address in an object repr is dropped, as it changes per run; dict
+    key order is fixed by ``sort_keys`` at dump time (it follows set iteration).
     """
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    cls = type(value)
+    if cls.__module__.startswith("pulumi_azure_native") and cls.__name__.endswith(
+        "Args"
+    ):
+        return {"__type__": cls.__name__, **_plain(vars(value))}
+    return re.sub(r" at 0x[0-9a-f]+", "", repr(value))
+
+
+def _dump(stubs) -> str:
+    """The stubbed apps or jobs as the goldens were written (opts left out)."""
     return json.dumps(
-        value,
+        _plain(
+            {n: {k: v for k, v in kw.items() if k != "opts"} for n, kw in stubs.items()}
+        ),
         sort_keys=True,
-        default=lambda o: re.sub(r" at 0x[0-9a-f]+", "", repr(o)),
         indent=1,
     )
 
@@ -128,20 +149,16 @@ def _off_run(tmp_path, monkeypatch):
 
 def test_console_off_matches_the_base_render(tmp_path, monkeypatch):
     created, _, apps = _off_run(tmp_path, monkeypatch)
-    assert _golden_inputs(created) == (
-        FIXTURES / "program_console_off_resources.txt"
-    ).read_text()
+    assert (
+        _golden_inputs(created)
+        == (FIXTURES / "program_console_off_resources.txt").read_text()
+    )
     assert (
         apps["llmaven-dev-traefik"]["resolved_secrets"]["traefik-dynamic-yaml"]
         == (FIXTURES / "program_console_off_edge.yaml").read_text()
     )
-    kwargs = {
-        name: {k: v for k, v in app.items() if k != "opts"}
-        for name, app in apps.items()
-    }
-    assert json.loads(_normalised(kwargs)) == json.loads(
-        (FIXTURES / "program_console_off_apps.json").read_text()
-    )
+    assert _dump(apps) == (FIXTURES / "program_console_off_apps.json").read_text()
+    assert _dump(apps.jobs) == (FIXTURES / "program_console_off_jobs.json").read_text()
 
 
 def test_console_off_creates_nothing_of_the_console(tmp_path, monkeypatch):
@@ -159,11 +176,17 @@ def test_console_off_creates_nothing_of_the_console(tmp_path, monkeypatch):
 
 
 def test_console_apps_and_jobs_exist(console_run):
-    created, exports, apps, _ = console_run
+    created, exports, apps, calls = console_run
     assert {WEB, BROKER} <= set(apps)
-    # The jobs are stubbed in the harness; their exported names prove they ran.
-    assert exports["console_db_job"] == console_job_name("llmaven", "dev", "db")
-    assert exports["console_init_job"] == console_job_name("llmaven", "dev", "init")
+    jobs = apps.jobs
+    db, init = (console_job_name("llmaven", "dev", k) for k in ("db", "init"))
+    assert {db, init} <= set(jobs)
+    assert exports["console_db_job"] == db
+    assert exports["console_init_job"] == init
+    secrets = {r._name for r in calls["create_console_secrets.result"].resources}
+    assert secrets <= set(_depends_on(jobs[db]))
+    assert any(POLICY in n for n in _depends_on(jobs[db]))
+    assert any("console-run" in n for n in _depends_on(jobs[init]))
     databases = {
         r.inputs.get("databaseName")
         for r in created
@@ -220,9 +243,7 @@ def test_edge_routes_the_console_host_only_to_console(console_run):
     assert http["services"]["console"]["loadBalancer"]["servers"] == [
         {"url": f"https://{WEB}.internal.env.test"}
     ]
-    others = [
-        n for n, r in http["routers"].items() if CONSOLE_HOST in r["rule"]
-    ]
+    others = [n for n, r in http["routers"].items() if CONSOLE_HOST in r["rule"]]
     assert others == ["console"]
 
 
@@ -236,8 +257,9 @@ def test_exports(console_run):
 
 def test_no_secret_value_is_exported(console_run):
     text = json.dumps(console_run[1], default=repr)
-    for secret in ("password", "connection", "endpoint=", "AccountKey"):
-        assert secret not in text.lower().replace("verification", "")
+    # The verification records are public DNS values; everything else is a name.
+    for needle in ("password", "accesskey", "AccountKey", "endpoint=", "sig="):
+        assert needle not in text, needle
 
 
 # --- LiteLLM's admin host (carried from the admin-host task) ----------------

@@ -148,10 +148,35 @@
    "Project": "llmaven"
   },
   "volume_mounts": [
-   "<pulumi_azure_native.app._inputs.VolumeMountArgs object>"
+   {
+    "__type__": "VolumeMountArgs",
+    "mount_path": "/app/config",
+    "volume_name": "litellm-config-volume"
+   }
   ],
   "volumes": [
-   "<pulumi_azure_native.app._inputs.VolumeArgs object>"
+   {
+    "__type__": "VolumeArgs",
+    "name": "litellm-config-volume",
+    "secrets": [
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "adl_logger.py",
+      "secret_ref": "adl-logger-py"
+     },
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "spend_logger.py",
+      "secret_ref": "spend-logger-py"
+     },
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "config.yaml",
+      "secret_ref": "config-yaml"
+     }
+    ],
+    "storage_type": "Secret"
+   }
   ]
  },
  "llmaven-dev-llm-auth": {
@@ -406,10 +431,25 @@
    "Project": "llmaven"
   },
   "volume_mounts": [
-   "<pulumi_azure_native.app._inputs.VolumeMountArgs object>"
+   {
+    "__type__": "VolumeMountArgs",
+    "mount_path": "/etc/traefik/dynamic",
+    "volume_name": "traefik-config-volume"
+   }
   ],
   "volumes": [
-   "<pulumi_azure_native.app._inputs.VolumeArgs object>"
+   {
+    "__type__": "VolumeArgs",
+    "name": "traefik-config-volume",
+    "secrets": [
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "dynamic.yaml",
+      "secret_ref": "traefik-dynamic-yaml"
+     }
+    ],
+    "storage_type": "Secret"
+   }
   ]
  }
 }
