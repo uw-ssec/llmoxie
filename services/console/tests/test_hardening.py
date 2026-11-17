@@ -192,3 +192,34 @@ def test_disconnecting_an_integration_stops_a_key_it_is_issuing(org):
             lock.close()
         assert issuing.result().status_code == 403
     assert one("SELECT count(*) AS n FROM api_key WHERE integration_id = %s", (again,))["n"] == 0
+
+
+# ── 4. Withdrawing consent wins against a key being made ────────────────────
+
+def test_withdrawing_consent_stops_a_key_being_made(org):
+    team = org["team"]
+    member, who = join(org, "p-withdraw")
+    member.api_post(f"/teams/{team}/my/consent", {"terms_accepted": True})
+    first = member.api_post(f"/teams/{team}/my/keys", {"name": "first"})
+    assert first.status_code == 200, first.text[:300]
+    token, person = access_token(who, PASSWORD), person_id(who)
+    first_id = one("SELECT id FROM api_key WHERE person_id = %s AND status = 'active'", (person,))["id"]
+
+    # The withdrawal stops while deleting the existing key, so a new key request overlaps it.
+    lock = held("SELECT 1 FROM api_key WHERE id = %s FOR UPDATE", (first_id,))
+    with ThreadPoolExecutor(2) as pool:
+        try:
+            withdrawing = pool.submit(member.api_post, f"/teams/{team}/my/consent", {"terms_accepted": False})
+            wait_until(lambda: lock_waiters() == 1)
+            making = pool.submit(broker, "POST", f"/my/teams/{team}/keys", token, {"name": "racing"})
+            wait_until(lambda: making.done() or lock_waiters() == 2)
+        finally:
+            lock.rollback()
+            lock.close()
+        withdrawn, made = withdrawing.result(), making.result()
+    assert withdrawn.status_code == 200, withdrawn.text[:300]
+    if made.status_code == 200:  # made before the withdrawal went through: it must be dead now
+        assert chat(made.json()["key"], org["model"]).status_code == 401
+    else:
+        assert made.status_code == 409, made.text[:300]
+    assert one("SELECT count(*) AS n FROM api_key WHERE person_id = %s AND status <> 'deleted'", (person,))["n"] == 0

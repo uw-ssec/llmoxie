@@ -910,6 +910,12 @@ def my_consent(team_id: UUID, body: ConsentBody, s: Session = Depends(current_se
     team = find_team(team_id)
     require(s, "my.consent", team=team, target=team_id)
     with db.org_tx(team["org_id"]) as conn:
+        # The membership lock that making a key takes: a key being made is either finished, and deleted
+        # below, or waits and then reads this choice.
+        if not conn.execute(
+                "SELECT 1 FROM team_member WHERE team_id = %s AND person_id = %s AND status = 'active' FOR UPDATE",
+                (team_id, s.actor.person_id)).fetchone():
+            raise HTTPException(403, "not allowed")
         conn.execute(
             "INSERT INTO consent (org_id, team_id, person_id, terms_accepted, research_use) VALUES (%s, %s, %s, %s, %s)",
             (team["org_id"], team_id, s.actor.person_id, body.terms_accepted, body.research_use))
