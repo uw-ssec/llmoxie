@@ -234,9 +234,13 @@ def test_database_urls_use_role_password_and_host(mocks):
     web_url = _plain(web["console-web-db-url"].inputs["properties"]["value"])
     broker_url = _plain(broker["console-broker-db-url"].inputs["properties"]["value"])
     assert web_url.startswith("postgresql://console_web:")
-    assert web_url.endswith(f"@{HOST}:5432/console_db?sslmode=require")
+    assert web_url.endswith(
+        f"@{HOST}:5432/console_db?sslmode=verify-full&sslrootcert=system"
+    )
     assert broker_url.startswith("postgresql://console_broker:")
-    assert broker_url.endswith(f"@{HOST}:5432/console_db?sslmode=require")
+    assert broker_url.endswith(
+        f"@{HOST}:5432/console_db?sslmode=verify-full&sslrootcert=system"
+    )
     assert (
         _plain(broker["console-mail-connection"].inputs["properties"]["value"])
         == "endpoint=acs"

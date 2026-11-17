@@ -40,12 +40,17 @@ def schema_statements(text: str) -> str:
 
 
 def _connect(dbname: str) -> psycopg.Connection:
+    # By default the server's certificate must chain to a trusted root and name the host. libpq refuses
+    # sslrootcert=system with any other mode, so a weaker PGSSLMODE (a local server without TLS) goes without it.
+    sslmode = os.environ.get("PGSSLMODE", "verify-full")
+    roots = {"sslrootcert": os.environ.get("PGSSLROOTCERT", "system")} if sslmode == "verify-full" else {}
     return psycopg.connect(
         host=os.environ["PGHOST"],
         user=os.environ["PGUSER"],
         password=os.environ["PGPASSWORD"],
         dbname=dbname,
-        sslmode=os.environ.get("PGSSLMODE", "require"),
+        sslmode=sslmode,
+        **roots,
         autocommit=True,
         connect_timeout=30,
     )

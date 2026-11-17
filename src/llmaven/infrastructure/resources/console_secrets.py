@@ -187,7 +187,9 @@ def create_console_secrets(
     def db_url(role: str, password: pulumi.Output[str]) -> pulumi.Output[str]:
         return pulumi.Output.all(password, postgres_host).apply(
             lambda a: (
-                f"postgresql://{role}:{a[0]}@{a[1]}:5432/{CONSOLE_DB}?sslmode=require"
+                f"postgresql://{role}:{a[0]}@{a[1]}:5432/{CONSOLE_DB}"
+                # The server's certificate must chain to a trusted root and name this host.
+                "?sslmode=verify-full&sslrootcert=system"
             )
         )
 

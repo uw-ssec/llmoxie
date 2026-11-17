@@ -101,7 +101,7 @@ def pg(server, monkeypatch):
             conn.execute(f"CREATE DATABASE {db} OWNER pgadmin_group")
     for key, value in {
         "PGHOST": host, "PGPORT": port, "PGUSER": "azadmin", "PGPASSWORD": ADMIN_PW,
-        "PGSSLMODE": "disable",  # the throwaway server has no TLS; main() defaults to require
+        "PGSSLMODE": "disable",  # the throwaway server has no TLS; main() defaults to verify-full
         "CONSOLE_WEB_DB_PASSWORD": PW["web-1"], "CONSOLE_BROKER_DB_PASSWORD": PW["broker-1"],
         "CONSOLE_OTHER_DATABASES": ",".join(OTHERS), "CONSOLE_SCHEMA_FILE": str(SCHEMA),
     }.items():
@@ -203,11 +203,29 @@ def test_failure_names_the_step_and_not_the_password(pg, monkeypatch, capsys):
     assert PW["wrong"] not in err and PW["web-1"] not in err
 
 
-def test_default_sslmode_is_require(monkeypatch):
+def test_default_sslmode_verifies_the_server_against_the_system_roots(monkeypatch):
     seen = {}
     monkeypatch.delenv("PGSSLMODE", raising=False)
+    monkeypatch.delenv("PGSSLROOTCERT", raising=False)
     monkeypatch.setattr(db_setup.psycopg, "connect", lambda **kw: seen.update(kw) or (_ for _ in ()).throw(RuntimeError))
     monkeypatch.setenv("PGHOST", "h"); monkeypatch.setenv("PGUSER", "u"); monkeypatch.setenv("PGPASSWORD", "p")
     monkeypatch.setenv("CONSOLE_SCHEMA_FILE", str(SCHEMA))
     assert main() == 1
-    assert seen["sslmode"] == "require"
+    assert seen["sslmode"] == "verify-full" and seen["sslrootcert"] == "system"
+
+
+def test_a_weaker_sslmode_is_passed_without_the_system_roots(monkeypatch):
+    seen = {}
+    monkeypatch.setenv("PGSSLMODE", "disable")  # libpq refuses sslrootcert=system with any mode but verify-full
+    monkeypatch.setattr(db_setup.psycopg, "connect", lambda **kw: seen.update(kw) or (_ for _ in ()).throw(RuntimeError))
+    monkeypatch.setenv("PGHOST", "h"); monkeypatch.setenv("PGUSER", "u"); monkeypatch.setenv("PGPASSWORD", "p")
+    monkeypatch.setenv("CONSOLE_SCHEMA_FILE", str(SCHEMA))
+    assert main() == 1
+    assert seen["sslmode"] == "disable" and "sslrootcert" not in seen
+
+
+@pytest.mark.skipif(not Path("/app/console_app").is_dir(), reason="checks the console image")
+def test_the_image_points_libpq_at_the_system_roots():
+    # psycopg's bundled OpenSSL looks for roots in a directory the image does not have, so `system` would
+    # trust nothing without this.
+    assert Path(os.environ.get("SSL_CERT_FILE", "")).is_file()
