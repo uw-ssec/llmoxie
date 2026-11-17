@@ -1,10 +1,15 @@
 """Security fixes: each test sets up what it needs in an org of its own, so they run in any order."""
 
+import os
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
+import psycopg
 import pytest
 
-from .helpers import access_token, broker, create_user, invite_token, sign_in, sql
+from .helpers import (SERVICE_REDIRECT, access_token, api, broker, chat, create_service_client, create_user,
+                      invite_token, service_token, sign_in, sql)
 
 RUN = uuid.uuid4().hex[:6]
 PASSWORD = "Correct-horse-9"
@@ -113,3 +118,77 @@ def test_a_provider_key_cannot_name_a_secret_litellm_holds(org):
     shown = org["lead"].api_post(f"/orgs/{org_id}/models", {"provider": "mock", "model": "ref5", "api_key": "os.environ/X"})
     assert shown.status_code == 400 and "reference" in said(shown)   # the lead is told why
     assert one("SELECT count(*) AS n FROM org_model WHERE org_id = %s AND model LIKE 'ref%%'", (org_id,))["n"] == 0
+
+
+# ── Races: a test holds a row lock so two calls overlap in a known order ─────
+
+def lock_waiters() -> int:
+    """How many of the broker's queries are waiting for a lock right now."""
+    return one("""SELECT count(*) AS n FROM pg_stat_activity
+                  WHERE datname = 'console_db' AND usename = 'console_broker' AND wait_event_type = 'Lock'""")["n"]
+
+
+def wait_until(condition, seconds: float = 15) -> None:
+    deadline = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.05)
+
+
+def held(query: str, params=()):
+    """A transaction holding the row locks `query` takes; rolled back to let them go."""
+    conn = psycopg.connect(os.environ["SUPERUSER_DATABASE_URL"])
+    assert conn.execute(query, params).fetchall(), "nothing to lock"
+    return conn
+
+
+# ── 3. Disconnecting an integration wins against a key it is issuing ─────────
+
+def test_disconnecting_an_integration_stops_a_key_it_is_issuing(org):
+    client, secret = f"race-{RUN}", f"race-secret-{RUN}"
+    create_service_client(client, secret)
+    connected = org["alice"].api_post(f"/admin/teams/{org['team']}/integrations",
+                                      {"client_id": client, "name": "Race", "can_enroll": True})
+    assert connected.status_code == 200, connected.text[:300]
+    integration = str(one("SELECT id FROM integration WHERE client_id = %s AND removed_at IS NULL", (client,))["id"])
+    who = email("svc-user")
+    create_user(who, PASSWORD)
+    user, service = access_token(who, PASSWORD, client, secret, SERVICE_REDIRECT), service_token(client, secret)
+    assert api("enroll", user, service).status_code == 200
+    sign_in(who, PASSWORD).api_post(f"/teams/{org['team']}/my/consent", {"terms_accepted": True})
+
+    # The key request stops at the user's membership row, after the service's tokens were checked.
+    lock = held("SELECT 1 FROM team_member WHERE team_id = %s AND person_id = %s FOR UPDATE",
+                (org["team"], person_id(who)))
+    with ThreadPoolExecutor(2) as pool:
+        try:
+            issuing = pool.submit(api, "key", user, service)
+            wait_until(lambda: lock_waiters() == 1)
+            removing = pool.submit(org["alice"].api_post, f"/admin/integrations/{integration}/remove")
+            wait_until(lambda: removing.done() or lock_waiters() == 2)
+        finally:
+            lock.rollback()
+            lock.close()
+        issued, removed = issuing.result(), removing.result()
+    assert removed.status_code == 200, removed.text[:300]
+    if issued.status_code == 200:  # issued before the disconnection went through: it must be dead now
+        assert chat(issued.json()["key"], org["model"]).status_code == 401
+    else:
+        assert issued.status_code == 403, issued.text[:300]
+    assert one("SELECT count(*) AS n FROM api_key WHERE integration_id = %s AND status <> 'deleted'",
+               (integration,))["n"] == 0
+
+    # Connected again, then disconnected while a key request waits at the integration's row: it is refused.
+    org["alice"].api_post(f"/admin/teams/{org['team']}/integrations", {"client_id": client, "name": "Race"})
+    again = str(one("SELECT id FROM integration WHERE client_id = %s AND removed_at IS NULL", (client,))["id"])
+    lock = held("SELECT 1 FROM integration WHERE id = %s FOR UPDATE", (again,))
+    with ThreadPoolExecutor(1) as pool:
+        try:
+            issuing = pool.submit(api, "key", user, service)
+            wait_until(lambda: lock_waiters() == 1)
+            lock.execute("UPDATE integration SET removed_at = now() WHERE id = %s", (again,))
+            lock.commit()
+        finally:
+            lock.close()
+        assert issuing.result().status_code == 403
+    assert one("SELECT count(*) AS n FROM api_key WHERE integration_id = %s", (again,))["n"] == 0

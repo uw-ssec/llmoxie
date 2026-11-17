@@ -1043,6 +1043,11 @@ def admin_integration_remove(integration_id: UUID, s: Session = Depends(current_
     if not found:
         raise HTTPException(404, "no such integration")
     with db.org_tx(found["org_id"]) as conn:
+        # Waits for any call of this integration that is enrolling someone or issuing a key (they hold the
+        # row, see hold_integration), so the key sweep below sees the keys they made.
+        if not conn.execute("SELECT 1 FROM integration WHERE id = %s AND removed_at IS NULL FOR UPDATE",
+                            (integration_id,)).fetchone():
+            raise HTTPException(404, "no such integration")
         conn.execute("UPDATE integration SET removed_at = now() WHERE id = %s", (integration_id,))
         keys = delete_keys(conn, "integration_id = %s", (integration_id,))
     audit(s, "integration.remove", "ok", org_id=found["org_id"], team_id=found["team_id"], target=found["client_id"],
@@ -1069,6 +1074,14 @@ def integration_team(i: IntegrationSession, action: str) -> dict:
     return team
 
 
+def hold_integration(conn, i: IntegrationSession) -> None:
+    """Lock the integration's row for the rest of this transaction, and refuse if it was disconnected since
+    the call was authenticated. Disconnecting locks the same row, so it waits until this call is done."""
+    if not conn.execute("SELECT 1 FROM integration WHERE id = %s AND removed_at IS NULL FOR SHARE",
+                        (i.integration["id"],)).fetchone():
+        raise HTTPException(403, "this service is not a registered integration")
+
+
 def consent_url(team: dict) -> str:
     return f"{PUBLIC_URL}/teams/{team['id']}"
 
@@ -1081,6 +1094,7 @@ def integration_enroll(i: IntegrationSession = Depends(integration_session)):
         raise refuse(409, "email_not_verified", "the user's email address has not been verified")
     person = i.actor.person_id
     with db.org_tx(team["org_id"]) as conn:
+        hold_integration(conn, i)
         member = conn.execute(
             "SELECT status FROM team_member WHERE team_id = %s AND person_id = %s FOR UPDATE", (team["id"], person)).fetchone()
         if member and member["status"] != "active":
@@ -1103,6 +1117,7 @@ def integration_issue_key(i: IntegrationSession = Depends(integration_session)):
     team = integration_team(i, "integration.issue_key")
     person, alias = i.actor.person_id, f"c-{uuid.uuid4()}"
     with db.org_tx(team["org_id"]) as conn:
+        hold_integration(conn, i)
         if not conn.execute(
                 "SELECT 1 FROM team_member WHERE team_id = %s AND person_id = %s AND status = 'active' FOR UPDATE",
                 (team["id"], person)).fetchone():
