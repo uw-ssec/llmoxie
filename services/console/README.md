@@ -168,7 +168,9 @@ Every setting is an environment variable. Those without a default are required.
 | `LITELLM_ADMIN_KEY_FILE` | Where to write the broker's key                          |
 
 It does nothing if the file already holds a working key, so it can run on every
-start.
+start. It makes a new key only when LiteLLM rejects the file's key or there is
+no file, and then first deletes the broker's earlier keys, so the broker holds
+one. If LiteLLM gives no clear answer, it fails and changes nothing.
 
 ## Without the hub
 

@@ -5,6 +5,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 import psycopg
 import pytest
 
@@ -223,3 +224,13 @@ def test_withdrawing_consent_stops_a_key_being_made(org):
     else:
         assert made.status_code == 409, made.text[:300]
     assert one("SELECT count(*) AS n FROM api_key WHERE person_id = %s AND status <> 'deleted'", (person,))["n"] == 0
+
+
+# ── 7. The broker holds one LiteLLM admin key ───────────────────────────────
+
+def test_the_broker_holds_exactly_one_litellm_admin_key():
+    """console-init deletes the broker's earlier keys whenever it makes a new one."""
+    listing = httpx.get(f"{os.environ['LITELLM_URL']}/key/list",
+                        params={"user_id": "console-broker", "return_full_object": "true", "size": 100},
+                        headers={"Authorization": f"Bearer {os.environ['LITELLM_MASTER_KEY']}"}).json()
+    assert len(listing["keys"]) == 1, [k["key_alias"] for k in listing["keys"]]
