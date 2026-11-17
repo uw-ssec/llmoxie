@@ -11,12 +11,10 @@ import hashlib
 import json
 import os
 import secrets
-import smtplib
 import sys
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -24,19 +22,18 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from .. import policy
-from . import db, dlp, keycloak, knowledge, litellm
+from . import db, dlp, keycloak, knowledge, litellm, mail
 from .auth import WEB_CLIENT_ID, IntegrationSession, Session, current_session, integration_session, require_caller
 
 PUBLIC_URL = os.environ["CONSOLE_PUBLIC_URL"]
 INVITE_TTL = timedelta(hours=int(os.environ.get("CONSOLE_INVITE_TTL_HOURS", "72")))
-SMTP_HOST = os.environ["SMTP_HOST"]
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
-MAIL_FROM = os.environ.get("MAIL_FROM", "console@llmoxie.localhost")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    db.pool.open(wait=True)
+    # Not waiting: on a first deploy the broker starts before the database job has made its role and
+    # schema. The pool keeps trying in the background, and until then each request fails on its own.
+    db.pool.open()
     yield
     db.pool.close()
 
@@ -57,6 +54,13 @@ def keycloak_failed(_, exc: keycloak.KeycloakError):
 @app.exception_handler(knowledge.HubError)
 def hub_failed(_, exc: knowledge.HubError):
     return JSONResponse({"detail": str(exc)}, status_code=502)
+
+
+@app.exception_handler(mail.MailError)
+def mail_failed(_, exc: mail.MailError):
+    print(f"mail not sent: {exc}", file=sys.stderr, flush=True)  # never the address; see mail.MailError
+    return JSONResponse(
+        {"error": "mail_failed", "message": "The email could not be sent. Try again later."}, status_code=502)
 
 
 @app.get("/healthz")
@@ -98,7 +102,7 @@ def find_team(team_id: UUID) -> dict | None:
     with db.system_tx() as conn:
         return conn.execute(
             """SELECT t.*, o.slug AS org_slug, o.name AS org_name, o.status AS org_status,
-                      o.budget_ceiling AS org_budget_ceiling
+                      o.budget_ceiling AS org_budget_ceiling, o.mcp_server_id AS org_mcp_server_id
                FROM team t JOIN org o ON o.id = t.org_id
                WHERE t.id = %s AND o.status <> 'removed' AND t.status <> 'removed'""",
             (team_id,)).fetchone()
@@ -120,26 +124,21 @@ def require(s: Session, action: str, *, org: dict | None = None, team: dict | No
 
 
 def send_invite(email: str, token: str, what: str) -> None:
-    message = EmailMessage()
-    message["From"], message["To"] = MAIL_FROM, email
-    message["Subject"] = f"You are invited to {what}"
-    message.set_content(
+    mail.send(
+        email, f"You are invited to {what}",
         f"You have been invited to {what} on the LLMoxie console.\n\n"
         f"Open this link and sign in with this email address ({email}):\n\n"
         f"{PUBLIC_URL}/invite/{token}\n\n"
         f"The link works once and expires in {int(INVITE_TTL.total_seconds() // 3600)} hours.\n")
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-        smtp.send_message(message)
 
 
 def send_notice(email: str | None, subject: str, body: str) -> None:
     if not email:
         return
-    message = EmailMessage()
-    message["From"], message["To"], message["Subject"] = MAIL_FROM, email, subject
-    message.set_content(body)
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-        smtp.send_message(message)
+    try:
+        mail.send(email, subject, body)
+    except mail.MailError as exc:  # a notice is best-effort: what it reports has already happened
+        print(f"notice not sent: {exc}", file=sys.stderr, flush=True)
 
 
 def create_invite(conn, s: Session, *, org_id, team_id, kind: str, email: str) -> str:
@@ -155,6 +154,17 @@ def create_invite(conn, s: Session, *, org_id, team_id, kind: str, email: str) -
         (org_id, team_id, kind, email, hashlib.sha256(token.encode()).hexdigest(),
          datetime.now(timezone.utc) + INVITE_TTL, s.actor.person_id))
     return token
+
+
+def revoke_invites_of(conn, person_id, *, org_id, team_id) -> None:
+    """Revoke a person's still-usable invitations to an org's leads (team_id None) or to a team: those sent
+    to their email and those they used that wait for approval. A removal calls this before it removes,
+    in its own transaction: acceptance locks the invitation too, so the two run one after the other."""
+    conn.execute(
+        """UPDATE invite SET status = 'revoked'
+           WHERE org_id = %s AND team_id IS NOT DISTINCT FROM %s::uuid AND status IN ('pending', 'needs_approval')
+             AND (person_id = %s OR lower(email) = (SELECT lower(email) FROM person WHERE id = %s))""",
+        (org_id, team_id, person_id, person_id))
 
 
 def grant_membership(conn, invite: dict) -> None:
@@ -259,6 +269,7 @@ def invite_inspect(body: TokenBody):
 @app.post("/invites/accept")
 def invite_accept(body: TokenBody, s: Session = Depends(current_session)):
     with db.system_tx() as conn:
+        # The lock waits for a removal that is revoking this invitation, and then returns its new status.
         invite = _invite_by_token(conn, body.token, lock=True)
         if not _usable(invite):
             outcome = "invalid"
@@ -321,12 +332,13 @@ def admin_org_create(body: OrgBody, s: Session = Depends(current_session)):
                            (body.name, body.slug, body.budget_ceiling)).fetchone()
         # The org's knowledge: a Keycloak client that may reach only this org's bundle in the hub, and an
         # MCP server in LiteLLM that signs in as that client. A failure here undoes the insert.
-        secret = keycloak.org_client_create(body.slug)
-        server_id = litellm.mcp_server_new(
-            body.slug, f"{keycloak.HUB_URL}/mcp?bundle={keycloak.bundle(body.slug)}", keycloak.TOKEN_URL,
-            keycloak.client_id(body.slug), secret)
-        org = conn.execute("UPDATE org SET mcp_server_id = %s WHERE id = %s RETURNING *",
-                           (server_id, org["id"])).fetchone()
+        if keycloak.ENABLED:
+            secret = keycloak.org_client_create(body.slug)
+            server_id = litellm.mcp_server_new(
+                body.slug, f"{keycloak.HUB_URL}/mcp?bundle={keycloak.bundle(body.slug)}", keycloak.TOKEN_URL,
+                keycloak.client_id(body.slug), secret)
+            org = conn.execute("UPDATE org SET mcp_server_id = %s WHERE id = %s RETURNING *",
+                               (server_id, org["id"])).fetchone()
     audit(s, "org.create", "ok", org_id=org["id"], target=body.slug)
     return org
 
@@ -340,7 +352,8 @@ def _set_org_status(s: Session, org_id: UUID, action: str, status: str):
         conn.execute("UPDATE org SET status = %s WHERE id = %s", (status, org_id))
         for team in conn.execute("SELECT id FROM team WHERE status = 'active'").fetchall():
             (litellm.team_block if status == "suspended" else litellm.team_unblock)(str(team["id"]))
-            litellm.team_set_knowledge(str(team["id"]), None if status == "suspended" else org["mcp_server_id"])
+            if org["mcp_server_id"]:  # an org made without knowledge has none to close or open
+                litellm.team_set_knowledge(str(team["id"]), None if status == "suspended" else org["mcp_server_id"])
     audit(s, action, "ok", org_id=org_id)
     return {"status": status}
 
@@ -380,7 +393,8 @@ def admin_org_remove(org_id: UUID, body: RemoveOrgBody, s: Session = Depends(cur
         conn.execute("UPDATE org_model SET removed_at = now() WHERE removed_at IS NULL")
         if org["mcp_server_id"]:
             litellm.mcp_server_delete(org["mcp_server_id"])
-        keycloak.org_client_delete(org["slug"])
+        if keycloak.ENABLED:
+            keycloak.org_client_delete(org["slug"])
         conn.execute("UPDATE invite SET status = 'revoked' WHERE status IN ('pending', 'needs_approval')")
         conn.execute("UPDATE team_member SET status = 'removed' WHERE status = 'active'")
         conn.execute("DELETE FROM org_lead")
@@ -476,10 +490,11 @@ def admin_remove_lead(org_id: UUID, person_id: UUID, s: Session = Depends(curren
     """Take an org away from a lead. Their account, and whatever they set up in the org, stays."""
     require(s, "org.remove_lead")
     with db.org_tx(org_id) as conn:
+        revoke_invites_of(conn, person_id, org_id=org_id, team_id=None)
         removed = conn.execute(
             "DELETE FROM org_lead WHERE org_id = %s AND person_id = %s", (org_id, person_id)).rowcount
-    if not removed:
-        raise HTTPException(404, "not a lead of this organization")
+        if not removed:
+            raise HTTPException(404, "not a lead of this organization")
     audit(s, "org.remove_lead", "ok", org_id=org_id, target=person_id)
     return {"removed": True}
 
@@ -586,6 +601,9 @@ def org_knowledge(org_id: UUID, s: Session = Depends(current_session)):
     """Everything in the org's knowledge base, for its leads. Members reach the same content through MCP."""
     org = find_org(org_id)
     require(s, "org.knowledge", org=org, target=org_id)
+    if not keycloak.ENABLED:
+        return JSONResponse({"error": "knowledge_off", "message": "Knowledge isn't set up on this console."},
+                            status_code=404)
     view = knowledge.bundle_view(org["slug"])
     audit(s, "org.knowledge", "ok", org_id=org_id, concepts=len(view["concepts"]))
     return {"org": {k: org[k] for k in ("id", "name", "slug", "status")}, "tools": litellm.mcp_server_name(org["slug"]),
@@ -596,6 +614,8 @@ def org_knowledge(org_id: UUID, s: Session = Depends(current_session)):
 def model_add(org_id: UUID, body: ModelBody, s: Session = Depends(current_session)):
     org = find_org(org_id)
     require(s, "model.add", org=org, target=org_id)
+    if any(litellm.secret_reference(v) for v in (body.model, body.api_key, body.api_base, body.api_version)):
+        raise HTTPException(400, "enter the key itself: a reference such as os.environ/... is not accepted")
     try:
         params = litellm.model_params(body.provider, body.model, body.api_key, body.api_base, body.api_version)
     except ValueError as exc:
@@ -770,6 +790,7 @@ def team_remove_member(team_id: UUID, person_id: UUID, s: Session = Depends(curr
     team = find_team(team_id)
     require(s, "team.remove_member", team=team, target=person_id)
     with db.org_tx(team["org_id"]) as conn:
+        revoke_invites_of(conn, person_id, org_id=team["org_id"], team_id=team_id)
         if conn.execute("UPDATE team_member SET status = 'removed' WHERE team_id = %s AND person_id = %s AND status = 'active'",
                         (team_id, person_id)).rowcount != 1:
             raise HTTPException(404, "not a member")
@@ -879,7 +900,7 @@ def my_team(team_id: UUID, s: Session = Depends(current_session)):
         "team": {k: team[k] for k in ("id", "name", "org_name", "status", "org_status", "key_limit", "key_budget",
                                       "key_expiry_days", "consent_text")},
         "consent": consent, "keys": keys, "models": models,
-        "knowledge_tools": litellm.mcp_server_name(team["org_slug"]),
+        "knowledge_tools": litellm.mcp_server_name(team["org_slug"]) if team["org_mcp_server_id"] else None,
         "usage": usage or {"requests": 0, "failed": 0, "spend": 0.0, "tokens": 0},
     }
 
@@ -889,6 +910,12 @@ def my_consent(team_id: UUID, body: ConsentBody, s: Session = Depends(current_se
     team = find_team(team_id)
     require(s, "my.consent", team=team, target=team_id)
     with db.org_tx(team["org_id"]) as conn:
+        # The membership lock that making a key takes: a key being made is either finished, and deleted
+        # below, or waits and then reads this choice.
+        if not conn.execute(
+                "SELECT 1 FROM team_member WHERE team_id = %s AND person_id = %s AND status = 'active' FOR UPDATE",
+                (team_id, s.actor.person_id)).fetchone():
+            raise HTTPException(403, "not allowed")
         conn.execute(
             "INSERT INTO consent (org_id, team_id, person_id, terms_accepted, research_use) VALUES (%s, %s, %s, %s, %s)",
             (team["org_id"], team_id, s.actor.person_id, body.terms_accepted, body.research_use))
@@ -1022,6 +1049,11 @@ def admin_integration_remove(integration_id: UUID, s: Session = Depends(current_
     if not found:
         raise HTTPException(404, "no such integration")
     with db.org_tx(found["org_id"]) as conn:
+        # Waits for any call of this integration that is enrolling someone or issuing a key (they hold the
+        # row, see hold_integration), so the key sweep below sees the keys they made.
+        if not conn.execute("SELECT 1 FROM integration WHERE id = %s AND removed_at IS NULL FOR UPDATE",
+                            (integration_id,)).fetchone():
+            raise HTTPException(404, "no such integration")
         conn.execute("UPDATE integration SET removed_at = now() WHERE id = %s", (integration_id,))
         keys = delete_keys(conn, "integration_id = %s", (integration_id,))
     audit(s, "integration.remove", "ok", org_id=found["org_id"], team_id=found["team_id"], target=found["client_id"],
@@ -1048,6 +1080,14 @@ def integration_team(i: IntegrationSession, action: str) -> dict:
     return team
 
 
+def hold_integration(conn, i: IntegrationSession) -> None:
+    """Lock the integration's row for the rest of this transaction, and refuse if it was disconnected since
+    the call was authenticated. Disconnecting locks the same row, so it waits until this call is done."""
+    if not conn.execute("SELECT 1 FROM integration WHERE id = %s AND removed_at IS NULL FOR SHARE",
+                        (i.integration["id"],)).fetchone():
+        raise HTTPException(403, "this service is not a registered integration")
+
+
 def consent_url(team: dict) -> str:
     return f"{PUBLIC_URL}/teams/{team['id']}"
 
@@ -1060,6 +1100,7 @@ def integration_enroll(i: IntegrationSession = Depends(integration_session)):
         raise refuse(409, "email_not_verified", "the user's email address has not been verified")
     person = i.actor.person_id
     with db.org_tx(team["org_id"]) as conn:
+        hold_integration(conn, i)
         member = conn.execute(
             "SELECT status FROM team_member WHERE team_id = %s AND person_id = %s FOR UPDATE", (team["id"], person)).fetchone()
         if member and member["status"] != "active":
@@ -1082,6 +1123,7 @@ def integration_issue_key(i: IntegrationSession = Depends(integration_session)):
     team = integration_team(i, "integration.issue_key")
     person, alias = i.actor.person_id, f"c-{uuid.uuid4()}"
     with db.org_tx(team["org_id"]) as conn:
+        hold_integration(conn, i)
         if not conn.execute(
                 "SELECT 1 FROM team_member WHERE team_id = %s AND person_id = %s AND status = 'active' FOR UPDATE",
                 (team["id"], person)).fetchone():

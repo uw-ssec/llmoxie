@@ -26,16 +26,17 @@ ones. `deploy --expect-no-changes` refuses to run when those aren't set.
 Run them as `pixi run -e llmaven llmaven infra <command>`. `--config/-c` selects
 the config file.
 
-| Command    | What it does                                                                             |
-| ---------- | ---------------------------------------------------------------------------------------- |
-| `init`     | Writes a config with defaults (`-e dev\|staging\|prod`, `-o <path>`, `--no-interactive`) |
-| `validate` | Checks the config (`--strict` fails on warnings, `--env-file` for secrets)               |
-| `deploy`   | Deploys (`--preview`, `--yes`, `--expect-no-changes`, `--env-file`)                      |
-| `status`   | Shows the deployed stack's status                                                        |
-| `refresh`  | Refreshes Pulumi state from Azure (`--yes`)                                              |
-| `cancel`   | Cancels a stuck Pulumi update                                                            |
-| `destroy`  | Tears down **all** resources (`--yes`)                                                   |
-| `extract`  | Downloads LiteLLM spend logs to a zip (`--source`, `--out`)                              |
+| Command          | What it does                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `init`           | Writes a config with defaults (`-e dev\|staging\|prod`, `-o <path>`, `--no-interactive`)   |
+| `validate`       | Checks the config (`--strict` fails on warnings, `--env-file` for secrets)                 |
+| `deploy`         | Deploys (`--preview`, `--yes`, `--expect-no-changes`, `--env-file`)                        |
+| `status`         | Shows the deployed stack's status                                                          |
+| `refresh`        | Refreshes Pulumi state from Azure (`--yes`)                                                |
+| `cancel`         | Cancels a stuck Pulumi update                                                              |
+| `destroy`        | Tears down **all** resources (`--yes`)                                                     |
+| `extract`        | Downloads LiteLLM spend logs to a zip (`--source`, `--out`)                                |
+| `keycloak-users` | Creates Keycloak accounts for invitees from a CSV (`--csv`, `--out`, `--dry-run`, `--yes`) |
 
 The separate backup stack has its own commands: `llmaven backup-infra deploy`
 and `llmaven backup-infra output`.
@@ -423,7 +424,8 @@ enabling Keycloak means setting `keycloak.image` to a built tag and its digest.
 - `keycloak.hostname and <app>.hostname are both ...`: the hostnames must
   differ.
 - `realm.overrides.clients redefines the stack's client ...` (the stack owns
-  `mlflow-gate`, `litellm-gate`, `litellm` and `llmaven-cli`), and
+  `mlflow-gate`, `litellm-gate`, `litellm`, `llmaven-cli` and `console`, the
+  last even with the console off), and
   `... has clientId ... with a $( substitution`.
 - `Azure caps these names at 32 characters: ... Shorten project.name.` for the
   Keycloak app, the realm job and the login apps.
@@ -665,3 +667,255 @@ Envoy as the real peer (with `KC_PROXY_HEADERS=xforwarded` and an `https`
 forwarded protocol), the hostname move, what real LiteLLM and MLflow do with
 forwarded requests, and a login against the real LiteLLM fork build (since shown
 on dev for LiteLLM; see "Staging checks").
+
+## The console
+
+`console.enabled` (off by default) runs the LLMoxie console on the stack: the
+web app, the broker, their database and roles, their Keycloak client and their
+mail. Design: `docs/superpowers/specs/2026-11-15-console-azure-design.md`. The
+service itself is described in `services/console/README.md`. Source:
+`resources/console.py` (apps, file share, jobs), `resources/console_secrets.py`
+(identities and vaults), `resources/console_mail.py` (Azure Communication
+Services), `resources/keycloak_realm.py` (the client), `resources/traefik.py`
+(routes), `deployment/keycloak_users.py` (accounts).
+
+It needs `edge.enabled`, `keycloak.enabled`, `litellm.enabled`,
+`litellm.login.enabled` and `litellm.admin_hostname`.
+
+```yaml
+litellm:
+  hostname: dev.llm.example.org # gateway
+  admin_hostname: dev.litellm.example.org # UI and management API
+console:
+  enabled: true
+  hostname: dev.console.example.org # in edge.custom_domains
+  image: ghcr.io/uw-ssec/llmoxie-console:<tag>@sha256:<digest>
+  admin_subjects: ["<Keycloak user id>"] # CONSOLE_ADMIN_SUBJECTS
+  invite_ttl_hours: 72
+  mail:
+    domain: mail.example.org
+    sender: console # console@mail.example.org
+    display_name: LLMoxie console
+    domain_verified: false # true once the DNS records verify
+  web: { min_replicas: 1, max_replicas: 2, cpu: 0.25, memory: 0.5Gi }
+  broker: { min_replicas: 1, max_replicas: 1, cpu: 0.5, memory: 1Gi }
+  # revision_suffix and refresh_trigger are optional
+```
+
+**Validation errors** (raised when the config loads):
+
+- `console.enabled needs <flag>` for `edge.enabled`, `keycloak.enabled`,
+  `litellm.enabled` and `litellm.login.enabled`, and
+  `console.enabled needs litellm.admin_hostname`.
+- `console.hostname` unset or not in `edge.custom_domains`, and
+  `console.hostname and <app>.hostname are both ...`.
+- `Image ... must be pinned as <name>:<tag>@sha256:<64 hex digits>` for
+  `console.image`; the default `:latest` is fine only while the console is off.
+- `console.admin_subjects` empty, and `console.mail.domain` unset.
+- LiteLLM's config without `store_model_in_db: true`, or `LITELLM_SALT_KEY` in
+  neither `litellm.env_vars` nor `litellm.key_vault_secret_refs`. Elsewhere
+  these are warnings; here they are errors, because the console stores provider
+  keys.
+- An app, job or console vault name over its limit (32 characters for Container
+  Apps and jobs, 24 for vaults).
+
+`console_db` is added to `database.databases` automatically and, like
+`keycloak_db`, is retained on delete.
+
+**Two LiteLLM hosts.** `litellm.admin_hostname` splits LiteLLM in two. Unset,
+LiteLLM renders as before.
+
+- `litellm.hostname` is the **gateway**. The edge routes only
+  `litellm.public_paths` (rate limited) and `litellm.health_paths` there. There
+  is no catch-all, so every other path (`/ui`, `/key/*`, `/sso/*`, `/oauth2/*`,
+  and every encoding or case variant) gets Traefik's 404 from any IP, with or
+  without a key.
+- `litellm.admin_hostname` is the **admin host**. It gets the rules the single
+  host had: a Keycloak session with `litellm.login.role`, or a bearer key from
+  `litellm.admin_allowed_ips`, never on the UI paths.
+- `PROXY_BASE_URL`, the realm's `litellm` and `litellm-gate` redirect URIs and
+  the `llm-auth` oauth2-proxy's redirect URL, cookie domain and whitelist domain
+  move to the admin host.
+- Exports: `litellm_url` stays the gateway; `litellm_admin_url` is the admin
+  host.
+- **Operator effect.** Anything that used a bearer key against the one host now
+  needs the admin host. That includes `llmaven infra extract --source litellm`:
+  set `LITELLM_BASE_URL` in its env file to `https://<litellm.admin_hostname>`.
+  API clients on the gateway host keep working.
+
+**Secrets and vaults, with no role assignments.** The people who run
+`infra deploy` are Contributor, which can't make Azure role assignments, and the
+program creates none (`azure_native.authorization.*` never appears). Isolation
+comes from separate vaults instead.
+
+- Two user-assigned identities, `console-web` and `console-broker`, and two
+  access-policy vaults, `kv-<project>-<env>-cw` and `kv-<project>-<env>-cb`
+  (`enable_rbac_authorization: false`, the main vault's soft-delete and purge
+  settings). Each vault's policies are set **inline when the vault is created**
+  and are exactly two: its identity (`get`, `list`) and the deployer. There are
+  no `AccessPolicy` resources, so the replace behavior in
+  `bugs/key-vault-access-policy-replace` can't happen. The main vault is
+  unchanged.
+- Unlike the main vault, the console vaults don't ignore changes to their
+  policies, so every deploy rewrites the list. The deployer entry comes from
+  whoever runs `infra deploy` (`get_client_config()`), so another operator's
+  deploy swaps the previous operator's entry for their own. Adding
+  `ignore_changes` would also freeze the identity entries, so it isn't set.
+- The web vault holds `console-oidc-client-secret`,
+  `console-broker-caller-secret` and `console-web-db-url`. The broker vault
+  holds `console-broker-caller-secret`, `console-broker-db-url` and
+  `console-mail-connection` (the Communication Service's primary connection
+  string). `console-web` can read neither the main vault nor the broker's.
+- The main vault also holds what the shared identity's jobs need:
+  `console-web-db-password`, `console-broker-db-password`,
+  `console-oidc-client-secret` (for the realm job) and
+  `console-db-admin-password` (a copy of the Postgres admin password, the same
+  precedent as Keycloak).
+- Generated values are `pulumi_random.RandomPassword` and live in Pulumi state
+  as secrets. None appears in an export or the env file.
+- The broker's own LiteLLM key never passes through Pulumi or Key Vault.
+  `console-init` writes it to an Azure Files share, `console-run`, mounted at
+  `/run/console` (uid and gid 10001, directory mode 0700, file mode 0600). The
+  share is on a small storage account of its own (StorageV2, Standard_LRS, no
+  hierarchical namespace), because the main account is ADLS Gen2 and Azure Files
+  isn't offered there. It is registered twice as environment storage:
+  `console-run-rw` for the init job, `console-run-ro` for the broker.
+- The console storage account allows public network access (it is key
+  protected), and the console vaults set no network ACLs. With
+  `security.enable_private_endpoints` on, they stay public, unlike the main
+  vault.
+
+**Apps and jobs.** `console-web` (port 8200) and `console-broker` (port 8100)
+have internal ingress and `/healthz` probes. The edge adds a `console` router on
+`Host(console.hostname)`, rate limited, with no ForwardAuth, because the console
+signs people in itself. `console-db` (`python db_setup.py`) and `console-init`
+(`python init_admin_key.py`) are manual jobs that run as the shared identity.
+`db_setup.py` connects as the server's admin login, creates the roles
+`console_web` and `console_broker` and sets their passwords on every run (so a
+rotated secret takes), applies the schema only if `console_db` has none, and
+revokes `CONNECT` on the other databases from `PUBLIC` after granting it to the
+admin login. Both apps start and answer `/healthz` before the database job has
+made their roles, and the broker also before the key file and the schema exist,
+so on a first deploy they answer errors per request for about a minute rather
+than crash-looping.
+
+**Mail.** Pulumi creates an Email Communication Service, a customer-managed
+domain (`console.mail.domain`), a sender username and a Communication Service
+(`<project>-<env>-acs`).
+
+- The subscription needs the `Microsoft.Communication` resource provider
+  registered once: `az provider register --namespace Microsoft.Communication`.
+  `llmaven infra validate` lists it among the required providers when the
+  console is on.
+- The domain's DNS records (domain TXT, SPF, DKIM, DKIM2) are exported as
+  `console_mail_verification_records`. Add them at the DNS host, then start
+  verification:
+  `az communication email domain initiate-verification --domain-name <domain> --email-service-name <service> --resource-group <rg> --verification-type Domain`
+  (and again for `SPF`, `DKIM` and `DKIM2`).
+- Azure links a domain to the Communication Service only once it is verified. So
+  `console.mail.domain_verified` defaults to `false`, and the service is created
+  without the domain. Set it to `true` after verification and deploy again to
+  link it. Until then an invitation fails with `mail_failed` (HTTP 502) and
+  inviting again works once mail does.
+
+**Accounts for invitees.** The realm has sign-up off and no mail, and an
+invitation matches only a verified email, so an operator creates each lead's and
+participant's Keycloak account first:
+
+```sh
+pixi run -e llmaven llmaven infra keycloak-users -c llmaven-config.yaml \
+  --csv people.csv --out passwords.csv --dry-run
+pixi run -e llmaven llmaven infra keycloak-users -c llmaven-config.yaml \
+  --csv people.csv --out passwords.csv
+```
+
+- `people.csv` has an `email` column, the file a lead uploads to invite a team.
+  A BOM, a capitalised header, stray spaces, blank lines and duplicates are
+  handled: one account per distinct lower-cased address. A file with no `email`
+  column creates nothing and says why.
+- It needs a client IP in `keycloak.admin_allowed_ips`, and signs in as the
+  bootstrap `admin` with `keycloak-admin-password` from the main vault.
+- Each new account has the email as username, `emailVerified: true`, a random
+  temporary password and the required action `UPDATE_PASSWORD`. Existing
+  accounts are left alone and listed.
+- The passwords go only to `--out` (mode 0600; the command refuses an existing
+  file and removes it if nothing was created), never to the terminal. Send each
+  person theirs another way, then delete the file.
+- It changes the live realm, so it asks to confirm unless `--yes`. `--dry-run`
+  creates nothing.
+
+**Rollout** (changes live infrastructure; the owner runs it, nothing here is run
+by an agent). Dev first:
+
+0. `az provider register --namespace Microsoft.Communication`.
+1. CI publishes `ghcr.io/uw-ssec/llmoxie-console`. Pin `console.image` by tag
+   and digest.
+2. DNS, in Cloudflare: a CNAME and an `asuid` TXT record for the admin and
+   console hostnames. Add and bind each hostname on the Traefik app
+   (`az containerapp hostname add`, then `bind`), and list the certificates in
+   `edge.custom_domains`, as for Keycloak above.
+3. Note your Keycloak user id (`<realm>` realm) for `console.admin_subjects`.
+4. `llmaven infra deploy --preview`, then `deploy`, each with approval. After
+   `up` the deploy runs the realm job, then `console-db`, then `console-init`,
+   each waited for. A failure raises
+   `Infrastructure deployed, but <purpose> did not finish` with the `az`
+   commands to read the logs; fix the cause and deploy again, since all three
+   are repeatable. `console_url`, `console_db_job` and `console_init_job` are
+   exported. The first console deploy may fail and need a re-run while the two
+   new identities' inline vault policies propagate (#171, as in
+   `bugs/key-vault-access-policy-replace`).
+5. Add the mail domain's records, start verification, set
+   `console.mail.domain_verified: true` and deploy again (preview first, and
+   check it is an in-place update, not a new connection string).
+6. Create the test accounts with `keycloak-users`.
+7. Run the end-to-end check in the design spec's "Done on dev".
+
+**Rollback.** Turn `console.enabled` off and deploy. The apps, jobs, share,
+identities, vaults and mail resources are removed; `console_db` is kept. LiteLLM
+keeps the `console-broker` user (`proxy_admin`) and its keys; revoke them there.
+`init_admin_key.py` mints a new key whenever the key file is missing or holds a
+key that doesn't work, and never revokes the old ones, so each re-enable (a new,
+empty share) adds another key. Unsetting `litellm.admin_hostname` (after the
+console is off) returns LiteLLM to one host; move scripts back to the gateway
+host first.
+
+Turning the console **back on** after that needs a step first. Key Vault
+soft-delete keeps the deleted console vaults' names reserved, so the create
+fails until you recover or purge them:
+
+```sh
+az keyvault recover --name kv-<project>-<env>-cw
+az keyvault recover --name kv-<project>-<env>-cb
+```
+
+(or `az keyvault purge` for each, which works only if purge protection is off).
+Whether the program then adopts a recovered vault cleanly is unverified. The
+same applies, also unverified, to the console secrets deleted from the main
+vault: `console-oidc-client-secret`, `console-web-db-password`,
+`console-broker-db-password` and `console-db-admin-password`. Soft-delete keeps
+their names reserved, so recover or purge each before re-enabling
+(`az keyvault secret recover --vault-name <main vault> --name <secret>`, or
+`az keyvault secret purge` with the same arguments). The retained `console_db`
+is no longer in Pulumi state, so re-enabling would try to create it again and
+fail until it is imported (`pulumi import`), as for `keycloak_db`; that path is
+unverified.
+
+**Unverified until dev** (what the offline tests and local runs could not show):
+
+- Who owns a database ARM creates (`azure_pg_admin` or the admin login), and
+  that `GRANT CONNECT` then `REVOKE CONNECT FROM PUBLIC` works on Azure.
+- The Azure Files mount with those uid, gid and mode options: that
+  `console-init` can write `/run/console/admin-key` and the broker can read it.
+- The broker and console-web answering `/healthz` 200 in a real container before
+  the jobs run, and their connection pools reconnecting once the database roles
+  and schema exist.
+- A real Azure Communication Services send, the error before the domain is
+  linked, and that flipping `domain_verified` is an in-place update with no
+  connection-string rotation.
+- That the console's access token carries `email`, `email_verified` and the
+  `console-broker` audience (the email scope comes from the realm's default
+  client scopes).
+- That Contributor can create all of it: identities, vaults with inline
+  policies, the Communication resources, the storage account and environment
+  storage.
+- Re-enabling after a disable, as above.

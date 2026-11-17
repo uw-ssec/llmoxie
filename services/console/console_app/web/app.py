@@ -20,17 +20,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import api, oidc, sessions
+from . import access_log, api, oidc, sessions
 from .visit import BROKER_URL, CALLER_SECRET, NOT_VALID, ApiError, Stop, Visit, broker_plain, see_other
 
 PUBLIC_URL = os.environ["CONSOLE_PUBLIC_URL"]
 GATEWAY_URL = os.environ["GATEWAY_PUBLIC_URL"]
 DIST = Path(__file__).parent / "dist"  # the built application: index.html and assets/
 
+access_log.install()  # invitation tokens and sign-in codes are in addresses; the access log must not keep them
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    sessions.pool.open(wait=True)
+    # Not waiting, as in the broker: on a first deploy console-web starts before the database job has
+    # made its role. The pool keeps trying in the background, and until then each request fails on its own.
+    sessions.pool.open(wait=False)
     yield
     sessions.pool.close()
 

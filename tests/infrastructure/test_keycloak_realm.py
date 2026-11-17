@@ -67,6 +67,7 @@ def test_client_secret_env_names():
         "litellm-gate": "KC_CLIENT_SECRET_LITELLM_GATE",
         "litellm": "KC_CLIENT_SECRET_LITELLM",
         "llmaven-cli": "KC_CLIENT_SECRET_LLMAVEN_CLI",
+        "console": "KC_CLIENT_SECRET_CONSOLE",
     }
 
 

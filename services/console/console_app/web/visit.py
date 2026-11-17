@@ -104,9 +104,11 @@ class Visit:
             raise self.signed_out(back=False)
         if response.status_code == 403:
             raise self.refuse(403, NO_ACCESS)
+        if response.status_code == 404 and self.api and response.json().get("error") == "knowledge_off":
+            raise ApiError(404, response.json()["message"])  # a console without the knowledge hub says so
         if response.status_code == 404 or (response.status_code == 422 and method == "GET"):
             raise self.refuse(404, NOT_FOUND)  # an id in the address that is not an id is a page that is not there
-        if response.status_code in (409, 422) and (back or self.api):
+        if response.status_code in (400, 409, 422) and (back or self.api):
             detail = response.json().get("detail")
             raise self.fixable(response.status_code, detail if isinstance(detail, str) else NOT_VALID, back)
         raise self.refuse(502, FAILED)

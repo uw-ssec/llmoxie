@@ -101,3 +101,11 @@ it('says how many concepts the graph leaves out', async () => {
   await openApp('/orgs/o1/knowledge')
   expect(await screen.findByText(/Showing the 2 most linked; 7 more are in the list below\./)).toBeInTheDocument()
 })
+
+it("says so when knowledge isn't set up on this console", async () => {
+  const off = { status: 404, json: { error: { status: 404, message: "Knowledge isn't set up on this console." } } }
+  serve({ ...lead, 'GET /web-api/orgs/o1/knowledge': off })
+  await openApp('/orgs/o1/knowledge')
+  expect(await screen.findByText("Knowledge isn't set up on this console.")).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Knowledge', level: 1 })).toBeNull()
+})

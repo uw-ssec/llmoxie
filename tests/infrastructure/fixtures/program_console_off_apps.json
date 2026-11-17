@@ -1,0 +1,455 @@
+{
+ "llmaven-dev-keycloak": {
+  "app_name": "llmaven-dev-keycloak",
+  "command_args": [
+   "start",
+   "--optimized",
+   "--cache=local"
+  ],
+  "container_image": "ghcr.io/uw-ssec/llmoxie-keycloak:26.5.5@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "container_port": 8080,
+  "cpu": 1.0,
+  "enable_ingress": true,
+  "env_vars": {
+   "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
+   "KC_HEALTH_ENABLED": "true",
+   "KC_HOSTNAME": "https://auth.example.org",
+   "KC_HOSTNAME_BACKCHANNEL_DYNAMIC": "true",
+   "KC_HTTP_ENABLED": "true",
+   "KC_PROXY_HEADERS": "xforwarded"
+  },
+  "environment": "dev",
+  "health_probe_path": "/health/ready",
+  "health_probe_port": 9000,
+  "ingress_external": false,
+  "key_vault_secret_refs": {
+   "KC_BOOTSTRAP_ADMIN_PASSWORD": "keycloak-admin-password",
+   "KC_DB_PASSWORD": "keycloak-db-password",
+   "KC_DB_URL": "keycloak-db-url",
+   "KC_DB_USERNAME": "keycloak-db-username"
+  },
+  "key_vault_uri": "<pulumi.output.Output object>",
+  "location": "eastus",
+  "managed_environment_id": "<pulumi.output.Output object>",
+  "managed_identity_id": "<pulumi.output.Output object>",
+  "max_replicas": 1,
+  "memory": "2Gi",
+  "min_replicas": 1,
+  "refresh_trigger": null,
+  "resolved_env": {
+   "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
+   "KC_HEALTH_ENABLED": "true",
+   "KC_HOSTNAME": "https://auth.example.org",
+   "KC_HOSTNAME_BACKCHANNEL_DYNAMIC": "true",
+   "KC_HTTP_ENABLED": "true",
+   "KC_PROXY_HEADERS": "xforwarded"
+  },
+  "resolved_secrets": {},
+  "resource_group_name": "rg-test",
+  "revision_suffix": null,
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  }
+ },
+ "llmaven-dev-litellm": {
+  "app_name": "llmaven-dev-litellm",
+  "command_args": [
+   "--config",
+   "/app/config/config.yaml"
+  ],
+  "container_image": "ghcr.io/uw-ssec/llmaven-litellm:latest",
+  "container_port": 4000,
+  "cpu": 0.5,
+  "custom_domains": [],
+  "enable_ingress": true,
+  "env_vars": {
+   "AUTO_REDIRECT_UI_LOGIN_TO_SSO": "true",
+   "GENERIC_AUTHORIZATION_ENDPOINT": "https://auth.example.org/realms/llmoxie/protocol/openid-connect/auth",
+   "GENERIC_CLIENT_ID": "litellm",
+   "GENERIC_ROLE_MAPPINGS_GROUP_CLAIM": "realm_access.roles",
+   "GENERIC_ROLE_MAPPINGS_ROLES": "{'proxy_admin': ['litellm-admin']}",
+   "GENERIC_SCOPE": "openid email profile",
+   "GENERIC_TOKEN_ENDPOINT": "<pulumi.output.Output object>",
+   "GENERIC_USERINFO_ENDPOINT": "<pulumi.output.Output object>",
+   "GENERIC_USER_DISPLAY_NAME_ATTRIBUTE": "name",
+   "GENERIC_USER_EMAIL_ATTRIBUTE": "email",
+   "GENERIC_USER_ID_ATTRIBUTE": "preferred_username",
+   "LITELLM_HOST": "0.0.0.0",
+   "PROXY_BASE_URL": "https://ai.example.org",
+   "REDIS_SSL": "true"
+  },
+  "environment": "dev",
+  "health_probe_path": "/health/liveliness",
+  "health_probe_port": null,
+  "ingress_external": false,
+  "ingress_target_port": null,
+  "inline_secrets": {
+   "adl-logger-py": "\"\"\"Custom LiteLLM callback that writes request/response JSON to Azure Data Lake Storage Gen2.\n\nRequired env vars:\n  AZURE_STORAGE_CONNECTION_STRING  - Full connection string\nOptional env vars:\n  ADLS_CONTAINER                   - Blob container name (default: litellm-logs)\n\nLog path layout: <container>/logs/<yyyy>/<mm>/<dd>/<request_id>.json\n\nOne file per request, written atomically via BlobClient.upload_blob().\nThe filename is the standard_logging_object[\"id\"] (e.g. \"chatcmpl-abc123\"),\nguaranteeing uniqueness without any coordination across workers or replicas.\n\"\"\"\n\nimport json\nimport logging\nimport os\nimport sys\nfrom datetime import datetime\nfrom typing import Any\n\nimport litellm\nfrom azure.core.exceptions import ResourceExistsError\nfrom azure.storage.blob import ContainerClient\nfrom azure.storage.blob.aio import BlobClient\nfrom litellm.integrations.custom_logger import CustomLogger\n\n# Configure logger with a StreamHandler so output appears in `docker compose logs`\n_handler = logging.StreamHandler(sys.stderr)\n_handler.setFormatter(logging.Formatter(\"[AdlLogger] %(levelname)s - %(message)s\"))\nlogger = logging.getLogger(__name__)\nlogger.addHandler(_handler)\nlogger.setLevel(logging.INFO)\nlogger.propagate = False  # Don't propagate to root logger\n\n\nclass AdlLogger(CustomLogger):\n    \"\"\"\n    CustomLogger implementation that writes logs to Azure Data Lake Storage Gen2.\n    \"\"\"\n\n    def __init__(self) -> None:\n        self._container = os.environ.get(\"ADLS_CONTAINER\", \"litellm-logs\")\n        self._connection_string = os.environ.get(\"AZURE_STORAGE_CONNECTION_STRING\")\n\n        if not self._connection_string:\n            raise ValueError(\n                \"AZURE_STORAGE_CONNECTION_STRING must be set for AdlLogger to authenticate with Azure Storage\"\n            )\n        # Local dev: Azurite with connection string\n        logger.info(\"AdlLogger initialized with AZURE_STORAGE_CONNECTION_STRING\")\n        # Create container synchronously on startup (not in async context)\n        self._ensure_container_sync(self._connection_string)\n\n    def _ensure_container_sync(self, connection_string: str) -> None:\n        \"\"\"Create container if it doesn't exist (sync, called during __init__).\"\"\"\n        try:\n            container_client = ContainerClient.from_connection_string(\n                connection_string, self._container\n            )\n            container_client.create_container()\n            logger.info(\"Container '%s' created\", self._container)\n        except ResourceExistsError:\n            pass  # Already exists \u2014 fine\n        except Exception as e:\n            logger.error(\"Could not create container '%s': %s\", self._container, e)\n\n    def _record_path(self, request_id: str, start_time: datetime) -> str:\n        return (\n            f\"logs/{start_time.year}/{start_time.month:02d}\"\n            f\"/{start_time.day:02d}/{request_id}.json\"\n        )\n\n    async def _get_blob_client(self, blob_name: str) -> BlobClient:\n        \"\"\"Get a BlobClient for the given blob name using the configured auth method.\"\"\"\n        return BlobClient.from_connection_string(\n            self._connection_string,\n            container_name=self._container,\n            blob_name=blob_name,\n        )\n\n    async def async_log_success_event(\n        self,\n        kwargs: dict,\n        response_obj: Any,\n        start_time: datetime,\n        end_time: datetime,\n    ) -> None:\n        try:\n            slo = kwargs.get(\"standard_logging_object\") or {}\n            request_id = (\n                slo.get(\"id\") or f\"{os.getpid()}_{start_time.strftime('%H%M%S%f')}\"\n            )\n            logger.info(\"Logging request_id '%s' to ADLS\", request_id)\n            record = {\n                \"timestamp_start\": start_time.isoformat(),\n                \"timestamp_end\": end_time.isoformat(),\n                \"kwargs\": kwargs,\n                \"response\": (\n                    response_obj.model_dump()\n                    if hasattr(response_obj, \"model_dump\")\n                    else None\n                ),\n                \"cost\": litellm.completion_cost(completion_response=response_obj),\n            }\n            blob_data = json.dumps(record, default=str).encode(\"utf-8\")\n\n            async with await self._get_blob_client(\n                self._record_path(request_id, start_time)\n            ) as blob_client:\n                await blob_client.upload_blob(blob_data, overwrite=True)\n        except Exception as exc:\n            logger.error(\"Failed to write to ADLS: %s\", exc)\n\n\nproxy_handler_instance = AdlLogger()\n",
+   "config-yaml": "# LiteLLM Configuration\n# This configuration file sets up Azure OpenAI endpoints and MLflow logging\n\nmodel_list:\n  # Azure OpenAI Models\n- model_name: gpt-5-mini\n  litellm_params:\n    model: azure/gpt-5-mini\n    api_base: os.environ/AZURE_API_BASE\n    api_key: os.environ/AZURE_API_KEY\n    api_version: os.environ/AZURE_API_VERSION\n\n# Logging Configuration - Push to mlflow\nlitellm_settings:\n  # Built-in string callbacks go in success/failure_callback\n  success_callback: [\"mlflow\"]\n  failure_callback: [\"mlflow\"]\n  # CustomLogger instances must go in `callbacks` so LiteLLM invokes\n  # async_log_success_event / async_log_failure_event on them.\n  # spend_logger writes one LLMOXIE_SPEND line per request for the spend alert.\n  callbacks: [adl_logger.proxy_handler_instance, spend_logger.proxy_handler_instance]\n  force_redis_hash_tag_grouping: true\n\n# General settings\ngeneral_settings:\n  master_key: os.environ/LITELLM_MASTER_KEY\n  database_url: os.environ/DATABASE_URL\n  store_prompts_in_spend_logs: true\n  store_model_in_db: true\n  disable_password_login_when_sso_enabled: true\nrouter_settings:\n  redis_host: os.environ/REDIS_HOST\n  redis_port: os.environ/REDIS_PORT\n  redis_password: os.environ/REDIS_PASSWORD\n",
+   "spend-logger-py": "\"\"\"LiteLLM callback that writes one spend line per successful request.\n\nEach line is ``LLMOXIE_SPEND {json}`` on stdout, which Azure Container Apps\nforwards to ``ContainerAppConsoleLogs_CL``. Prompts, responses, and raw API\nkeys are never written.\n\"\"\"\n\nimport json\nimport logging\nimport math\nimport re\nimport sys\nfrom datetime import datetime, timezone\nfrom typing import Any\n\nfrom litellm.integrations.custom_logger import CustomLogger\n\nSPEND_LINE_PREFIX = \"LLMOXIE_SPEND \"\n_SHA256_HEX = re.compile(r\"[0-9a-f]{64}\")\n\nlogger = logging.getLogger(\"SpendLogger\")\n_handler = logging.StreamHandler(sys.stderr)\n_handler.setFormatter(logging.Formatter(\"[SpendLogger] %(levelname)s - %(message)s\"))\nlogger.addHandler(_handler)\nlogger.setLevel(logging.INFO)\nlogger.propagate = False\n\n\ndef _key_hash(value: Any) -> str | None:\n    \"\"\"Return the hash only when it is a SHA-256 hex digest, else None.\"\"\"\n    if isinstance(value, str) and _SHA256_HEX.fullmatch(value):\n        return value\n    return None\n\n\ndef _finite_cost(value: Any) -> float | None:\n    \"\"\"Return the cost as a float, 0.0 when absent, or None when invalid.\n\n    None marks a cost that is present but not a finite number, so it is never\n    mistaken for zero spend.\n    \"\"\"\n    if value is None:\n        return 0.0\n    try:\n        cost = float(value)\n    except (TypeError, ValueError):\n        return None\n    return cost if math.isfinite(cost) else None\n\n\ndef spend_record(payload: dict) -> dict:\n    \"\"\"Build the spend record for one standard logging payload.\"\"\"\n    metadata = payload.get(\"metadata\") or {}\n    spend = _finite_cost(payload.get(\"response_cost\"))\n    if spend is None:\n        logger.warning(\n            \"invalid response_cost %r for request %s (model %s); spend written as null\",\n            payload.get(\"response_cost\"),\n            payload.get(\"id\"),\n            payload.get(\"model\"),\n        )\n    return {\n        \"ts\": datetime.now(timezone.utc).isoformat(),\n        \"request_id\": payload.get(\"id\"),\n        \"key_alias\": metadata.get(\"user_api_key_alias\"),\n        \"key_hash\": _key_hash(metadata.get(\"user_api_key_hash\")),\n        \"user_id\": metadata.get(\"user_api_key_user_id\"),\n        \"team_alias\": metadata.get(\"user_api_key_team_alias\"),\n        \"model\": payload.get(\"model\"),\n        \"spend\": spend,\n        \"total_tokens\": int(payload.get(\"total_tokens\") or 0),\n    }\n\n\nclass SpendLogger(CustomLogger):\n    async def async_log_success_event(\n        self,\n        kwargs: dict,\n        response_obj: Any,\n        start_time: datetime,\n        end_time: datetime,\n    ) -> None:\n        try:\n            payload = kwargs.get(\"standard_logging_object\")\n            if not payload:\n                return\n            record = spend_record(payload)\n            line = json.dumps(record, separators=(\",\", \":\"), allow_nan=False)\n            sys.stdout.write(SPEND_LINE_PREFIX + line + \"\\n\")\n            sys.stdout.flush()\n        except Exception:  # never fail the request over logging\n            logger.exception(\"failed to write spend record\")\n\n\nproxy_handler_instance = SpendLogger()\n"
+  },
+  "ip_security_restrictions": [],
+  "key_vault_secret_refs": {
+   "ANTHROPIC_API_KEY": "anthropic-api-key",
+   "AZURE_API_BASE": "azure-api-base",
+   "AZURE_API_KEY": "azure-api-key",
+   "AZURE_API_VERSION": "azure-api-version",
+   "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
+   "DATABASE_URL": "db-connection-string-litellm-db",
+   "GENERIC_CLIENT_SECRET": "keycloak-client-litellm",
+   "LITELLM_MASTER_KEY": "litellm-master-key",
+   "MLFLOW_EXPERIMENT_NAME": "mlflow-experiment-name",
+   "MLFLOW_TRACKING_URI": "mlflow-tracking-uri",
+   "REDIS_HOST": "redis-host",
+   "REDIS_PASSWORD": "redis-password",
+   "REDIS_PORT": "redis-port"
+  },
+  "key_vault_uri": "<pulumi.output.Output object>",
+  "location": "eastus",
+  "managed_environment_id": "<pulumi.output.Output object>",
+  "managed_identity_id": "<pulumi.output.Output object>",
+  "max_replicas": 2,
+  "memory": "1Gi",
+  "min_replicas": 1,
+  "refresh_trigger": null,
+  "resolved_env": {
+   "AUTO_REDIRECT_UI_LOGIN_TO_SSO": "true",
+   "GENERIC_AUTHORIZATION_ENDPOINT": "https://auth.example.org/realms/llmoxie/protocol/openid-connect/auth",
+   "GENERIC_CLIENT_ID": "litellm",
+   "GENERIC_ROLE_MAPPINGS_GROUP_CLAIM": "realm_access.roles",
+   "GENERIC_ROLE_MAPPINGS_ROLES": "{'proxy_admin': ['litellm-admin']}",
+   "GENERIC_SCOPE": "openid email profile",
+   "GENERIC_TOKEN_ENDPOINT": "https://llmaven-dev-keycloak.internal.env.test/realms/llmoxie/protocol/openid-connect/token",
+   "GENERIC_USERINFO_ENDPOINT": "https://llmaven-dev-keycloak.internal.env.test/realms/llmoxie/protocol/openid-connect/userinfo",
+   "GENERIC_USER_DISPLAY_NAME_ATTRIBUTE": "name",
+   "GENERIC_USER_EMAIL_ATTRIBUTE": "email",
+   "GENERIC_USER_ID_ATTRIBUTE": "preferred_username",
+   "LITELLM_HOST": "0.0.0.0",
+   "PROXY_BASE_URL": "https://ai.example.org",
+   "REDIS_SSL": "true"
+  },
+  "resolved_secrets": {
+   "adl-logger-py": "\"\"\"Custom LiteLLM callback that writes request/response JSON to Azure Data Lake Storage Gen2.\n\nRequired env vars:\n  AZURE_STORAGE_CONNECTION_STRING  - Full connection string\nOptional env vars:\n  ADLS_CONTAINER                   - Blob container name (default: litellm-logs)\n\nLog path layout: <container>/logs/<yyyy>/<mm>/<dd>/<request_id>.json\n\nOne file per request, written atomically via BlobClient.upload_blob().\nThe filename is the standard_logging_object[\"id\"] (e.g. \"chatcmpl-abc123\"),\nguaranteeing uniqueness without any coordination across workers or replicas.\n\"\"\"\n\nimport json\nimport logging\nimport os\nimport sys\nfrom datetime import datetime\nfrom typing import Any\n\nimport litellm\nfrom azure.core.exceptions import ResourceExistsError\nfrom azure.storage.blob import ContainerClient\nfrom azure.storage.blob.aio import BlobClient\nfrom litellm.integrations.custom_logger import CustomLogger\n\n# Configure logger with a StreamHandler so output appears in `docker compose logs`\n_handler = logging.StreamHandler(sys.stderr)\n_handler.setFormatter(logging.Formatter(\"[AdlLogger] %(levelname)s - %(message)s\"))\nlogger = logging.getLogger(__name__)\nlogger.addHandler(_handler)\nlogger.setLevel(logging.INFO)\nlogger.propagate = False  # Don't propagate to root logger\n\n\nclass AdlLogger(CustomLogger):\n    \"\"\"\n    CustomLogger implementation that writes logs to Azure Data Lake Storage Gen2.\n    \"\"\"\n\n    def __init__(self) -> None:\n        self._container = os.environ.get(\"ADLS_CONTAINER\", \"litellm-logs\")\n        self._connection_string = os.environ.get(\"AZURE_STORAGE_CONNECTION_STRING\")\n\n        if not self._connection_string:\n            raise ValueError(\n                \"AZURE_STORAGE_CONNECTION_STRING must be set for AdlLogger to authenticate with Azure Storage\"\n            )\n        # Local dev: Azurite with connection string\n        logger.info(\"AdlLogger initialized with AZURE_STORAGE_CONNECTION_STRING\")\n        # Create container synchronously on startup (not in async context)\n        self._ensure_container_sync(self._connection_string)\n\n    def _ensure_container_sync(self, connection_string: str) -> None:\n        \"\"\"Create container if it doesn't exist (sync, called during __init__).\"\"\"\n        try:\n            container_client = ContainerClient.from_connection_string(\n                connection_string, self._container\n            )\n            container_client.create_container()\n            logger.info(\"Container '%s' created\", self._container)\n        except ResourceExistsError:\n            pass  # Already exists \u2014 fine\n        except Exception as e:\n            logger.error(\"Could not create container '%s': %s\", self._container, e)\n\n    def _record_path(self, request_id: str, start_time: datetime) -> str:\n        return (\n            f\"logs/{start_time.year}/{start_time.month:02d}\"\n            f\"/{start_time.day:02d}/{request_id}.json\"\n        )\n\n    async def _get_blob_client(self, blob_name: str) -> BlobClient:\n        \"\"\"Get a BlobClient for the given blob name using the configured auth method.\"\"\"\n        return BlobClient.from_connection_string(\n            self._connection_string,\n            container_name=self._container,\n            blob_name=blob_name,\n        )\n\n    async def async_log_success_event(\n        self,\n        kwargs: dict,\n        response_obj: Any,\n        start_time: datetime,\n        end_time: datetime,\n    ) -> None:\n        try:\n            slo = kwargs.get(\"standard_logging_object\") or {}\n            request_id = (\n                slo.get(\"id\") or f\"{os.getpid()}_{start_time.strftime('%H%M%S%f')}\"\n            )\n            logger.info(\"Logging request_id '%s' to ADLS\", request_id)\n            record = {\n                \"timestamp_start\": start_time.isoformat(),\n                \"timestamp_end\": end_time.isoformat(),\n                \"kwargs\": kwargs,\n                \"response\": (\n                    response_obj.model_dump()\n                    if hasattr(response_obj, \"model_dump\")\n                    else None\n                ),\n                \"cost\": litellm.completion_cost(completion_response=response_obj),\n            }\n            blob_data = json.dumps(record, default=str).encode(\"utf-8\")\n\n            async with await self._get_blob_client(\n                self._record_path(request_id, start_time)\n            ) as blob_client:\n                await blob_client.upload_blob(blob_data, overwrite=True)\n        except Exception as exc:\n            logger.error(\"Failed to write to ADLS: %s\", exc)\n\n\nproxy_handler_instance = AdlLogger()\n",
+   "config-yaml": "# LiteLLM Configuration\n# This configuration file sets up Azure OpenAI endpoints and MLflow logging\n\nmodel_list:\n  # Azure OpenAI Models\n- model_name: gpt-5-mini\n  litellm_params:\n    model: azure/gpt-5-mini\n    api_base: os.environ/AZURE_API_BASE\n    api_key: os.environ/AZURE_API_KEY\n    api_version: os.environ/AZURE_API_VERSION\n\n# Logging Configuration - Push to mlflow\nlitellm_settings:\n  # Built-in string callbacks go in success/failure_callback\n  success_callback: [\"mlflow\"]\n  failure_callback: [\"mlflow\"]\n  # CustomLogger instances must go in `callbacks` so LiteLLM invokes\n  # async_log_success_event / async_log_failure_event on them.\n  # spend_logger writes one LLMOXIE_SPEND line per request for the spend alert.\n  callbacks: [adl_logger.proxy_handler_instance, spend_logger.proxy_handler_instance]\n  force_redis_hash_tag_grouping: true\n\n# General settings\ngeneral_settings:\n  master_key: os.environ/LITELLM_MASTER_KEY\n  database_url: os.environ/DATABASE_URL\n  store_prompts_in_spend_logs: true\n  store_model_in_db: true\n  disable_password_login_when_sso_enabled: true\nrouter_settings:\n  redis_host: os.environ/REDIS_HOST\n  redis_port: os.environ/REDIS_PORT\n  redis_password: os.environ/REDIS_PASSWORD\n",
+   "spend-logger-py": "\"\"\"LiteLLM callback that writes one spend line per successful request.\n\nEach line is ``LLMOXIE_SPEND {json}`` on stdout, which Azure Container Apps\nforwards to ``ContainerAppConsoleLogs_CL``. Prompts, responses, and raw API\nkeys are never written.\n\"\"\"\n\nimport json\nimport logging\nimport math\nimport re\nimport sys\nfrom datetime import datetime, timezone\nfrom typing import Any\n\nfrom litellm.integrations.custom_logger import CustomLogger\n\nSPEND_LINE_PREFIX = \"LLMOXIE_SPEND \"\n_SHA256_HEX = re.compile(r\"[0-9a-f]{64}\")\n\nlogger = logging.getLogger(\"SpendLogger\")\n_handler = logging.StreamHandler(sys.stderr)\n_handler.setFormatter(logging.Formatter(\"[SpendLogger] %(levelname)s - %(message)s\"))\nlogger.addHandler(_handler)\nlogger.setLevel(logging.INFO)\nlogger.propagate = False\n\n\ndef _key_hash(value: Any) -> str | None:\n    \"\"\"Return the hash only when it is a SHA-256 hex digest, else None.\"\"\"\n    if isinstance(value, str) and _SHA256_HEX.fullmatch(value):\n        return value\n    return None\n\n\ndef _finite_cost(value: Any) -> float | None:\n    \"\"\"Return the cost as a float, 0.0 when absent, or None when invalid.\n\n    None marks a cost that is present but not a finite number, so it is never\n    mistaken for zero spend.\n    \"\"\"\n    if value is None:\n        return 0.0\n    try:\n        cost = float(value)\n    except (TypeError, ValueError):\n        return None\n    return cost if math.isfinite(cost) else None\n\n\ndef spend_record(payload: dict) -> dict:\n    \"\"\"Build the spend record for one standard logging payload.\"\"\"\n    metadata = payload.get(\"metadata\") or {}\n    spend = _finite_cost(payload.get(\"response_cost\"))\n    if spend is None:\n        logger.warning(\n            \"invalid response_cost %r for request %s (model %s); spend written as null\",\n            payload.get(\"response_cost\"),\n            payload.get(\"id\"),\n            payload.get(\"model\"),\n        )\n    return {\n        \"ts\": datetime.now(timezone.utc).isoformat(),\n        \"request_id\": payload.get(\"id\"),\n        \"key_alias\": metadata.get(\"user_api_key_alias\"),\n        \"key_hash\": _key_hash(metadata.get(\"user_api_key_hash\")),\n        \"user_id\": metadata.get(\"user_api_key_user_id\"),\n        \"team_alias\": metadata.get(\"user_api_key_team_alias\"),\n        \"model\": payload.get(\"model\"),\n        \"spend\": spend,\n        \"total_tokens\": int(payload.get(\"total_tokens\") or 0),\n    }\n\n\nclass SpendLogger(CustomLogger):\n    async def async_log_success_event(\n        self,\n        kwargs: dict,\n        response_obj: Any,\n        start_time: datetime,\n        end_time: datetime,\n    ) -> None:\n        try:\n            payload = kwargs.get(\"standard_logging_object\")\n            if not payload:\n                return\n            record = spend_record(payload)\n            line = json.dumps(record, separators=(\",\", \":\"), allow_nan=False)\n            sys.stdout.write(SPEND_LINE_PREFIX + line + \"\\n\")\n            sys.stdout.flush()\n        except Exception:  # never fail the request over logging\n            logger.exception(\"failed to write spend record\")\n\n\nproxy_handler_instance = SpendLogger()\n"
+  },
+  "resource_group_name": "rg-test",
+  "revision_suffix": null,
+  "sidecars": null,
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  },
+  "volume_mounts": [
+   {
+    "__type__": "VolumeMountArgs",
+    "mount_path": "/app/config",
+    "volume_name": "litellm-config-volume"
+   }
+  ],
+  "volumes": [
+   {
+    "__type__": "VolumeArgs",
+    "name": "litellm-config-volume",
+    "secrets": [
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "adl_logger.py",
+      "secret_ref": "adl-logger-py"
+     },
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "spend_logger.py",
+      "secret_ref": "spend-logger-py"
+     },
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "config.yaml",
+      "secret_ref": "config-yaml"
+     }
+    ],
+    "storage_type": "Secret"
+   }
+  ]
+ },
+ "llmaven-dev-llm-auth": {
+  "app_name": "llmaven-dev-llm-auth",
+  "container_image": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048",
+  "container_port": 4180,
+  "cpu": 0.25,
+  "enable_ingress": true,
+  "env_vars": {
+   "OAUTH2_PROXY_ALLOWED_ROLES": "litellm-admin",
+   "OAUTH2_PROXY_CLIENT_ID": "litellm-gate",
+   "OAUTH2_PROXY_CODE_CHALLENGE_METHOD": "S256",
+   "OAUTH2_PROXY_COOKIE_EXPIRE": "10h",
+   "OAUTH2_PROXY_COOKIE_NAME": "_llmoxie_litellm",
+   "OAUTH2_PROXY_COOKIE_REFRESH": "1m",
+   "OAUTH2_PROXY_COOKIE_SECURE": "true",
+   "OAUTH2_PROXY_EMAIL_DOMAINS": "*",
+   "OAUTH2_PROXY_HTTP_ADDRESS": "0.0.0.0:4180",
+   "OAUTH2_PROXY_LOGIN_URL": "https://auth.example.org/realms/llmoxie/protocol/openid-connect/auth",
+   "OAUTH2_PROXY_OIDC_ISSUER_URL": "https://auth.example.org/realms/llmoxie",
+   "OAUTH2_PROXY_OIDC_JWKS_URL": "<pulumi.output.Output object>",
+   "OAUTH2_PROXY_PROVIDER": "keycloak-oidc",
+   "OAUTH2_PROXY_REDEEM_URL": "<pulumi.output.Output object>",
+   "OAUTH2_PROXY_REDIRECT_URL": "https://ai.example.org/oauth2/callback",
+   "OAUTH2_PROXY_REVERSE_PROXY": "true",
+   "OAUTH2_PROXY_SKIP_OIDC_DISCOVERY": "true",
+   "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
+   "OAUTH2_PROXY_UPSTREAMS": "static://202",
+   "OAUTH2_PROXY_WHITELIST_DOMAINS": "ai.example.org"
+  },
+  "environment": "dev",
+  "health_probe_path": "/ping",
+  "health_probe_port": 4180,
+  "ingress_external": false,
+  "key_vault_secret_refs": {
+   "OAUTH2_PROXY_CLIENT_SECRET": "keycloak-client-litellm-gate",
+   "OAUTH2_PROXY_COOKIE_SECRET": "oauth2-proxy-cookie-litellm"
+  },
+  "key_vault_uri": "<pulumi.output.Output object>",
+  "location": "eastus",
+  "managed_environment_id": "<pulumi.output.Output object>",
+  "managed_identity_id": "<pulumi.output.Output object>",
+  "max_replicas": 1,
+  "memory": "0.5Gi",
+  "min_replicas": 1,
+  "refresh_trigger": null,
+  "resolved_env": {
+   "OAUTH2_PROXY_ALLOWED_ROLES": "litellm-admin",
+   "OAUTH2_PROXY_CLIENT_ID": "litellm-gate",
+   "OAUTH2_PROXY_CODE_CHALLENGE_METHOD": "S256",
+   "OAUTH2_PROXY_COOKIE_EXPIRE": "10h",
+   "OAUTH2_PROXY_COOKIE_NAME": "_llmoxie_litellm",
+   "OAUTH2_PROXY_COOKIE_REFRESH": "1m",
+   "OAUTH2_PROXY_COOKIE_SECURE": "true",
+   "OAUTH2_PROXY_EMAIL_DOMAINS": "*",
+   "OAUTH2_PROXY_HTTP_ADDRESS": "0.0.0.0:4180",
+   "OAUTH2_PROXY_LOGIN_URL": "https://auth.example.org/realms/llmoxie/protocol/openid-connect/auth",
+   "OAUTH2_PROXY_OIDC_ISSUER_URL": "https://auth.example.org/realms/llmoxie",
+   "OAUTH2_PROXY_OIDC_JWKS_URL": "https://llmaven-dev-keycloak.internal.env.test/realms/llmoxie/protocol/openid-connect/certs",
+   "OAUTH2_PROXY_PROVIDER": "keycloak-oidc",
+   "OAUTH2_PROXY_REDEEM_URL": "https://llmaven-dev-keycloak.internal.env.test/realms/llmoxie/protocol/openid-connect/token",
+   "OAUTH2_PROXY_REDIRECT_URL": "https://ai.example.org/oauth2/callback",
+   "OAUTH2_PROXY_REVERSE_PROXY": "true",
+   "OAUTH2_PROXY_SKIP_OIDC_DISCOVERY": "true",
+   "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
+   "OAUTH2_PROXY_UPSTREAMS": "static://202",
+   "OAUTH2_PROXY_WHITELIST_DOMAINS": "ai.example.org"
+  },
+  "resolved_secrets": {},
+  "resource_group_name": "rg-test",
+  "revision_suffix": null,
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  }
+ },
+ "llmaven-dev-ml-auth": {
+  "app_name": "llmaven-dev-ml-auth",
+  "container_image": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048",
+  "container_port": 4180,
+  "cpu": 0.25,
+  "enable_ingress": true,
+  "env_vars": {
+   "OAUTH2_PROXY_ALLOWED_ROLES": "mlflow-user",
+   "OAUTH2_PROXY_CLIENT_ID": "mlflow-gate",
+   "OAUTH2_PROXY_CODE_CHALLENGE_METHOD": "S256",
+   "OAUTH2_PROXY_COOKIE_EXPIRE": "10h",
+   "OAUTH2_PROXY_COOKIE_NAME": "_llmoxie_mlflow",
+   "OAUTH2_PROXY_COOKIE_REFRESH": "1m",
+   "OAUTH2_PROXY_COOKIE_SECURE": "true",
+   "OAUTH2_PROXY_EMAIL_DOMAINS": "*",
+   "OAUTH2_PROXY_HTTP_ADDRESS": "0.0.0.0:4180",
+   "OAUTH2_PROXY_LOGIN_URL": "https://auth.example.org/realms/llmoxie/protocol/openid-connect/auth",
+   "OAUTH2_PROXY_OIDC_ISSUER_URL": "https://auth.example.org/realms/llmoxie",
+   "OAUTH2_PROXY_OIDC_JWKS_URL": "<pulumi.output.Output object>",
+   "OAUTH2_PROXY_PROVIDER": "keycloak-oidc",
+   "OAUTH2_PROXY_REDEEM_URL": "<pulumi.output.Output object>",
+   "OAUTH2_PROXY_REDIRECT_URL": "https://mlflow.example.org/oauth2/callback",
+   "OAUTH2_PROXY_REVERSE_PROXY": "true",
+   "OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS": "true",
+   "OAUTH2_PROXY_SKIP_OIDC_DISCOVERY": "true",
+   "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
+   "OAUTH2_PROXY_UPSTREAMS": "static://202",
+   "OAUTH2_PROXY_WHITELIST_DOMAINS": "mlflow.example.org"
+  },
+  "environment": "dev",
+  "health_probe_path": "/ping",
+  "health_probe_port": 4180,
+  "ingress_external": false,
+  "key_vault_secret_refs": {
+   "OAUTH2_PROXY_CLIENT_SECRET": "keycloak-client-mlflow-gate",
+   "OAUTH2_PROXY_COOKIE_SECRET": "oauth2-proxy-cookie-mlflow"
+  },
+  "key_vault_uri": "<pulumi.output.Output object>",
+  "location": "eastus",
+  "managed_environment_id": "<pulumi.output.Output object>",
+  "managed_identity_id": "<pulumi.output.Output object>",
+  "max_replicas": 1,
+  "memory": "0.5Gi",
+  "min_replicas": 1,
+  "refresh_trigger": null,
+  "resolved_env": {
+   "OAUTH2_PROXY_ALLOWED_ROLES": "mlflow-user",
+   "OAUTH2_PROXY_CLIENT_ID": "mlflow-gate",
+   "OAUTH2_PROXY_CODE_CHALLENGE_METHOD": "S256",
+   "OAUTH2_PROXY_COOKIE_EXPIRE": "10h",
+   "OAUTH2_PROXY_COOKIE_NAME": "_llmoxie_mlflow",
+   "OAUTH2_PROXY_COOKIE_REFRESH": "1m",
+   "OAUTH2_PROXY_COOKIE_SECURE": "true",
+   "OAUTH2_PROXY_EMAIL_DOMAINS": "*",
+   "OAUTH2_PROXY_HTTP_ADDRESS": "0.0.0.0:4180",
+   "OAUTH2_PROXY_LOGIN_URL": "https://auth.example.org/realms/llmoxie/protocol/openid-connect/auth",
+   "OAUTH2_PROXY_OIDC_ISSUER_URL": "https://auth.example.org/realms/llmoxie",
+   "OAUTH2_PROXY_OIDC_JWKS_URL": "https://llmaven-dev-keycloak.internal.env.test/realms/llmoxie/protocol/openid-connect/certs",
+   "OAUTH2_PROXY_PROVIDER": "keycloak-oidc",
+   "OAUTH2_PROXY_REDEEM_URL": "https://llmaven-dev-keycloak.internal.env.test/realms/llmoxie/protocol/openid-connect/token",
+   "OAUTH2_PROXY_REDIRECT_URL": "https://mlflow.example.org/oauth2/callback",
+   "OAUTH2_PROXY_REVERSE_PROXY": "true",
+   "OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS": "true",
+   "OAUTH2_PROXY_SKIP_OIDC_DISCOVERY": "true",
+   "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
+   "OAUTH2_PROXY_UPSTREAMS": "static://202",
+   "OAUTH2_PROXY_WHITELIST_DOMAINS": "mlflow.example.org"
+  },
+  "resolved_secrets": {},
+  "resource_group_name": "rg-test",
+  "revision_suffix": null,
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  }
+ },
+ "llmaven-dev-mlflow": {
+  "app_name": "llmaven-dev-mlflow",
+  "container_image": "ghcr.io/uw-ssec/llmaven-mlflow:latest",
+  "container_port": 8080,
+  "cpu": 0.5,
+  "custom_domains": [],
+  "enable_ingress": true,
+  "env_vars": {
+   "MLFLOW_HOST": "0.0.0.0"
+  },
+  "environment": "dev",
+  "health_probe_path": "/health",
+  "ingress_external": false,
+  "key_vault_secret_refs": {
+   "AZURE_STORAGE_CONNECTION_STRING": "storage-connection-string",
+   "MLFLOW_BACKEND_STORE_URI": "db-connection-string-mlflow-db",
+   "MLFLOW_DEFAULT_ARTIFACT_ROOT": "mlflow-artifact-root"
+  },
+  "key_vault_uri": "<pulumi.output.Output object>",
+  "location": "eastus",
+  "managed_environment_id": "<pulumi.output.Output object>",
+  "managed_identity_id": "<pulumi.output.Output object>",
+  "max_replicas": 2,
+  "memory": "1Gi",
+  "min_replicas": 1,
+  "resolved_env": {
+   "MLFLOW_HOST": "0.0.0.0"
+  },
+  "resolved_secrets": {},
+  "resource_group_name": "rg-test",
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  }
+ },
+ "llmaven-dev-traefik": {
+  "app_name": "llmaven-dev-traefik",
+  "command_args": [
+   "--entryPoints.web.address=:8080",
+   "--entryPoints.web.forwardedHeaders.trustedIPs=100.100.0.0/17",
+   "--entryPoints.web.transport.respondingTimeouts.readTimeout=300s",
+   "--entryPoints.ping.address=:8082",
+   "--ping=true",
+   "--ping.entryPoint=ping",
+   "--providers.file.filename=/etc/traefik/dynamic/dynamic.yaml",
+   "--providers.file.watch=false",
+   "--accessLog=true",
+   "--log.level=INFO",
+   "--global.checkNewVersion=false",
+   "--global.sendAnonymousUsage=false"
+  ],
+  "container_image": "docker.io/library/traefik:v3.7.17@sha256:321153f6f732f912cf5c6f0597fe38743fc7895d482d7d8804a479ae0403e151",
+  "container_port": 8080,
+  "cpu": 0.5,
+  "custom_domains": [
+   "CustomDomainConfig(name='ai.example.org', certificate_name='cert-0')",
+   "CustomDomainConfig(name='mlflow.example.org', certificate_name='cert-1')",
+   "CustomDomainConfig(name='auth.example.org', certificate_name='cert-2')"
+  ],
+  "enable_ingress": true,
+  "env_vars": {
+   "TRAEFIK_POLICY_SHA256": "<pulumi.output.Output object>"
+  },
+  "environment": "dev",
+  "health_probe_path": "/ping",
+  "health_probe_port": 8082,
+  "ingress_external": true,
+  "inline_secrets": {
+   "traefik-dynamic-yaml": "<pulumi.output.Output object>"
+  },
+  "key_vault_uri": "<pulumi.output.Output object>",
+  "location": "eastus",
+  "managed_environment_id": "<pulumi.output.Output object>",
+  "max_replicas": 3,
+  "memory": "1Gi",
+  "min_replicas": 1,
+  "refresh_trigger": null,
+  "resolved_env": {
+   "TRAEFIK_POLICY_SHA256": "93977cbdea4c39807228d9e0d6d62ae463a1ac85d553ed3b5f19b82ccd0d1ea0"
+  },
+  "resolved_secrets": {
+   "traefik-dynamic-yaml": "http:\n  routers:\n    litellm-health:\n      entryPoints:\n      - web\n      rule: Host(`ai.example.org`) && (Path(`/health/liveliness`) || Path(`/health/liveness`))\n      priority: 300\n      service: litellm\n    litellm-public:\n      entryPoints:\n      - web\n      rule: Host(`ai.example.org`) && (Path(`/v1/chat/completions`) || Path(`/chat/completions`) || Path(`/v1/completions`) || Path(`/completions`) || Path(`/v1/embeddings`) || Path(`/embeddings`) || Path(`/v1/messages`) || Path(`/v1/messages/count_tokens`) || Path(`/v1/responses`) || Path(`/responses`) || Path(`/openai/v1/responses`) || Path(`/v1/rerank`) || Path(`/v2/rerank`) || Path(`/rerank`) || Path(`/v1/models`) || Path(`/models`))\n      priority: 200\n      service: litellm\n      middlewares:\n      - client-rate-limit\n    litellm-oauth2:\n      entryPoints:\n      - web\n      rule: Host(`ai.example.org`) && PathPrefix(`/oauth2/`)\n      priority: 150\n      middlewares:\n      - client-rate-limit\n      service: litellm-auth\n    litellm-session:\n      entryPoints:\n      - web\n      rule: Host(`ai.example.org`) && HeaderRegexp(`Cookie`, `(^|;\\s*)_llmoxie_litellm(_\\d+)?=`)\n      priority: 100\n      middlewares:\n      - litellm-login\n      - client-rate-limit\n      service: litellm\n    litellm-bearer:\n      entryPoints:\n      - web\n      rule: Host(`ai.example.org`) && HeaderRegexp(`Authorization`, `^Bearer `) && !HeaderRegexp(`Cookie`, `(^|;\\s*)_llmoxie_litellm(_\\d+)?=`) && !PathRegexp(`[%\\\\\\x00;]`) && !(Path(`/ui`) || PathPrefix(`/ui/`) || Path(`/_next`) || PathPrefix(`/_next/`) || Path(`/litellm-asset-prefix`) || PathPrefix(`/litellm-asset-prefix/`) || Path(`/login`) || PathPrefix(`/login/`) || Path(`/v2/login`) || PathPrefix(`/v2/login/`) || Path(`/v3/login`) || PathPrefix(`/v3/login/`) || Path(`/fallback/login`) || PathPrefix(`/fallback/login/`) || Path(`/sso`) || PathPrefix(`/sso/`) || Path(`/onboarding`) || PathPrefix(`/onboarding/`) || Path(`/get_image`) || PathPrefix(`/get_image/`) || Path(`/get_logo_url`) || PathPrefix(`/get_logo_url/`) || Path(`/get_favicon`) || PathPrefix(`/get_favicon/`) || Path(`/.well-known/litellm-ui-config`) || PathPrefix(`/.well-known/litellm-ui-config/`) || Path(`/litellm/.well-known/litellm-ui-config`) || PathPrefix(`/litellm/.well-known/litellm-ui-config/`))\n      priority: 50\n      middlewares:\n      - litellm-admin-ip-allowlist\n      - client-rate-limit\n      service: litellm\n    litellm-admin:\n      entryPoints:\n      - web\n      rule: Host(`ai.example.org`)\n      priority: 1\n      middlewares:\n      - litellm-login\n      - client-rate-limit\n      service: litellm\n    mlflow:\n      entryPoints:\n      - web\n      rule: Host(`mlflow.example.org`)\n      service: mlflow\n      priority: 1\n      middlewares:\n      - mlflow-login\n    mlflow-oauth2:\n      entryPoints:\n      - web\n      rule: Host(`mlflow.example.org`) && PathPrefix(`/oauth2/`)\n      priority: 150\n      middlewares:\n      - client-rate-limit\n      service: mlflow-auth\n    keycloak-realms:\n      entryPoints:\n      - web\n      rule: Host(`auth.example.org`) && PathPrefix(`/realms/`)\n      middlewares:\n      - client-rate-limit\n      service: keycloak\n    keycloak-resources:\n      entryPoints:\n      - web\n      rule: Host(`auth.example.org`) && PathPrefix(`/resources/`)\n      middlewares:\n      - client-rate-limit\n      service: keycloak\n    keycloak-admin:\n      entryPoints:\n      - web\n      rule: Host(`auth.example.org`) && PathPrefix(`/admin/`)\n      middlewares:\n      - keycloak-admin-ip-allowlist\n      - client-rate-limit\n      service: keycloak\n  middlewares:\n    client-rate-limit:\n      rateLimit:\n        average: 50\n        burst: 100\n        period: 1s\n        sourceCriterion:\n          ipStrategy:\n            depth: 1\n    litellm-admin-ip-allowlist:\n      ipAllowList:\n        sourceRange: &id001\n        - 127.0.0.1/32\n        ipStrategy:\n          depth: 1\n    litellm-login:\n      forwardAuth:\n        address: https://llmaven-dev-llm-auth.internal.env.test/\n        trustForwardHeader: true\n    mlflow-login:\n      forwardAuth:\n        address: https://llmaven-dev-ml-auth.internal.env.test/\n        trustForwardHeader: true\n    keycloak-admin-ip-allowlist:\n      ipAllowList:\n        sourceRange: *id001\n        ipStrategy:\n          depth: 1\n  services:\n    litellm-auth:\n      loadBalancer:\n        servers:\n        - url: https://llmaven-dev-llm-auth.internal.env.test\n        passHostHeader: false\n        responseForwarding:\n          flushInterval: 100ms\n    litellm:\n      loadBalancer:\n        servers:\n        - url: https://llmaven-dev-litellm.internal.env.test\n        passHostHeader: false\n        responseForwarding:\n          flushInterval: 100ms\n    mlflow-auth:\n      loadBalancer:\n        servers:\n        - url: https://llmaven-dev-ml-auth.internal.env.test\n        passHostHeader: false\n        responseForwarding:\n          flushInterval: 100ms\n    mlflow:\n      loadBalancer:\n        servers:\n        - url: https://llmaven-dev-mlflow.internal.env.test\n        passHostHeader: false\n        responseForwarding:\n          flushInterval: 100ms\n    keycloak:\n      loadBalancer:\n        servers:\n        - url: https://llmaven-dev-keycloak.internal.env.test\n        passHostHeader: false\n        responseForwarding:\n          flushInterval: 100ms\n"
+  },
+  "resource_group_name": "rg-test",
+  "revision_suffix": null,
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  },
+  "volume_mounts": [
+   {
+    "__type__": "VolumeMountArgs",
+    "mount_path": "/etc/traefik/dynamic",
+    "volume_name": "traefik-config-volume"
+   }
+  ],
+  "volumes": [
+   {
+    "__type__": "VolumeArgs",
+    "name": "traefik-config-volume",
+    "secrets": [
+     {
+      "__type__": "SecretVolumeItemArgs",
+      "path": "dynamic.yaml",
+      "secret_ref": "traefik-dynamic-yaml"
+     }
+    ],
+    "storage_type": "Secret"
+   }
+  ]
+ }
+}

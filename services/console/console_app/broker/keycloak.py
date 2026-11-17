@@ -14,11 +14,21 @@ import secrets
 
 import httpx
 
-_ADMIN = os.environ["KEYCLOAK_ADMIN_URL"]          # .../admin/realms/<realm>
-TOKEN_URL = os.environ["KEYCLOAK_TOKEN_URL"]       # where LiteLLM fetches each organization's token, too
-_CLIENT_ID = os.environ["KEYCLOAK_PROVISIONER_CLIENT_ID"]
-_CLIENT_SECRET = os.environ["KEYCLOAK_PROVISIONER_CLIENT_SECRET"]
-HUB_URL = os.environ["KNOWLEDGE_HUB_URL"].rstrip("/")  # also the audience the hub expects
+# Knowledge is on when the console has a hub. Without one, no KEYCLOAK_* or KNOWLEDGE_* setting is needed
+# and nothing here is called.
+ENABLED = bool(os.environ.get("KNOWLEDGE_HUB_URL"))
+
+
+def setting(name: str) -> str:
+    """A knowledge setting: required when knowledge is on, empty when it is off."""
+    return os.environ[name] if ENABLED else os.environ.get(name, "")
+
+
+_ADMIN = setting("KEYCLOAK_ADMIN_URL")             # .../admin/realms/<realm>
+TOKEN_URL = setting("KEYCLOAK_TOKEN_URL")          # where LiteLLM fetches each organization's token, too
+_CLIENT_ID = setting("KEYCLOAK_PROVISIONER_CLIENT_ID")
+_CLIENT_SECRET = setting("KEYCLOAK_PROVISIONER_CLIENT_SECRET")
+HUB_URL = setting("KNOWLEDGE_HUB_URL").rstrip("/")  # also the audience the hub expects
 ORG_CLAIM = "okf_org"                              # the hub's `actor_claim` must name the same claim
 
 

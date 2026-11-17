@@ -406,16 +406,18 @@ REALM_JOB_PROGRESS_S = 30
 REALM_JOB_CONTAINER = "realm-import"
 
 
-def _realm_job_logs_hint(job_name: str, rg: str, execution: str, sub: str | None):
+def _job_logs_hint(
+    job_name: str, rg: str, execution: str, container: str, sub: str | None
+):
     sub_arg = f" --subscription {sub}" if sub else ""
     return (
         "Read its output with (needs the `containerapp` CLI extension): "
         f"az containerapp job logs show --name {job_name} --resource-group {rg} "
-        f"--execution {execution} --container {REALM_JOB_CONTAINER}{sub_arg}"
+        f"--execution {execution} --container {container}{sub_arg}"
     )
 
 
-def _realm_job_status_hint(job_name: str, rg: str, execution: str, sub: str | None):
+def _job_status_hint(job_name: str, rg: str, execution: str, sub: str | None):
     sub_arg = f" --subscription {sub}" if sub else ""
     return (
         f"az containerapp job execution show --name {job_name} "
@@ -423,10 +425,21 @@ def _realm_job_status_hint(job_name: str, rg: str, execution: str, sub: str | No
     )
 
 
-def run_realm_job(
-    config, job_name: str, timeout_s: int = 600, poll_s: int = 10
+def run_job(
+    config,
+    job_name: str,
+    purpose: str,
+    timeout_s: int = 600,
+    poll_s: int = 10,
+    *,
+    container: str,
+    label: str = "job",
 ) -> None:
-    """Start the Keycloak realm job and wait for it to succeed.
+    """Start a Container Apps job and wait for it to succeed.
+
+    purpose is a gerund phrase ("Applying the Keycloak realm") used in progress
+    and error messages; container and label name the job's container (for the
+    log hint) and what progress lines call it.
 
     Every az call uses the configured subscription. Any terminal status other
     than Succeeded (Failed, Stopped, Degraded) fails the deploy. The timeout is
@@ -453,10 +466,10 @@ def run_realm_job(
         execution = None
     if not execution:
         raise DeploymentError(
-            f"Started realm job '{job_name}' but could not read its execution "
+            f"Started job '{job_name}' ({purpose}) but could not read its execution "
             f"name from the Azure CLI output: {started.stdout.strip()}"
         )
-    print(f"Applying the Keycloak realm (job {job_name}, execution {execution})...")
+    print(f"{purpose} (job {job_name}, execution {execution})...")
 
     begin = time.monotonic()
     deadline = begin + timeout_s
@@ -478,13 +491,13 @@ def run_realm_job(
             status = properties["status"]
         except (json.JSONDecodeError, KeyError, TypeError):
             raise DeploymentError(
-                f"Realm job '{job_name}' execution '{execution}': the Azure CLI "
+                f"Job '{job_name}' ({purpose}) execution '{execution}': the Azure CLI "
                 "returned no properties.status, so its state is unknown. Check it "
-                f"with: {_realm_job_status_hint(job_name, rg, execution, sub)}"
+                f"with: {_job_status_hint(job_name, rg, execution, sub)}"
             )
         elapsed = int(time.monotonic() - begin)
         if status == "Succeeded":
-            print("✓ Keycloak realm applied")
+            print(f"✓ {purpose}: done")
             return
         if status in ("Failed", "Stopped", "Degraded"):
             detail = " ".join(
@@ -493,23 +506,55 @@ def run_realm_job(
                 if isinstance(properties, dict) and properties.get(k)
             )
             raise DeploymentError(
-                f"Realm job '{job_name}' execution '{execution}' ended {status}. "
+                f"Job '{job_name}' ({purpose}) execution '{execution}' ended {status}. "
                 + (detail + " " if detail else "")
-                + _realm_job_logs_hint(job_name, rg, execution, sub)
+                + _job_logs_hint(job_name, rg, execution, container, sub)
             )
         if time.monotonic() >= deadline:
             break
         if last_progress is None or elapsed - last_progress >= REALM_JOB_PROGRESS_S:
-            print(f"  realm job {status} ({elapsed}s)")
+            print(f"  {label} {status} ({elapsed}s)")
             last_progress = elapsed
         time.sleep(poll_s)
 
     raise DeploymentError(
-        f"Realm job '{job_name}' execution '{execution}' did not finish within "
+        f"Job '{job_name}' ({purpose}) execution '{execution}' did not finish within "
         f"{timeout_s}s (last status {status}). Check it with: "
-        f"{_realm_job_status_hint(job_name, rg, execution, sub)}. "
-        + _realm_job_logs_hint(job_name, rg, execution, sub)
+        f"{_job_status_hint(job_name, rg, execution, sub)}. "
+        + _job_logs_hint(job_name, rg, execution, container, sub)
     )
+
+
+def run_realm_job(
+    config, job_name: str, timeout_s: int = 600, poll_s: int = 10
+) -> None:
+    """Start the Keycloak realm job and wait for it to succeed."""
+    run_job(
+        config,
+        job_name,
+        "Applying the Keycloak realm",
+        timeout_s,
+        poll_s,
+        container=REALM_JOB_CONTAINER,
+        label="realm job",
+    )
+
+
+# (stack output, purpose, failure subject, container) in run order
+CONSOLE_JOBS = (
+    (
+        "console_db_job",
+        "Setting up the console database",
+        "setting up the console database",
+        "console-db",
+    ),
+    (
+        "console_init_job",
+        "Creating the broker's LiteLLM key",
+        "creating the broker's LiteLLM key",
+        "console-init",
+    ),
+)
 
 
 def _refuse_realm_rename(stack, configured: str) -> None:
@@ -719,10 +764,37 @@ def deploy_infrastructure(
                 try:
                     run_realm_job(config, job_output.value)
                 except DeploymentError as e:
+                    skipped = (
+                        ". The console database and key jobs did not run "
+                        "(console-db, console-init)."
+                        if config.console.enabled is True
+                        else ""
+                    )
                     raise DeploymentError(
                         "Infrastructure deployed, but the Keycloak realm was not "
-                        f"applied: {e}"
+                        f"applied: {e}{skipped}"
                     )
+                if config.console.enabled is True:
+                    for output_name, purpose, failed, container in CONSOLE_JOBS:
+                        job_output = (up_result.outputs or {}).get(output_name)
+                        if job_output is None:
+                            raise DeploymentError(
+                                f"The deployment did not export {output_name}, so "
+                                f"{failed} did not run."
+                            )
+                        try:
+                            run_job(
+                                config,
+                                job_output.value,
+                                purpose,
+                                container=container,
+                                label="console job",
+                            )
+                        except DeploymentError as e:
+                            raise DeploymentError(
+                                f"Infrastructure deployed, but {failed} did not "
+                                f"finish: {e}"
+                            )
                 print()
 
             print("Next steps:")

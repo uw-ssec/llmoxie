@@ -17,6 +17,7 @@ CLIENT_SECRET_ENV: dict[str, str] = {
     "litellm-gate": "KC_CLIENT_SECRET_LITELLM_GATE",
     "litellm": "KC_CLIENT_SECRET_LITELLM",
     "llmaven-cli": "KC_CLIENT_SECRET_LLMAVEN_CLI",
+    "console": "KC_CLIENT_SECRET_CONSOLE",
 }
 
 # Where the access token carries the user's realm roles.
@@ -203,19 +204,44 @@ def build_realm_document(config: LLMavenConfig) -> dict:
         clients.append(
             _web_client(
                 "litellm-gate",
-                f"https://{litellm.hostname}/oauth2/callback",
+                f"https://{litellm.ui_hostname}/oauth2/callback",
                 "LiteLLM sign-in",
             )
         )
         clients.append(
             _web_client(
                 "litellm",
-                f"https://{litellm.hostname}/sso/callback",
+                f"https://{litellm.ui_hostname}/sso/callback",
                 "LiteLLM SSO",
                 # LiteLLM's generic SSO sends no PKCE; it is a confidential client.
                 pkce=False,
             )
         )
+    console = config.console
+    if console.enabled:
+        client = _web_client(
+            "console",
+            f"https://{console.hostname}/auth/callback",
+            "LLMoxie console",
+        )
+        client["attributes"]["post.logout.redirect.uris"] = (
+            f"https://{console.hostname}/*"
+        )
+        # A custom audience: included.client.audience would need a
+        # console-broker client in the realm.
+        client["protocolMappers"].append(
+            {
+                "name": "console-broker-audience",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper",
+                "config": {
+                    "included.custom.audience": "console-broker",
+                    "access.token.claim": "true",
+                    "id.token.claim": "false",
+                },
+            }
+        )
+        clients.append(client)
     roles = list({r["name"]: r for r in reversed(roles)}.values())[::-1]
     if roles:
         doc["roles"] = {"realm": roles}

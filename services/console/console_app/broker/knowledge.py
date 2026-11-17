@@ -8,7 +8,6 @@ A bundle is a set of Markdown files. A concept is one file: a header of `key: va
 A link from one concept's text to another concept's file is an edge of the knowledge graph.
 """
 
-import os
 import posixpath
 import re
 
@@ -16,8 +15,8 @@ import httpx
 
 from . import keycloak
 
-_CLIENT_ID = os.environ["KNOWLEDGE_READER_CLIENT_ID"]
-_CLIENT_SECRET = os.environ["KNOWLEDGE_READER_CLIENT_SECRET"]
+_CLIENT_ID = keycloak.setting("KNOWLEDGE_READER_CLIENT_ID")
+_CLIENT_SECRET = keycloak.setting("KNOWLEDGE_READER_CLIENT_SECRET")
 _LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)(?::\s*(.*))?")
 
 

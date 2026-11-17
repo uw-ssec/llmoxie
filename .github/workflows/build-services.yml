@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "docker/**"
+      - "services/console/**"
       - "scripts/backup_postgres.py"
       - ".github/workflows/build-services.yml"
   release:
@@ -28,20 +29,29 @@ jobs:
         service:
           - name: mlflow
             dockerfile: mlflow.dockerfile
+            file: ./docker/dockerfiles/mlflow.dockerfile
             context: ./docker
             platforms: linux/amd64,linux/arm64
           - name: litellm
             dockerfile: litellm.dockerfile
+            file: ./docker/dockerfiles/litellm.dockerfile
             context: ./docker
             platforms: linux/amd64
           - name: backup
             dockerfile: backup.dockerfile
+            file: ./docker/dockerfiles/backup.dockerfile
             context: .
             platforms: linux/amd64,linux/arm64
           - name: keycloak
             dockerfile: keycloak.dockerfile
+            file: ./docker/dockerfiles/keycloak.dockerfile
             context: .
             platforms: linux/amd64,linux/arm64
+          - name: console
+            context: ./services/console
+            file: ./services/console/Dockerfile
+            target: app
+            platforms: linux/amd64
 
     steps:
       - name: Checkout repository
@@ -50,7 +60,7 @@ jobs:
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
-          cache-key: ./docker/dockerfiles/${{ matrix.service.dockerfile }}
+          cache-key: ${{ matrix.service.file }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -80,7 +90,8 @@ jobs:
         uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: ${{ matrix.service.context }}
-          file: ./docker/dockerfiles/${{ matrix.service.dockerfile }}
+          file: ${{ matrix.service.file }}
+          target: ${{ matrix.service.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -101,6 +112,7 @@ jobs:
           echo "- 🐳 LiteLLM: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-litellm\`" >> $GITHUB_STEP_SUMMARY
           echo "- 🐳 Backup: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backup\`" >> $GITHUB_STEP_SUMMARY
           echo "- 🐳 Keycloak: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-keycloak\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Console: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-console\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Registry" >> $GITHUB_STEP_SUMMARY
           echo "Images are available at: [\`${{ env.REGISTRY }}/${{ github.repository }}\`](https://${{ env.REGISTRY }}/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
@@ -111,4 +123,5 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-litellm:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backup:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-keycloak:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-console:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

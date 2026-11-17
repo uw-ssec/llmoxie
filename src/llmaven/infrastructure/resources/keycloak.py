@@ -46,6 +46,7 @@ _CLIENT_SECRET_KEY = {
     "llmaven-cli": "client_llmaven_cli",
     "litellm-gate": "client_litellm_gate",
     "litellm": "client_litellm",
+    "console": "client_console",
 }
 
 OAUTH2_PROXY_PORT = 4180
@@ -215,7 +216,7 @@ def create_login_app(
         "OAUTH2_PROXY_OIDC_JWKS_URL": pulumi.Output.concat(
             "https://", keycloak_fqdn, f"/realms/{realm}/{_OIDC_PATH}/certs"
         ),
-        "OAUTH2_PROXY_REDIRECT_URL": f"https://{app_config.hostname}/oauth2/callback",
+        "OAUTH2_PROXY_REDIRECT_URL": f"https://{app_config.ui_hostname}/oauth2/callback",
         "OAUTH2_PROXY_CODE_CHALLENGE_METHOD": "S256",
         "OAUTH2_PROXY_REVERSE_PROXY": "true",
         "OAUTH2_PROXY_UPSTREAMS": "static://202",
@@ -225,7 +226,7 @@ def create_login_app(
         "OAUTH2_PROXY_COOKIE_NAME": LOGIN_COOKIE[kind],
         "OAUTH2_PROXY_EMAIL_DOMAINS": "*",
         "OAUTH2_PROXY_SKIP_PROVIDER_BUTTON": "true",
-        "OAUTH2_PROXY_WHITELIST_DOMAINS": app_config.hostname,
+        "OAUTH2_PROXY_WHITELIST_DOMAINS": app_config.ui_hostname,
         "OAUTH2_PROXY_HTTP_ADDRESS": f"0.0.0.0:{OAUTH2_PROXY_PORT}",
         # Revocation latency. oauth2-proxy defaults to no refresh and a 7-day
         # cookie, so a removed role or a disabled user would keep a working
@@ -282,6 +283,10 @@ def _job_secret_refs(config: LLMavenConfig) -> dict[str, str]:
                 refs[CLIENT_SECRET_ENV[client]] = KEYCLOAK_SECRET_NAMES[
                     _CLIENT_SECRET_KEY[client]
                 ]
+    if config.console.enabled:
+        refs[CLIENT_SECRET_ENV["console"]] = KEYCLOAK_SECRET_NAMES[
+            _CLIENT_SECRET_KEY["console"]
+        ]
     refs.update(config.keycloak.realm.secret_refs)
     return refs
 

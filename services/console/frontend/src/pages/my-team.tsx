@@ -93,14 +93,20 @@ export function MyTeamPageView() {
               )}
             </Labelled>
             <h3 className="border-t pt-5 text-base">Shared knowledge</h3>
-            <p className="max-w-[75ch]">
-              {team.org_name} has one knowledge base, shared by all its teams. Add it to an MCP client as a streamable HTTP server and
-              send your key as the bearer token. Its tools are named <code>{view.knowledge_tools}-okf_search</code>,{' '}
-              <code>{view.knowledge_tools}-okf_create</code> and so on.
-            </p>
-            <Labelled label="MCP URL">
-              <CodeBlock value={`${gateway_url}/mcp`} />
-            </Labelled>
+            {view.knowledge_tools ? (
+              <>
+                <p className="max-w-[75ch]">
+                  {team.org_name} has one knowledge base, shared by all its teams. Add it to an MCP client as a streamable HTTP server and
+                  send your key as the bearer token. Its tools are named <code>{view.knowledge_tools}-okf_search</code>,{' '}
+                  <code>{view.knowledge_tools}-okf_create</code> and so on.
+                </p>
+                <Labelled label="MCP URL">
+                  <CodeBlock value={`${gateway_url}/mcp`} />
+                </Labelled>
+              </>
+            ) : (
+              <Muted>Knowledge isn't set up on this console.</Muted>
+            )}
           </Section>
         </div>
       ) : (

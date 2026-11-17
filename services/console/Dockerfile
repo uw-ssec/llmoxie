@@ -10,12 +10,16 @@ RUN npm run build -- --outDir /ui/dist
 # One image for console-web, console-broker and console-init; the command picks which.
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# The database connections use sslrootcert=system. psycopg's own OpenSSL looks for the system's roots in
+# a directory this image does not have, so it would trust nothing; point it at Debian's CA bundle.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --disable-pip-version-check -r requirements.txt
 COPY console_app console_app
 COPY --from=ui /ui/dist console_app/web/dist
-COPY init_admin_key.py .
+COPY init_admin_key.py db_setup.py ./
+COPY db/console-db.sql db/console-db.sql
 # /run/console holds the LiteLLM admin key; the volume mounted there inherits this ownership.
 RUN useradd --uid 10001 --no-create-home console && mkdir /run/console && chown console /run/console
 USER console

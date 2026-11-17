@@ -44,6 +44,40 @@ from pulumi import Output
 from ..config.schema import LLMavenConfig
 
 
+def deployer_access_policy(
+    tenant_id: str, object_id: str
+) -> azure_native.keyvault.AccessPolicyEntryArgs:
+    """The access policy the deploying principal gets on a vault it creates."""
+    return azure_native.keyvault.AccessPolicyEntryArgs(
+        tenant_id=tenant_id,
+        object_id=object_id,
+        permissions=azure_native.keyvault.PermissionsArgs(
+            secrets=[
+                azure_native.keyvault.SecretPermissions.GET,
+                azure_native.keyvault.SecretPermissions.LIST,
+                azure_native.keyvault.SecretPermissions.SET,
+                azure_native.keyvault.SecretPermissions.DELETE,
+                azure_native.keyvault.SecretPermissions.RECOVER,
+                azure_native.keyvault.SecretPermissions.BACKUP,
+                azure_native.keyvault.SecretPermissions.RESTORE,
+            ],
+            keys=[
+                azure_native.keyvault.KeyPermissions.GET,
+                azure_native.keyvault.KeyPermissions.LIST,
+                azure_native.keyvault.KeyPermissions.CREATE,
+                azure_native.keyvault.KeyPermissions.DELETE,
+                azure_native.keyvault.KeyPermissions.RECOVER,
+                azure_native.keyvault.KeyPermissions.WRAP_KEY,
+                azure_native.keyvault.KeyPermissions.UNWRAP_KEY,
+                azure_native.keyvault.KeyPermissions.SIGN,
+                azure_native.keyvault.KeyPermissions.VERIFY,
+                azure_native.keyvault.KeyPermissions.BACKUP,
+                azure_native.keyvault.KeyPermissions.RESTORE,
+            ],
+        ),
+    )
+
+
 def create_key_vault(
     resource_group_name: Output[str],
     location: str,
@@ -90,36 +124,7 @@ def create_key_vault(
 
     # Add deployer access policy if object ID is provided
     if deployer_object_id:
-        access_policies.append(
-            azure_native.keyvault.AccessPolicyEntryArgs(
-                tenant_id=tenant_id,
-                object_id=deployer_object_id,
-                permissions=azure_native.keyvault.PermissionsArgs(
-                    secrets=[
-                        azure_native.keyvault.SecretPermissions.GET,
-                        azure_native.keyvault.SecretPermissions.LIST,
-                        azure_native.keyvault.SecretPermissions.SET,
-                        azure_native.keyvault.SecretPermissions.DELETE,
-                        azure_native.keyvault.SecretPermissions.RECOVER,
-                        azure_native.keyvault.SecretPermissions.BACKUP,
-                        azure_native.keyvault.SecretPermissions.RESTORE,
-                    ],
-                    keys=[
-                        azure_native.keyvault.KeyPermissions.GET,
-                        azure_native.keyvault.KeyPermissions.LIST,
-                        azure_native.keyvault.KeyPermissions.CREATE,
-                        azure_native.keyvault.KeyPermissions.DELETE,
-                        azure_native.keyvault.KeyPermissions.RECOVER,
-                        azure_native.keyvault.KeyPermissions.WRAP_KEY,
-                        azure_native.keyvault.KeyPermissions.UNWRAP_KEY,
-                        azure_native.keyvault.KeyPermissions.SIGN,
-                        azure_native.keyvault.KeyPermissions.VERIFY,
-                        azure_native.keyvault.KeyPermissions.BACKUP,
-                        azure_native.keyvault.KeyPermissions.RESTORE,
-                    ],
-                ),
-            )
-        )
+        access_policies.append(deployer_access_policy(tenant_id, deployer_object_id))
 
     # Create Key Vault
     key_vault = azure_native.keyvault.Vault(

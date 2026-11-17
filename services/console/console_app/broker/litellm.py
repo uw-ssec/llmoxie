@@ -1,7 +1,8 @@
 """Every request the broker ever sends to LiteLLM.
 
 Each function is a fixed template: the caller supplies values, never a route, a
-role or a raw body. The admin key is read from a file written by console-init.
+role or a raw body. The admin key is read from a file written by console-init, on each call: on a
+first deploy the broker starts before console-init has run.
 """
 
 import os
@@ -11,7 +12,6 @@ from pathlib import Path
 import httpx
 
 _BASE = os.environ["LITELLM_URL"]
-_KEY_FILE = Path(os.environ["LITELLM_ADMIN_KEY_FILE"])
 NO_MODELS = ["no-default-models"]  # LiteLLM reads an empty list as "every model"
 NO_MCP_SERVER = "no-mcp-servers"   # likewise: names no server, so the team gets none
 
@@ -26,6 +26,10 @@ PROVIDERS = {
 }
 # Azure is per-account, so its endpoint must be given; only this shape is accepted.
 AZURE_ENDPOINT = re.compile(r"^https://[a-z0-9][a-z0-9-]{1,62}\.openai\.azure\.com/?$")
+# LiteLLM reads a model parameter that starts with one of these as the name of a secret it holds (in its
+# own environment, or a token source), not as a value. A lead could otherwise have the platform's credentials
+# sent on their org's behalf.
+SECRET_REFERENCE = ("os.environ/", "oidc/")
 MOCK_ENABLED = os.environ.get("CONSOLE_ENABLE_MOCK_PROVIDER", "").lower() == "true"
 # Dev only: a provider called "lmstudio", for models served by LM Studio on the machine running the stack.
 # The address comes from here, never from the form, so it is no way to send a key somewhere else.
@@ -38,8 +42,19 @@ class LiteLLMError(Exception):
         self.operation, self.status = operation, status
 
 
+def admin_key() -> str:
+    """The LiteLLM admin key console-init wrote, or LiteLLMError while it has not written it yet."""
+    try:
+        key = Path(os.environ.get("LITELLM_ADMIN_KEY_FILE", "")).read_text().strip()
+    except OSError:
+        key = ""
+    if not key:
+        raise LiteLLMError("admin_key", 503)
+    return key
+
+
 def _call(operation: str, method: str, path: str, **kwargs) -> dict | list:
-    headers = {"Authorization": f"Bearer {_KEY_FILE.read_text().strip()}"}
+    headers = {"Authorization": f"Bearer {admin_key()}"}
     with httpx.Client(base_url=_BASE, timeout=30) as client:
         response = client.request(method, path, headers=headers, **kwargs)
     if response.status_code >= 400:
@@ -49,6 +64,10 @@ def _call(operation: str, method: str, path: str, **kwargs) -> dict | list:
 
 def provider_names() -> list[str]:
     return [*PROVIDERS, "azure", *(["mock"] if MOCK_ENABLED else []), *(["lmstudio"] if LMSTUDIO_URL else [])]
+
+
+def secret_reference(value: str | None) -> bool:
+    return bool(value) and value.strip().lower().startswith(SECRET_REFERENCE)
 
 
 def model_params(provider: str, model: str, api_key: str, api_base: str | None, api_version: str | None) -> dict:

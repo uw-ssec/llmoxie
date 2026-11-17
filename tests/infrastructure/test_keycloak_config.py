@@ -142,6 +142,13 @@ def test_overrides_cannot_redefine_stack_clients():
     assert config.keycloak.enabled
 
 
+def test_overrides_cannot_redefine_the_console_client_even_with_the_console_off():
+    with pytest.raises(ValueError, match="'console'"):
+        _config(
+            keycloak={"realm": {"overrides": {"clients": [{"clientId": "console"}]}}}
+        )
+
+
 @pytest.mark.parametrize("name", ["LLMoxie", "a"])
 def test_bad_realm_names_are_rejected(name):
     with pytest.raises(ValueError):
