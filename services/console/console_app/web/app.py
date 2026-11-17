@@ -20,12 +20,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import api, oidc, sessions
+from . import access_log, api, oidc, sessions
 from .visit import BROKER_URL, CALLER_SECRET, NOT_VALID, ApiError, Stop, Visit, broker_plain, see_other
 
 PUBLIC_URL = os.environ["CONSOLE_PUBLIC_URL"]
 GATEWAY_URL = os.environ["GATEWAY_PUBLIC_URL"]
 DIST = Path(__file__).parent / "dist"  # the built application: index.html and assets/
+
+access_log.install()  # invitation tokens and sign-in codes are in addresses; the access log must not keep them
 
 
 @asynccontextmanager
