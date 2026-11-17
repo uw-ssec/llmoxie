@@ -1,0 +1,198 @@
+{
+ "llmaven-realm-dev": {
+  "configuration": {
+   "__type__": "JobConfigurationArgs",
+   "manual_trigger_config": {
+    "__type__": "JobConfigurationManualTriggerConfigArgs",
+    "parallelism": 1,
+    "replica_completion_count": 1
+   },
+   "replica_retry_limit": 0,
+   "replica_timeout": 600,
+   "secrets": [
+    {
+     "__type__": "SecretArgs",
+     "identity": "<pulumi.output.Output object>",
+     "key_vault_url": "<pulumi.output.Output object>",
+     "name": "keycloak-admin-password"
+    },
+    {
+     "__type__": "SecretArgs",
+     "identity": "<pulumi.output.Output object>",
+     "key_vault_url": "<pulumi.output.Output object>",
+     "name": "keycloak-client-mlflow-gate"
+    },
+    {
+     "__type__": "SecretArgs",
+     "identity": "<pulumi.output.Output object>",
+     "key_vault_url": "<pulumi.output.Output object>",
+     "name": "keycloak-client-llmaven-cli"
+    },
+    {
+     "__type__": "SecretArgs",
+     "identity": "<pulumi.output.Output object>",
+     "key_vault_url": "<pulumi.output.Output object>",
+     "name": "keycloak-client-litellm-gate"
+    },
+    {
+     "__type__": "SecretArgs",
+     "identity": "<pulumi.output.Output object>",
+     "key_vault_url": "<pulumi.output.Output object>",
+     "name": "keycloak-client-litellm"
+    },
+    {
+     "__type__": "SecretArgs",
+     "name": "realm-json",
+     "value": "{\n  \"bruteForceProtected\": true,\n  \"clients\": [\n    {\n      \"attributes\": {\n        \"pkce.code.challenge.method\": \"S256\"\n      },\n      \"clientAuthenticatorType\": \"client-secret\",\n      \"clientId\": \"mlflow-gate\",\n      \"directAccessGrantsEnabled\": false,\n      \"enabled\": true,\n      \"implicitFlowEnabled\": false,\n      \"name\": \"MLflow sign-in\",\n      \"protocol\": \"openid-connect\",\n      \"protocolMappers\": [\n        {\n          \"config\": {\n            \"access.token.claim\": \"true\",\n            \"claim.name\": \"realm_access.roles\",\n            \"id.token.claim\": \"true\",\n            \"jsonType.label\": \"String\",\n            \"multivalued\": \"true\",\n            \"userinfo.token.claim\": \"true\"\n          },\n          \"name\": \"realm roles\",\n          \"protocol\": \"openid-connect\",\n          \"protocolMapper\": \"oidc-usermodel-realm-role-mapper\"\n        }\n      ],\n      \"publicClient\": false,\n      \"redirectUris\": [\n        \"https://mlflow.example.org/oauth2/callback\"\n      ],\n      \"secret\": \"$(env:KC_CLIENT_SECRET_MLFLOW_GATE)\",\n      \"serviceAccountsEnabled\": false,\n      \"standardFlowEnabled\": true\n    },\n    {\n      \"clientAuthenticatorType\": \"client-secret\",\n      \"clientId\": \"llmaven-cli\",\n      \"directAccessGrantsEnabled\": false,\n      \"enabled\": true,\n      \"implicitFlowEnabled\": false,\n      \"name\": \"LLMoxie CLI\",\n      \"protocol\": \"openid-connect\",\n      \"protocolMappers\": [\n        {\n          \"config\": {\n            \"access.token.claim\": \"true\",\n            \"claim.name\": \"realm_access.roles\",\n            \"id.token.claim\": \"true\",\n            \"jsonType.label\": \"String\",\n            \"multivalued\": \"true\",\n            \"userinfo.token.claim\": \"true\"\n          },\n          \"name\": \"realm roles\",\n          \"protocol\": \"openid-connect\",\n          \"protocolMapper\": \"oidc-usermodel-realm-role-mapper\"\n        },\n        {\n          \"config\": {\n            \"access.token.claim\": \"true\",\n            \"id.token.claim\": \"false\",\n            \"included.client.audience\": \"mlflow-gate\"\n          },\n          \"name\": \"mlflow-gate audience\",\n          \"protocol\": \"openid-connect\",\n          \"protocolMapper\": \"oidc-audience-mapper\"\n        }\n      ],\n      \"publicClient\": false,\n      \"secret\": \"$(env:KC_CLIENT_SECRET_LLMAVEN_CLI)\",\n      \"serviceAccountsEnabled\": true,\n      \"standardFlowEnabled\": false\n    },\n    {\n      \"attributes\": {\n        \"pkce.code.challenge.method\": \"S256\"\n      },\n      \"clientAuthenticatorType\": \"client-secret\",\n      \"clientId\": \"litellm-gate\",\n      \"directAccessGrantsEnabled\": false,\n      \"enabled\": true,\n      \"implicitFlowEnabled\": false,\n      \"name\": \"LiteLLM sign-in\",\n      \"protocol\": \"openid-connect\",\n      \"protocolMappers\": [\n        {\n          \"config\": {\n            \"access.token.claim\": \"true\",\n            \"claim.name\": \"realm_access.roles\",\n            \"id.token.claim\": \"true\",\n            \"jsonType.label\": \"String\",\n            \"multivalued\": \"true\",\n            \"userinfo.token.claim\": \"true\"\n          },\n          \"name\": \"realm roles\",\n          \"protocol\": \"openid-connect\",\n          \"protocolMapper\": \"oidc-usermodel-realm-role-mapper\"\n        }\n      ],\n      \"publicClient\": false,\n      \"redirectUris\": [\n        \"https://ai.example.org/oauth2/callback\"\n      ],\n      \"secret\": \"$(env:KC_CLIENT_SECRET_LITELLM_GATE)\",\n      \"serviceAccountsEnabled\": false,\n      \"standardFlowEnabled\": true\n    },\n    {\n      \"attributes\": {},\n      \"clientAuthenticatorType\": \"client-secret\",\n      \"clientId\": \"litellm\",\n      \"directAccessGrantsEnabled\": false,\n      \"enabled\": true,\n      \"implicitFlowEnabled\": false,\n      \"name\": \"LiteLLM SSO\",\n      \"protocol\": \"openid-connect\",\n      \"protocolMappers\": [\n        {\n          \"config\": {\n            \"access.token.claim\": \"true\",\n            \"claim.name\": \"realm_access.roles\",\n            \"id.token.claim\": \"true\",\n            \"jsonType.label\": \"String\",\n            \"multivalued\": \"true\",\n            \"userinfo.token.claim\": \"true\"\n          },\n          \"name\": \"realm roles\",\n          \"protocol\": \"openid-connect\",\n          \"protocolMapper\": \"oidc-usermodel-realm-role-mapper\"\n        }\n      ],\n      \"publicClient\": false,\n      \"redirectUris\": [\n        \"https://ai.example.org/sso/callback\"\n      ],\n      \"secret\": \"$(env:KC_CLIENT_SECRET_LITELLM)\",\n      \"serviceAccountsEnabled\": false,\n      \"standardFlowEnabled\": true\n    }\n  ],\n  \"displayName\": \"LLMoxie\",\n  \"enabled\": true,\n  \"realm\": \"llmoxie\",\n  \"registrationAllowed\": false,\n  \"roles\": {\n    \"realm\": [\n      {\n        \"description\": \"Use MLflow\",\n        \"name\": \"mlflow-user\"\n      },\n      {\n        \"description\": \"Administer LiteLLM\",\n        \"name\": \"litellm-admin\"\n      }\n    ]\n  },\n  \"users\": [\n    {\n      \"email\": \"llmaven-cli@service.invalid\",\n      \"emailVerified\": true,\n      \"enabled\": true,\n      \"realmRoles\": [\n        \"mlflow-user\"\n      ],\n      \"serviceAccountClientId\": \"llmaven-cli\",\n      \"username\": \"service-account-llmaven-cli\"\n    }\n  ],\n  \"verifyEmail\": true\n}"
+    }
+   ],
+   "trigger_type": "Manual"
+  },
+  "environment_id": "<pulumi.output.Output object>",
+  "identity": {
+   "__type__": "ManagedServiceIdentityArgs",
+   "type": "SystemAssigned,UserAssigned",
+   "user_assigned_identities": [
+    "<pulumi.output.Output object>"
+   ]
+  },
+  "job_name": "llmaven-realm-dev",
+  "location": "eastus",
+  "resource_group_name": "rg-test",
+  "tags": {
+   "CostCenter": "",
+   "Environment": "dev",
+   "ManagedBy": "Pulumi",
+   "Owner": "",
+   "Project": "llmaven"
+  },
+  "template": {
+   "__type__": "JobTemplateArgs",
+   "containers": [
+    {
+     "__type__": "ContainerArgs",
+     "env": [
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KEYCLOAK_URL",
+       "value": "<pulumi.output.Output object>"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KEYCLOAK_USER",
+       "value": "admin"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KEYCLOAK_AVAILABILITYCHECK_ENABLED",
+       "value": "true"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KEYCLOAK_AVAILABILITYCHECK_TIMEOUT",
+       "value": "300s"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_FILES_LOCATIONS",
+       "value": "/config/realm.json"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_VARSUBSTITUTION_ENABLED",
+       "value": "true"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_REMOTESTATE_ENABLED",
+       "value": "true"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_MANAGED_CLIENT",
+       "value": "no-delete"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_MANAGED_ROLE",
+       "value": "no-delete"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_MANAGED_IDENTITYPROVIDER",
+       "value": "no-delete"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_MANAGED_GROUP",
+       "value": "no-delete"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "IMPORT_MANAGED_CLIENTSCOPE",
+       "value": "no-delete"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "REALM_DOCUMENT_SHA256",
+       "value": "d39935282500a65b35272e1caf30ca763e4dcb615457f6433165c10ad1cdc746"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KEYCLOAK_PASSWORD",
+       "secret_ref": "keycloak-admin-password"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KC_CLIENT_SECRET_MLFLOW_GATE",
+       "secret_ref": "keycloak-client-mlflow-gate"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KC_CLIENT_SECRET_LLMAVEN_CLI",
+       "secret_ref": "keycloak-client-llmaven-cli"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KC_CLIENT_SECRET_LITELLM_GATE",
+       "secret_ref": "keycloak-client-litellm-gate"
+      },
+      {
+       "__type__": "EnvironmentVarArgs",
+       "name": "KC_CLIENT_SECRET_LITELLM",
+       "secret_ref": "keycloak-client-litellm"
+      }
+     ],
+     "image": "docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274",
+     "name": "realm-import",
+     "resources": {
+      "__type__": "ContainerResourcesArgs",
+      "cpu": 0.5,
+      "memory": "1Gi"
+     },
+     "volume_mounts": [
+      {
+       "__type__": "VolumeMountArgs",
+       "mount_path": "/config",
+       "volume_name": "realm-volume"
+      }
+     ]
+    }
+   ],
+   "volumes": [
+    {
+     "__type__": "VolumeArgs",
+     "name": "realm-volume",
+     "secrets": [
+      {
+       "__type__": "SecretVolumeItemArgs",
+       "path": "realm.json",
+       "secret_ref": "realm-json"
+      }
+     ],
+     "storage_type": "Secret"
+    }
+   ]
+  }
+ }
+}

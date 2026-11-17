@@ -31,6 +31,7 @@ KEYCLOAK_SECRET_NAMES = {
     "client_litellm_gate": "keycloak-client-litellm-gate",
     "client_litellm": "keycloak-client-litellm",
     "client_llmaven_cli": "keycloak-client-llmaven-cli",
+    "client_console": "console-oidc-client-secret",
     "cookie_mlflow": "oauth2-proxy-cookie-mlflow",
     "cookie_litellm": "oauth2-proxy-cookie-litellm",
 }

@@ -384,6 +384,89 @@ def refresh(
         raise typer.Exit(code=1)
 
 
+@infra_app.command(name="keycloak-users")
+def keycloak_users(
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to configuration file"
+    ),
+    csv_file: Path = typer.Option(
+        ..., "--csv", help="CSV with an 'email' column (the invitation CSV)"
+    ),
+    out: Path = typer.Option(
+        ..., "--out", help="New file for the temporary passwords (created 0600)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be created and create nothing"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation"),
+) -> None:
+    """Create Keycloak accounts for invitees from a CSV.
+
+    Each account has a verified email and a temporary password the invitee
+    must change at first sign-in. Passwords go only to --out, never the
+    terminal. Needs a client IP in keycloak.admin_allowed_ips.
+
+    Examples:
+        llmaven infra keycloak-users --csv team.csv --out passwords.csv --dry-run
+        llmaven infra keycloak-users -c llmaven-config.yaml --csv team.csv --out passwords.csv
+    """
+    from llmaven.deployment.keycloak_users import (
+        KeycloakUsersError,
+        create_users,
+        open_admin_client,
+        plan_users,
+        read_emails,
+    )
+
+    config_path = Path(config) if config else Path("llmaven-config.yaml")
+    try:
+        emails = read_emails(csv_file)
+    except (ValueError, OSError) as e:
+        console_err.print(f"[red]✗[/red] {e}")
+        raise typer.Exit(code=1)
+    if not emails:
+        console_err.print(f"[red]✗[/red] {csv_file} has no email addresses")
+        raise typer.Exit(code=1)
+    if not dry_run and out.exists():
+        console_err.print(
+            f"[red]✗[/red] {out} already exists; refusing to overwrite it"
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        client, realm = open_admin_client(config_path)
+        with client:
+            plan = plan_users(client, realm, emails)
+            typer.echo(
+                f"{len(emails)} distinct addresses: {len(plan.create)} to create, "
+                f"{len(plan.existing)} already have an account (left alone)"
+            )
+            for email in plan.create:
+                typer.echo(f"  create   {email}")
+            for email in plan.existing:
+                typer.echo(f"  existing {email}")
+            if dry_run:
+                typer.echo("Dry run: nothing created.")
+                return
+            if not plan.create:
+                return
+            if not yes and not typer.confirm(
+                f"Create {len(plan.create)} accounts?", default=False
+            ):
+                raise typer.Exit(code=1)
+            existed: list[str] = []
+            created = create_users(client, realm, plan.create, out, existed)
+    except KeycloakUsersError as e:
+        console_err.print(f"[red]✗[/red] {e}")
+        raise typer.Exit(code=1)
+    for email in existed:
+        typer.echo(f"  already existed {email}")
+    if created:
+        typer.echo(f"Created {created} accounts. Temporary passwords: {out}")
+    else:
+        typer.echo("Created no accounts; no password file was kept.")
+
+
 class ExtractSource(str, Enum):
     litellm = "litellm"
     mlflow = "mlflow"

@@ -1,0 +1,172 @@
+{
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "mlflow-gate",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "MLflow sign-in",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "https://mlflow.example.org/oauth2/callback"
+      ],
+      "secret": "$(env:KC_CLIENT_SECRET_MLFLOW_GATE)",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true
+    },
+    {
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "llmaven-cli",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "LLMoxie CLI",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        },
+        {
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.client.audience": "mlflow-gate"
+          },
+          "name": "mlflow-gate audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper"
+        }
+      ],
+      "publicClient": false,
+      "secret": "$(env:KC_CLIENT_SECRET_LLMAVEN_CLI)",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false
+    },
+    {
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "litellm-gate",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "LiteLLM sign-in",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "https://litellm-admin.example.org/oauth2/callback"
+      ],
+      "secret": "$(env:KC_CLIENT_SECRET_LITELLM_GATE)",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true
+    },
+    {
+      "attributes": {},
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "litellm",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "LiteLLM SSO",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "https://litellm-admin.example.org/sso/callback"
+      ],
+      "secret": "$(env:KC_CLIENT_SECRET_LITELLM)",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true
+    }
+  ],
+  "displayName": "LLMoxie",
+  "enabled": true,
+  "realm": "llmoxie",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "description": "Use MLflow",
+        "name": "mlflow-user"
+      },
+      {
+        "description": "Administer LiteLLM",
+        "name": "litellm-admin"
+      }
+    ]
+  },
+  "users": [
+    {
+      "email": "llmaven-cli@service.invalid",
+      "emailVerified": true,
+      "enabled": true,
+      "realmRoles": [
+        "mlflow-user"
+      ],
+      "serviceAccountClientId": "llmaven-cli",
+      "username": "service-account-llmaven-cli"
+    }
+  ],
+  "verifyEmail": true
+}

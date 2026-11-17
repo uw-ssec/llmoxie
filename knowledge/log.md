@@ -1,4 +1,11 @@
 ## 2026-11-16
+* **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
+* **Update**: Updated concept `bugs/key-vault-access-policy-replace.md`.
+* **Update**: Linked `decisions/console-on-azure.md` to `bugs/key-vault-access-policy-replace.md` (Console vaults set access policies inline at creation, avoiding the AccessPolicy replace behavior).
+* **Update**: Linked `decisions/console-on-azure.md` to `decisions/keycloak-identity-provider.md` (The console signs in through the Keycloak realm and adds its own client there).
+* **Update**: Linked `decisions/console-on-azure.md` to `facts/deployer-is-contributor-no-role-assignments.md` (The console's vault-per-container design follows from the deployer having no role-assignment rights).
+* **Creation**: Documented concept `facts/deployer-is-contributor-no-role-assignments.md` (The deployer is Contributor and cannot make Azure role assignments).
+* **Creation**: Documented concept `decisions/console-on-azure.md` (The console runs on the Azure stack from a console block, with a vault per container and mail through ACS).
 * **Update**: Linked `facts/keycloak-bootstrap-admin-is-the-realm-jobs-login.md` to `decisions/keycloak-identity-provider.md` (Operational constraint of the realm job).
 * **Update**: Linked `bugs/litellm-redirects-to-internal-host-behind-edge.md` to `decisions/keycloak-identity-provider.md` (Surfaced by the LiteLLM SSO login behind the edge).
 * **Update**: Linked `bugs/litellm-redirects-to-internal-host-behind-edge.md` to `decisions/litellm-image-digest-pin-and-one-way-upgrade.md` (The fix ships in the pinned fork build).
@@ -16,6 +23,15 @@
 * **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.
 
 ## 2026-11-13
+* **Update**: Updated concept `decisions/console-design-direction.md`.
+* **Update**: Linked `decisions/console-design-direction.md` to `decisions/console-dashboard-layout.md` (The direction and review behind the dashboard layout that concept describes).
+* **Creation**: Documented concept `decisions/console-design-direction.md` (The console's design direction, what the design review settled, and what it left open).
+* **Update**: Updated concept `decisions/console-dashboard-layout.md`.
+* **Update**: Linked `decisions/console-dashboard-layout.md` to `decisions/console-react-front-end.md` (The dashboard layout is built on that React front end and keeps its rules: the strict content security policy, field-by-field responses, keys in memory only).
+* **Creation**: Documented concept `decisions/console-dashboard-layout.md` (The console is a sidebar dashboard that shows only figures the server sent, with no charts until analytics exist).
+* **Update**: Linked `decisions/console-react-front-end.md` to `decisions/platform-only-scope.md` (The console this front end belongs to is in the repo's scope by that decision).
+* **Creation**: Documented concept `decisions/console-react-front-end.md` (The console's pages are a React application served by console-web, under a policy that allows nothing inline).
+* **Update**: Updated concept `decisions/platform-only-scope.md`.
 * **Update**: Updated concept `facts/litellm-image-install-quirks.md`.
 * **Update**: Updated concept `decisions/stay-on-oss-litellm-gateway.md`.
 * **Update**: Updated concept `decisions/litellm-image-digest-pin-and-one-way-upgrade.md`.

@@ -10,6 +10,7 @@ from pathlib import Path
 from ..infrastructure.config.loader import ConfigLoadError, load_config
 from ..infrastructure.config.litellm_models import (
     missing_foundry_deployments,
+    litellm_stores_models,
     missing_salt_key,
     missing_spend_logger,
 )
@@ -124,7 +125,10 @@ def check_subscription_access(subscription_id: str) -> tuple[bool, str]:
 
 
 def check_required_providers(
-    subscription_id: str, foundry_enabled: bool = False, redis_enabled: bool = False
+    subscription_id: str,
+    foundry_enabled: bool = False,
+    redis_enabled: bool = False,
+    console_enabled: bool = False,
 ) -> tuple[bool, str]:
     """Check if required Azure resource providers are registered.
 
@@ -132,6 +136,7 @@ def check_required_providers(
         subscription_id: Azure subscription ID
         foundry_enabled: Also require Microsoft.CognitiveServices
         redis_enabled: Also require Microsoft.Cache for Azure Managed Redis
+        console_enabled: Also require Microsoft.Communication for the console's mail
 
     Returns:
         Tuple of (success, message)
@@ -148,6 +153,8 @@ def check_required_providers(
         required_providers.append("Microsoft.CognitiveServices")  # Foundry
     if redis_enabled:
         required_providers.append("Microsoft.Cache")  # Azure Managed Redis
+    if console_enabled:
+        required_providers.append("Microsoft.Communication")  # console mail
 
     try:
         for provider in required_providers:
@@ -560,6 +567,7 @@ def validate_config(
             config.azure.subscription_id,
             foundry_enabled=config.foundry.enabled,
             redis_enabled=bool(config.redis.enabled),
+            console_enabled=config.console.enabled,
         )
         if success:
             print(f"   ✓ {message}")
@@ -654,6 +662,7 @@ def validate_config(
             name
             for name, value in (
                 ("litellm.hostname", config.litellm.hostname),
+                ("litellm.admin_hostname", config.litellm.admin_hostname),
                 ("litellm.admin_allowed_ips", config.litellm.admin_allowed_ips),
                 ("mlflow.hostname", config.mlflow.hostname),
             )
@@ -686,6 +695,28 @@ def validate_config(
 
     # Stored model credentials are encrypted with the master key without a salt key
     salt_messages = missing_salt_key(config, config_path)
+    if config.console.enabled:
+        # The console stores the keys and models it creates through LiteLLM's
+        # database, encrypted with the salt key, so both are required.
+        console_errors = []
+        if not litellm_stores_models(config, config_path):
+            console_errors.append(
+                "console.enabled needs general_settings.store_model_in_db: true in "
+                "the LiteLLM config: the console creates keys and models through "
+                "LiteLLM's database"
+            )
+        if "LITELLM_SALT_KEY" not in (
+            config.litellm.key_vault_secret_refs or {}
+        ) and "LITELLM_SALT_KEY" not in (config.litellm.env_vars or {}):
+            console_errors.append(
+                "console.enabled needs LITELLM_SALT_KEY set in "
+                "litellm.key_vault_secret_refs: the stored credentials must not "
+                "depend on the master key"
+            )
+        for message in console_errors:
+            errors.append(message)
+            print(f"   ✗ {message}")
+        salt_messages = []
     for message in salt_messages:
         warnings.append(message)
         print(f"   ⚠️  {message}")
