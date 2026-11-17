@@ -156,6 +156,17 @@ def create_invite(conn, s: Session, *, org_id, team_id, kind: str, email: str) -
     return token
 
 
+def revoke_invites_of(conn, person_id, *, org_id, team_id) -> None:
+    """Revoke a person's still-usable invitations to an org's leads (team_id None) or to a team: those sent
+    to their email and those they used that wait for approval. A removal calls this before it removes,
+    in its own transaction: acceptance locks the invitation too, so the two run one after the other."""
+    conn.execute(
+        """UPDATE invite SET status = 'revoked'
+           WHERE org_id = %s AND team_id IS NOT DISTINCT FROM %s::uuid AND status IN ('pending', 'needs_approval')
+             AND (person_id = %s OR lower(email) = (SELECT lower(email) FROM person WHERE id = %s))""",
+        (org_id, team_id, person_id, person_id))
+
+
 def grant_membership(conn, invite: dict) -> None:
     if invite["kind"] == "lead":
         conn.execute("INSERT INTO org_lead (org_id, person_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -258,6 +269,7 @@ def invite_inspect(body: TokenBody):
 @app.post("/invites/accept")
 def invite_accept(body: TokenBody, s: Session = Depends(current_session)):
     with db.system_tx() as conn:
+        # The lock waits for a removal that is revoking this invitation, and then returns its new status.
         invite = _invite_by_token(conn, body.token, lock=True)
         if not _usable(invite):
             outcome = "invalid"
@@ -478,10 +490,11 @@ def admin_remove_lead(org_id: UUID, person_id: UUID, s: Session = Depends(curren
     """Take an org away from a lead. Their account, and whatever they set up in the org, stays."""
     require(s, "org.remove_lead")
     with db.org_tx(org_id) as conn:
+        revoke_invites_of(conn, person_id, org_id=org_id, team_id=None)
         removed = conn.execute(
             "DELETE FROM org_lead WHERE org_id = %s AND person_id = %s", (org_id, person_id)).rowcount
-    if not removed:
-        raise HTTPException(404, "not a lead of this organization")
+        if not removed:
+            raise HTTPException(404, "not a lead of this organization")
     audit(s, "org.remove_lead", "ok", org_id=org_id, target=person_id)
     return {"removed": True}
 
@@ -775,6 +788,7 @@ def team_remove_member(team_id: UUID, person_id: UUID, s: Session = Depends(curr
     team = find_team(team_id)
     require(s, "team.remove_member", team=team, target=person_id)
     with db.org_tx(team["org_id"]) as conn:
+        revoke_invites_of(conn, person_id, org_id=team["org_id"], team_id=team_id)
         if conn.execute("UPDATE team_member SET status = 'removed' WHERE team_id = %s AND person_id = %s AND status = 'active'",
                         (team_id, person_id)).rowcount != 1:
             raise HTTPException(404, "not a member")
