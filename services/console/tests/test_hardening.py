@@ -96,3 +96,20 @@ def test_a_removed_participant_cannot_return_through_an_outstanding_invitation(o
     assert again.api_get(f"/teams/{team}").status_code == 403
     assert lead.api_post(f"/teams/{team}/requests/{request}", {"approve": True}).status_code == 404
     assert one("SELECT status FROM team_member WHERE team_id = %s AND person_id = %s", (team, person))["status"] == "removed"
+
+
+# ── 2. A provider key is a value, never a reference to a secret LiteLLM holds ─
+
+def test_a_provider_key_cannot_name_a_secret_litellm_holds(org):
+    token, org_id = access_token(email("lead"), PASSWORD), org["org"]
+    azure = {"provider": "azure", "api_base": "https://x.openai.azure.com", "api_version": "2024-12-01-preview"}
+    for body in ({"provider": "mock", "model": "ref1", "api_key": "os.environ/GENERIC_USER_ID_ATTRIBUTE"},
+                 {"provider": "mock", "model": "ref2", "api_key": "  OS.Environ/LITELLM_MASTER_KEY"},
+                 {"provider": "openai", "model": "ref3", "api_key": "oidc/env/LITELLM_MASTER_KEY"},
+                 {**azure, "model": "ref4", "api_key": "os.environ/AZURE_API_KEY"}):
+        refused = broker("POST", f"/orgs/{org_id}/models", token, body)
+        assert refused.status_code == 400, (body, refused.status_code)
+        assert "reference" in refused.json()["detail"]
+    shown = org["lead"].api_post(f"/orgs/{org_id}/models", {"provider": "mock", "model": "ref5", "api_key": "os.environ/X"})
+    assert shown.status_code == 400 and "reference" in said(shown)   # the lead is told why
+    assert one("SELECT count(*) AS n FROM org_model WHERE org_id = %s AND model LIKE 'ref%%'", (org_id,))["n"] == 0

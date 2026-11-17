@@ -614,6 +614,8 @@ def org_knowledge(org_id: UUID, s: Session = Depends(current_session)):
 def model_add(org_id: UUID, body: ModelBody, s: Session = Depends(current_session)):
     org = find_org(org_id)
     require(s, "model.add", org=org, target=org_id)
+    if any(litellm.secret_reference(v) for v in (body.model, body.api_key, body.api_base, body.api_version)):
+        raise HTTPException(400, "enter the key itself: a reference such as os.environ/... is not accepted")
     try:
         params = litellm.model_params(body.provider, body.model, body.api_key, body.api_base, body.api_version)
     except ValueError as exc:
