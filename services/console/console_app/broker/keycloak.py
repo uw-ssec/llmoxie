@@ -3,7 +3,7 @@
 One purpose: each organization gets a client of its own (okf-org-<short name>) that LiteLLM signs in
 with when it calls the knowledge hub for that organization. The client's tokens are addressed to the
 hub and carry the organization's short name, and the hub lets a token touch only the bundle it names
-(the `grants` in the hub's OAuth settings). No person ever signs in through these clients.
+(the hub's `OIDC_GRANTS`). No person ever signs in through these clients.
 
 The broker's own client, console-provisioner, may manage clients in this realm and nothing else.
 As in litellm.py, each function is a fixed template.
@@ -29,7 +29,7 @@ TOKEN_URL = setting("KEYCLOAK_TOKEN_URL")          # where LiteLLM fetches each 
 _CLIENT_ID = setting("KEYCLOAK_PROVISIONER_CLIENT_ID")
 _CLIENT_SECRET = setting("KEYCLOAK_PROVISIONER_CLIENT_SECRET")
 HUB_URL = setting("KNOWLEDGE_HUB_URL").rstrip("/")  # also the audience the hub expects
-ORG_CLAIM = "okf_org"                              # the hub's `actor_claim` must name the same claim
+ORG_CLAIM = "okf_org"                              # the hub's `OIDC_ACTOR_CLAIM` must name the same claim
 
 
 class KeycloakError(Exception):
@@ -43,7 +43,7 @@ def client_id(slug: str) -> str:
 
 
 def bundle(slug: str) -> str:
-    """The organization's bundle in the hub. The hub writes a token's organization as oidc:<short name>."""
+    """The organization's bundle in the hub, matching the hub's `OIDC_GRANTS` rule `orgs/oidc-{actor}`."""
     return f"orgs/oidc-{slug}"
 
 

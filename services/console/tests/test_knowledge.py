@@ -221,9 +221,9 @@ def test_only_the_orgs_own_leads_get_that_view():
     reader = httpx.post(f"{KEYCLOAK}/realms/litellm/protocol/openid-connect/token", data={
         "grant_type": "client_credentials", "client_id": "console-knowledge",
         "client_secret": "console-knowledge-dev-secret"}).json()["access_token"]
-    write = httpx.post(f"{HUB}/mcp?bundle=orgs/oidc-{slug('a')}", headers={"Authorization": f"Bearer {reader}"}, json={
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "okf_create", "arguments": {
-            "concept_id": "facts/planted", "type": "fact", "title": "x", "description": "x", "body": "x"}}}).json()
+    _, write = mcp(reader, "tools/call", {"name": "okf_create", "arguments": {
+        "concept_id": "facts/planted", "type": "fact", "title": "x", "description": "x", "body": "x"}},
+        url=f"{HUB}/mcp?bundle=orgs/oidc-{slug('a')}")
     assert write["result"]["isError"] and "Access denied" in write["result"]["content"][0]["text"]
 
 

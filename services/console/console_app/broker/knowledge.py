@@ -1,7 +1,7 @@
 """Reading an organization's knowledge from the hub, for its leads to look at in the console.
 
 The broker has a Keycloak client of its own for this, console-knowledge, whose token the hub lets read
-every organization's bundle and write none of them (the hub's OAuth settings, role knowledge-reader). Which
+every organization's bundle and write none of them (the hub's `OIDC_GRANTS`, role knowledge-reader). Which
 organization a person may look at is decided before this is called, as for every broker operation.
 
 A bundle is a set of Markdown files. A concept is one file: a header of `key: value` lines, then text.
