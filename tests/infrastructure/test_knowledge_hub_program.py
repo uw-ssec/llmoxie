@@ -11,6 +11,7 @@ from llmaven.infrastructure.config.schema import (
     KNOWLEDGE_HUB_APP_SUFFIX,
     KNOWLEDGE_HUB_DB,
     KNOWLEDGE_HUB_MASTER_KEY_ENV,
+    CONSOLE_BROKER_APP_SUFFIX,
     console_job_name,
     container_app_name,
     knowledge_hub_storage_account_name,
@@ -25,12 +26,14 @@ from .test_keycloak_program import KEYCLOAK_INTERNAL
 from .test_knowledge_hub_config import HUB_IMAGE
 
 HUB = f"llmaven-dev-{KNOWLEDGE_HUB_APP_SUFFIX}"
+BROKER = f"llmaven-dev-{CONSOLE_BROKER_APP_SUFFIX}"
 HUB_URL = (
     f"https://{container_app_name('llmaven', 'dev', KNOWLEDGE_HUB_APP_SUFFIX)}"
     ".internal.env.test"
 )
 KEY = "ab" * 32
 DB_JOB = console_job_name("llmaven", "dev", "db")
+KNOW_JOB = console_job_name("llmaven", "dev", "know")
 REALM_JOB = realm_job_name("llmaven", "dev")
 MAIN_PASSWORD_SECRET = "kv-secret-okf-hub-main-okf-hub-db-password-dev"
 HUB_CREATORS = (
@@ -84,6 +87,21 @@ def _spied_run(tmp_path, monkeypatch, config: dict):
             return result
 
         monkeypatch.setattr(knowledge_hub, name, wrapper)
+
+    # Job env values may be Outputs; keep each one's resolved value by the
+    # identity of its EnvironmentVarArgs.
+    env_values = calls["env_values"] = {}
+    real_env = azure_native.app.EnvironmentVarArgs
+
+    def env_spy(*args, **kwargs):
+        env = real_env(*args, **kwargs)
+        if kwargs.get("value") is not None:
+            pulumi.Output.from_input(kwargs["value"]).apply(
+                lambda v, _key=id(env): env_values.__setitem__(_key, v)
+            )
+        return env
+
+    monkeypatch.setattr(azure_native.app, "EnvironmentVarArgs", env_spy)
 
     for module, cls in (
         (azure_native.dbforpostgresql, "Database"),
@@ -140,6 +158,11 @@ def _refs(job) -> dict[str, str]:
     return {
         e.name: e.secret_ref for e in job["template"].containers[0].env if e.secret_ref
     }
+
+
+def _resolved_env(job, name, calls):
+    [env] = [e for e in job["template"].containers[0].env if e.name == name]
+    return calls["env_values"][id(env)]
 
 
 def _depends_on(opts) -> list[str]:
@@ -203,6 +226,37 @@ def test_one_hub_url_for_the_realm_job_the_app_and_the_export(hub_on):
     assert "KC_KNOWLEDGE_HUB_URL" in _env_names(apps.jobs[REALM_JOB])
     assert apps[HUB]["resolved_env"]["OIDC_AUDIENCE"] == HUB_URL
     assert exports["knowledge_hub_url"] == HUB_URL
+
+
+def test_every_hub_url_setting_is_the_same_value(hub_on):
+    """The broker, the know job, the hub's audience and the realm job agree."""
+    _, exports, apps, calls, _ = hub_on
+    audience = apps[HUB]["resolved_env"]["OIDC_AUDIENCE"]
+    assert audience == HUB_URL
+    assert apps[BROKER]["resolved_env"]["KNOWLEDGE_HUB_URL"] == audience
+    assert _resolved_env(apps.jobs[KNOW_JOB], "KNOWLEDGE_HUB_URL", calls) == audience
+    assert (
+        _resolved_env(apps.jobs[REALM_JOB], "KC_KNOWLEDGE_HUB_URL", calls) == audience
+    )
+    assert exports["knowledge_hub_url"] == audience
+
+
+def test_hub_on_makes_no_role_assignment(hub_on):
+    created = hub_on[0]
+    assert not [r.name for r in created if "RoleAssignment" in r.typ]
+
+
+def test_the_master_key_is_only_in_the_hub_vault(hub_on):
+    """The key is in the deploy env, but the generic upload leaves it out."""
+    created = hub_on[0]
+    held = [
+        r.name
+        for r in created
+        if r.typ == "azure-native:keyvault:Secret"
+        and r.inputs["secretName"] == "okf-hub-master-key"
+    ]
+    # "hub" is the label create_knowledge_hub_secrets gives the hub vault's secrets.
+    assert held == ["kv-secret-okf-hub-hub-okf-hub-master-key-dev"]
 
 
 def test_the_hub_checks_tokens_against_keycloak(hub_on):
