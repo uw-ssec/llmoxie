@@ -102,6 +102,10 @@ def pg(server, monkeypatch):
         for db in OTHERS:
             conn.execute(f"CREATE DATABASE {db} OWNER pgadmin_group")
         conn.execute("CREATE DATABASE okf_hub OWNER azadmin")
+    # On Azure the public schema belongs to azure_pg_admin, not pg_database_owner, so owning okf_hub
+    # gives no right to create in it.
+    with superuser(server, "okf_hub") as conn:
+        conn.execute("ALTER SCHEMA public OWNER TO pgadmin_group")
     for key, value in {
         "PGHOST": host, "PGPORT": port, "PGUSER": "azadmin", "PGPASSWORD": ADMIN_PW,
         "PGSSLMODE": "disable",  # the throwaway server has no TLS; main() defaults to verify-full

@@ -16,7 +16,9 @@ them). It does what the local stack's superuser script (`db/console-db.sql`) doe
      a non-superuser admin; nothing had to be adapted.
   5. with `OKF_HUB_DB_PASSWORD` set, give the knowledge hub its own login role `okf_hub` (same password
      handling as step 1), make it the owner of the database `okf_hub` and close that database to PUBLIC,
-     keeping CONNECT for the admin login. Without the variable this step does nothing. It runs last, so
+     keeping CONNECT for the admin login, then grant it USAGE and CREATE on that database's public schema,
+     which on Azure belongs to azure_pg_admin rather than the database's owner. Without the variable this
+     step does nothing. It runs last, so
      a failure here cannot keep the console's schema from being applied.
 
 Passwords reach the server only as SCRAM verifiers and are never printed. Failures name the step, never a value.
@@ -94,6 +96,12 @@ def create_hub_role(conn: psycopg.Connection, password: str) -> None:
     conn.execute(sql.SQL("ALTER DATABASE {} OWNER TO {}").format(sql.Identifier(HUB_DB), sql.Identifier(HUB_ROLE)))
 
 
+def open_hub_schema() -> None:
+    """Let the hub's role create its tables: on Azure, owning okf_hub gives no rights in its public schema."""
+    with _connect(HUB_DB) as conn:
+        conn.execute(sql.SQL("GRANT USAGE, CREATE ON SCHEMA public TO {}").format(sql.Identifier(HUB_ROLE)))
+
+
 def lock_down_console_db(conn: psycopg.Connection) -> None:
     db = sql.Identifier(DB)
     conn.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(db, sql.Identifier(os.environ["PGUSER"])))
@@ -145,6 +153,8 @@ def main() -> int:
             step = f"create the {HUB_ROLE} role and give it {HUB_DB}"
             with _connect("postgres") as conn:
                 create_hub_role(conn, hub_password)
+            step = f"let {HUB_ROLE} create tables in {HUB_DB}"
+            open_hub_schema()
     except Exception as exc:  # never str(exc): a driver message could carry a value
         print(f"db_setup failed at: {step} ({type(exc).__name__})", file=sys.stderr)
         return 1
