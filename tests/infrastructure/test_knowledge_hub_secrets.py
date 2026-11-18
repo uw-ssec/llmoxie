@@ -171,7 +171,6 @@ def _create(mocks, hub=True):
     data = _hub_data()
     data["knowledge_hub"]["enabled"] = hub
     config = LLMavenConfig.model_validate(data)
-    project, env = config.project.name, config.project.environment
     out = {}
 
     @pulumi.runtime.test
@@ -350,7 +349,9 @@ def test_the_storage_account_is_the_hubs_own_and_retained(mocks):
     assert account.inputs["minimumTlsVersion"] == "TLS1_2"
     assert account.inputs["allowBlobPublicAccess"] is False
     assert account.inputs["allowSharedKeyAccess"] is True
-    [container] = [r for r in resources if r.typ == "azure-native:storage:BlobContainer"]
+    [container] = [
+        r for r in resources if r.typ == "azure-native:storage:BlobContainer"
+    ]
     assert container.inputs["accountName"] == account.inputs["accountName"]
 
 

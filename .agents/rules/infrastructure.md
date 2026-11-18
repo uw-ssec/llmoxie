@@ -927,9 +927,9 @@ unverified.
 knowledge store, as an internal-only Container App beside the console. Design:
 `docs/superpowers/specs/2026-11-17-okf-hub-container-design.md`. Source:
 `resources/knowledge_hub.py` (identity, vault, secrets, storage account, Blob
-container, app),
-`resources/keycloak_realm.py` (the role and clients), `resources/traefik.py`
-(the `/mcp` route), `resources/console.py` (the broker's settings).
+container, app), `resources/keycloak_realm.py` (the role and clients),
+`resources/traefik.py` (the `/mcp` route), `resources/console.py` (the broker's
+settings).
 
 It needs `console.enabled` and `keycloak.enabled`; `image` must be pinned as
 `<name>:<tag>@sha256:<digest>` (the default `:latest` is fine only while the hub
@@ -971,16 +971,15 @@ knowledge_hub:
   for a stack. It changes if the Container Apps environment is replaced (a new
   environment has a new default domain), which breaks every one of those
   clients' audiences and the hub's own.
-- `REFRESH_TRIGGER` is fixed (`knowledge_hub.refresh_trigger`, else a
-  constant), so a deploy rolls a new hub revision only when something else in
-  the app changes.
+- `REFRESH_TRIGGER` is fixed (`knowledge_hub.refresh_trigger`, else a constant),
+  so a deploy rolls a new hub revision only when something else in the app
+  changes.
 - The hub has its own storage account, `okf-hub-storage-<env>`, named
   `<project><env><region>okf` (hyphens dropped, region cut to 4 letters, e.g.
   `llmavendevdevwestokf`): StorageV2, LRS, https only, TLS 1.2, no public blob
   access, shared keys on (the hub reads it through a connection string). The
-  account, its Blob container `okf-hub` and the database `okf_hub` (owned by
-  the role `okf_hub`, created by the `console-db` job) are all retained on
-  delete.
+  account, its Blob container `okf-hub` and the database `okf_hub` (owned by the
+  role `okf_hub`, created by the `console-db` job) are all retained on delete.
 - The hub starts serving before its database role exists (`/healthz` 200
   "starting", `/mcp` 503) and is ready once `console-db` has run, so the first
   hub-on deploy does not deadlock.
@@ -1003,9 +1002,9 @@ now pointing at the missing hub, and team pages keep listing the tools. The
 are retained, so they stay (even if the console is turned off later) but leave
 Pulumi state. Keycloak keeps the clients `console-provisioner` (which may manage
 clients in the realm), `console-knowledge` and every `okf-org-*`, and the role
-`knowledge-reader`: the realm import never deletes (`IMPORT_MANAGED_*=no-delete`)
-and nothing removes the broker's `okf-org-*` clients. Disable the clients in the
-Keycloak admin console.
+`knowledge-reader`: the realm import never deletes
+(`IMPORT_MANAGED_*=no-delete`) and nothing removes the broker's `okf-org-*`
+clients. Disable the clients in the Keycloak admin console.
 
 Turning the hub **back on** needs steps first (the same master key, too):
 
@@ -1018,11 +1017,11 @@ Turning the hub **back on** needs steps first (the same master key, too):
   `az keyvault secret purge` with the same arguments):
   - in the main vault: `okf-hub-db-password`, `console-provisioner-secret`,
     `console-knowledge-secret` and `console-broker-db-url`;
-  - in the console broker vault (`kv-<project>-<env>-cb`, cut to 24
-    characters): `console-provisioner-secret` and `console-knowledge-secret`.
+  - in the console broker vault (`kv-<project>-<env>-cb`, cut to 24 characters):
+    `console-provisioner-secret` and `console-knowledge-secret`.
 - The retained database, storage account and Blob container are no longer in
-  Pulumi state, so the create fails until each is imported (`pulumi import`),
-  as for `console_db`: the database as `postgres-db-okf_hub-<env>`, type
+  Pulumi state, so the create fails until each is imported (`pulumi import`), as
+  for `console_db`: the database as `postgres-db-okf_hub-<env>`, type
   `azure-native:dbforpostgresql:Database`, ID
   `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.DBforPostgreSQL/flexibleServers/<server>/databases/okf_hub`;
   the storage account as `okf-hub-storage-<env>`, type
