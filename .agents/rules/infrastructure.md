@@ -926,7 +926,8 @@ unverified.
 [okf-hub](https://github.com/uw-ssec/okf-hub), the organizations' shared
 knowledge store, as an internal-only Container App beside the console. Design:
 `docs/superpowers/specs/2026-11-17-okf-hub-container-design.md`. Source:
-`resources/knowledge_hub.py` (identity, vault, secrets, Blob container, app),
+`resources/knowledge_hub.py` (identity, vault, secrets, storage account, Blob
+container, app),
 `resources/keycloak_realm.py` (the role and clients), `resources/traefik.py`
 (the `/mcp` route), `resources/console.py` (the broker's settings).
 
@@ -954,16 +955,32 @@ knowledge_hub:
 - The image is built from the `container` branch of `uw-ssec/okf-hub`. It is
   private until the owner makes that repository public, and Container Apps here
   pull only public images, so the dev deploy waits for that.
+- Pin `console.image` (by digest) to a console build made from a commit that
+  includes the knowledge hub work: `console-know` runs `knowledge_backfill.py`
+  from that image, and an older console image lacks it, so the first hub-on
+  deploy would finish `up` and then fail at `console-know`.
+- The first hub-on deploy may fail and need a re-run while the hub's new
+  identity's inline vault policy propagates (#171, as in
+  `bugs/key-vault-access-policy-replace`), as for the console.
 - The hub is `<project>-<env>-okf-hub-<env>`: one replica
   (`min_replicas = max_replicas = 1`), internal ingress, port 7878, probes on
   `/healthz`. Its URL is
   `https://<app name>.internal.<environment default domain>`. That one value is
   the hub's `OIDC_AUDIENCE`, the console's `KNOWLEDGE_HUB_URL` and the audience
   of `console-knowledge` and every `okf-org-*` client, so it must never change
-  for a stack.
-- The database `okf_hub` (owned by the role `okf_hub`, created by the
-  `console-db` job) and the Blob container `okf-hub` in the console's storage
-  account are both retained on delete.
+  for a stack. It changes if the Container Apps environment is replaced (a new
+  environment has a new default domain), which breaks every one of those
+  clients' audiences and the hub's own.
+- `REFRESH_TRIGGER` is fixed (`knowledge_hub.refresh_trigger`, else a
+  constant), so a deploy rolls a new hub revision only when something else in
+  the app changes.
+- The hub has its own storage account, `okf-hub-storage-<env>`, named
+  `<project><env><region>okf` (hyphens dropped, region cut to 4 letters, e.g.
+  `llmavendevdevwestokf`): StorageV2, LRS, https only, TLS 1.2, no public blob
+  access, shared keys on (the hub reads it through a connection string). The
+  account, its Blob container `okf-hub` and the database `okf_hub` (owned by
+  the role `okf_hub`, created by the `console-db` job) are all retained on
+  delete.
 - The hub starts serving before its database role exists (`/healthz` 200
   "starting", `/mcp` 503) and is ready once `console-db` has run, so the first
   hub-on deploy does not deadlock.
@@ -982,29 +999,39 @@ the hub; it is idempotent, and suspended organizations' teams stay closed.
 **Turning it off.** Set `knowledge_hub.enabled: false` and deploy. The app,
 identity and vault are removed. Organizations keep their MCP servers in LiteLLM,
 now pointing at the missing hub, and team pages keep listing the tools. The
-`okf_hub` database and the `okf-hub` Blob container are retained, so they stay
-but leave Pulumi state. The container lives in the console's storage account
-(`console-storage-<env>`), which is not retained, so it stays only while the
-console stays on.
+`okf_hub` database, the hub's storage account and its `okf-hub` Blob container
+are retained, so they stay (even if the console is turned off later) but leave
+Pulumi state. Keycloak keeps the clients `console-provisioner` (which may manage
+clients in the realm), `console-knowledge` and every `okf-org-*`, and the role
+`knowledge-reader`: the realm import never deletes (`IMPORT_MANAGED_*=no-delete`)
+and nothing removes the broker's `okf-org-*` clients. Disable the clients in the
+Keycloak admin console.
 
 Turning the hub **back on** needs steps first (the same master key, too):
 
 - Key Vault soft-delete keeps the deleted names reserved. Recover the hub vault
   (`kv-<project>-<env>-kh`, cut to 24 characters) with
   `az keyvault recover --name <vault>`, or `az keyvault purge` (which works only
-  if purge protection is off). The main vault also lost the secret
-  `okf-hub-db-password`:
-  `az keyvault secret recover --vault-name <main vault> --name okf-hub-db-password`,
-  or `az keyvault secret purge` with the same arguments.
-- The retained database and Blob container are no longer in Pulumi state, so the
-  create fails until each is imported (`pulumi import`), as for `console_db`:
-  the database as `postgres-db-okf_hub-<env>`, type
+  if purge protection is off). Six secrets in two other vaults were deleted too,
+  and each needs
+  `az keyvault secret recover --vault-name <vault> --name <secret>` (or
+  `az keyvault secret purge` with the same arguments):
+  - in the main vault: `okf-hub-db-password`, `console-provisioner-secret`,
+    `console-knowledge-secret` and `console-broker-db-url`;
+  - in the console broker vault (`kv-<project>-<env>-cb`, cut to 24
+    characters): `console-provisioner-secret` and `console-knowledge-secret`.
+- The retained database, storage account and Blob container are no longer in
+  Pulumi state, so the create fails until each is imported (`pulumi import`),
+  as for `console_db`: the database as `postgres-db-okf_hub-<env>`, type
   `azure-native:dbforpostgresql:Database`, ID
   `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.DBforPostgreSQL/flexibleServers/<server>/databases/okf_hub`;
+  the storage account as `okf-hub-storage-<env>`, type
+  `azure-native:storage:StorageAccount`, ID
+  `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<hub storage account>`;
   the container as `okf-hub-blob-<env>`, type
   `azure-native:storage:BlobContainer`, ID
-  `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<console storage account>/blobServices/default/containers/okf-hub`.
-  These paths are unverified.
+  `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<hub storage account>/blobServices/default/containers/okf-hub`.
+  Import the account before the container. These paths are unverified.
 
 **Unverified until dev:**
 
@@ -1018,3 +1045,9 @@ Turning the hub **back on** needs steps first (the same master key, too):
 - The brief two-replica overlap while a revision rolls over: Postgres
   compare-and-swap protects the data, but what okf does on a 409 is unverified.
 - Re-enabling after a disable, as above.
+- LiteLLM registering an organization's MCP server against a hub that still
+  answers "starting".
+- A `curl` from the hub's container to Keycloak's internal JWKS endpoint: that
+  Node's CA store trusts the environment's certificate.
+- Whether dev's LiteLLM fork supports MCP `oauth2_flow: client_credentials`, as
+  the local fork does.

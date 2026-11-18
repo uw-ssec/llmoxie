@@ -3,7 +3,7 @@ type: Decision
 title: Knowledge hub on Azure
 description: "okf-hub runs as an internal Container App in the same deploy, Keycloak tokens only, image from uw-ssec/okf-hub"
 tags: [knowledge, azure, okf-hub]
-generated: { by: "claude:sonnet-5.5", at: "2026-11-18T18:56:50Z" }
+generated: { by: "claude:opus-5.5", at: "2026-11-18T19:16:37Z" }
 status: stable
 ---
 
@@ -25,7 +25,8 @@ The console's organization knowledge needs an okf-hub. Spec: docs/superpowers/sp
 - The hub URL (internal FQDN) is the token audience everywhere and never changes for a stack.
 - LLMAVEN_SECRETS_OKF_HUB_MASTER_KEY is generated once by the owner and can never change while bundles exist; it lives only in the hub vault.
 - Container Apps here pull only public images, so the dev deploy waits for okf-hub to be public.
+- The hub's Blob container is in a storage account of its own, retained like the okf_hub database: in the console's account (not retained) turning the console off would delete bundles the retained database still points at (final review, 2026-11-18).
 - Operator steps and unverified items: .agents/rules/infrastructure.md, "The knowledge hub".
 
 # Related Concepts
-- [The console runs on the Azure stack from a console block, with a vault per container and mail through ACS](console-on-azure.md): The hub extends the console's Azure rollout and reuses its database job, storage and realm
+- [The console runs on the Azure stack from a console block, with a vault per container and mail through ACS](console-on-azure.md): The hub extends the console's Azure rollout and reuses its database job and realm; it keeps its own storage account
