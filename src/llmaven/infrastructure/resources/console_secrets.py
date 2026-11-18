@@ -26,6 +26,10 @@ WEB_DB_ROLE = "console_web"
 BROKER_DB_ROLE = "console_broker"
 
 OIDC_SECRET = KEYCLOAK_SECRET_NAMES["client_console"]
+# Main-vault names of the knowledge hub's two Keycloak client secrets; the
+# realm job reads them, and the knowledge-hub secrets create them.
+PROVISIONER_SECRET = "console-provisioner-secret"
+KNOWLEDGE_SECRET = "console-knowledge-secret"
 CALLER_SECRET = "console-broker-caller-secret"
 WEB_DB_URL = "console-web-db-url"
 BROKER_DB_URL = "console-broker-db-url"

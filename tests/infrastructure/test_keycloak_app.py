@@ -233,10 +233,13 @@ def test_realm_job_shape():
         "EXTRA_SECRET": "extra-kv-secret",
     }
     assert result["refs"] == expected
-    # The console's client only joins the realm when the console is enabled.
-    assert set(CLIENT_SECRET_ENV.values()) - {"KC_CLIENT_SECRET_CONSOLE"} <= set(
-        expected
-    )
+    # The console's clients only join the realm when the console is enabled.
+    console_only = {
+        "KC_CLIENT_SECRET_CONSOLE",
+        "KC_CLIENT_SECRET_CONSOLE_PROVISIONER",
+        "KC_CLIENT_SECRET_CONSOLE_KNOWLEDGE",
+    }
+    assert set(CLIENT_SECRET_ENV.values()) - console_only <= set(expected)
     kv = [s for s in job_config.secrets if s.key_vault_url is not None]
     assert {s.name for s in kv} == set(expected.values())
     assert all(s.identity == IDENTITY for s in kv)

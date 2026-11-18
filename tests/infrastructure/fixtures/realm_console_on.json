@@ -1,0 +1,129 @@
+{
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "litellm-gate",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "LiteLLM sign-in",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "https://litellm-admin.example.org/oauth2/callback"
+      ],
+      "secret": "$(env:KC_CLIENT_SECRET_LITELLM_GATE)",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true
+    },
+    {
+      "attributes": {},
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "litellm",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "LiteLLM SSO",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "https://litellm-admin.example.org/sso/callback"
+      ],
+      "secret": "$(env:KC_CLIENT_SECRET_LITELLM)",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true
+    },
+    {
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://console.example.org/*"
+      },
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "console",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "name": "LLMoxie console",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true"
+          },
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper"
+        },
+        {
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.custom.audience": "console-broker"
+          },
+          "name": "console-broker-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "https://console.example.org/auth/callback"
+      ],
+      "secret": "$(env:KC_CLIENT_SECRET_CONSOLE)",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true
+    }
+  ],
+  "displayName": "LLMoxie",
+  "enabled": true,
+  "realm": "llmoxie",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "description": "Administer LiteLLM",
+        "name": "litellm-admin"
+      }
+    ]
+  },
+  "verifyEmail": true
+}
