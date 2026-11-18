@@ -982,10 +982,29 @@ the hub; it is idempotent, and suspended organizations' teams stay closed.
 **Turning it off.** Set `knowledge_hub.enabled: false` and deploy. The app,
 identity and vault are removed. Organizations keep their MCP servers in LiteLLM,
 now pointing at the missing hub, and team pages keep listing the tools. The
-`okf_hub` database and the `okf-hub` Blob container stay but are no longer in
-Pulumi state, so turning the hub back on fails until they are imported
-(`pulumi import`), as for `console_db`, and the vault names need recovering as
-in the console's re-enable steps above. Re-enabling needs the same master key.
+`okf_hub` database and the `okf-hub` Blob container are retained, so they stay
+but leave Pulumi state. The container lives in the console's storage account
+(`console-storage-<env>`), which is not retained, so it stays only while the
+console stays on.
+
+Turning the hub **back on** needs steps first (the same master key, too):
+
+- Key Vault soft-delete keeps the deleted names reserved. Recover the hub vault
+  (`kv-<project>-<env>-kh`, cut to 24 characters) with
+  `az keyvault recover --name <vault>`, or `az keyvault purge` (which works only
+  if purge protection is off). The main vault also lost the secret
+  `okf-hub-db-password`:
+  `az keyvault secret recover --vault-name <main vault> --name okf-hub-db-password`,
+  or `az keyvault secret purge` with the same arguments.
+- The retained database and Blob container are no longer in Pulumi state, so the
+  create fails until each is imported (`pulumi import`), as for `console_db`:
+  the database as `postgres-db-okf_hub-<env>`, type
+  `azure-native:dbforpostgresql:Database`, ID
+  `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.DBforPostgreSQL/flexibleServers/<server>/databases/okf_hub`;
+  the container as `okf-hub-blob-<env>`, type
+  `azure-native:storage:BlobContainer`, ID
+  `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<console storage account>/blobServices/default/containers/okf-hub`.
+  These paths are unverified.
 
 **Unverified until dev:**
 
