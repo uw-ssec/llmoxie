@@ -11,12 +11,13 @@ them). It does what the local stack's superuser script (`db/console-db.sql`) doe
      first, since ARM may have made the database owned by another role (azure_pg_admin)
   3. close the other databases on the server (`CONSOLE_OTHER_DATABASES`) to PUBLIC, keeping CONNECT
      for the admin login, so the console roles cannot reach them
-  4. with `OKF_HUB_DB_PASSWORD` set, give the knowledge hub its own login role `okf_hub` (same password
-     handling as step 1), make it the owner of the database `okf_hub` and close that database to PUBLIC,
-     keeping CONNECT for the admin login. Without the variable this step does nothing.
-  5. apply the schema, once: the text of `console-db.sql` after its `\\c console_db` line. Everything
+  4. apply the schema, once: the text of `console-db.sql` after its `\\c console_db` line. Everything
      before that line is a superuser's setup, replaced by steps 1 to 3. The schema ran unchanged under
      a non-superuser admin; nothing had to be adapted.
+  5. with `OKF_HUB_DB_PASSWORD` set, give the knowledge hub its own login role `okf_hub` (same password
+     handling as step 1), make it the owner of the database `okf_hub` and close that database to PUBLIC,
+     keeping CONNECT for the admin login. Without the variable this step does nothing. It runs last, so
+     a failure here cannot keep the console's schema from being applied.
 
 Passwords reach the server only as SCRAM verifiers and are never printed. Failures name the step, never a value.
 """
@@ -137,13 +138,13 @@ def main() -> int:
             lock_down_console_db(conn)
             step = "close the other databases to the console roles"
             close_other_databases(conn, others)
+        step = f"apply the schema in {DB}"
+        apply_schema(schema_text)
         hub_password = os.environ.get(HUB_PASSWORD_ENV)
         if hub_password:
             step = f"create the {HUB_ROLE} role and give it {HUB_DB}"
             with _connect("postgres") as conn:
                 create_hub_role(conn, hub_password)
-        step = f"apply the schema in {DB}"
-        apply_schema(schema_text)
     except Exception as exc:  # never str(exc): a driver message could carry a value
         print(f"db_setup failed at: {step} ({type(exc).__name__})", file=sys.stderr)
         return 1

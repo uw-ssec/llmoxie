@@ -235,6 +235,19 @@ def test_okf_hub_password_is_a_scram_verifier(pg, monkeypatch):
     assert verifier.startswith("SCRAM-SHA-256$")
 
 
+def test_a_failed_hub_step_still_leaves_the_console_schema_applied(pg, monkeypatch, capsys):
+    # Without its database the hub step fails; it runs after the schema, so the console is unaffected.
+    with superuser(pg) as conn:
+        conn.execute("DROP DATABASE okf_hub")
+    monkeypatch.setenv("OKF_HUB_DB_PASSWORD", PW["hub"])
+    assert main() == 1
+    err = capsys.readouterr().err
+    assert "db_setup failed at: create the okf_hub role and give it okf_hub" in err
+    assert PW["hub"] not in err
+    with superuser(pg, "console_db") as conn:
+        assert conn.execute("SELECT to_regclass('public.person')").fetchone()[0] is not None
+
+
 def test_broker_sees_rls(pg):
     assert main() == 0
     with superuser(pg, "console_db") as conn:
