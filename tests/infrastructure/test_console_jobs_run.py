@@ -15,7 +15,7 @@ from llmaven.deployment.deploy import DeploymentError, run_job
 SUB = "00000000-0000-0000-0000-000000000000"
 
 
-def _cfg(console_enabled=True):
+def _cfg(console_enabled=True, hub_enabled=False):
     config = MagicMock()
     config.project.name = "llmaven"
     config.project.environment = "test"
@@ -26,6 +26,7 @@ def _cfg(console_enabled=True):
     config.keycloak.enabled = True
     config.keycloak.realm.name = "llmoxie"
     config.console.enabled = console_enabled
+    config.knowledge_hub.enabled = hub_enabled
     return config
 
 
@@ -193,3 +194,67 @@ class TestDeployRunsConsoleJobs:
 
         with pytest.raises(DeploymentError, match=missing):
             deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
+
+
+KNOW_OUTPUTS = {
+    "keycloak_realm_job": MagicMock(value="realm-job"),
+    "console_db_job": MagicMock(value="db-job"),
+    "console_init_job": MagicMock(value="init-job"),
+    "console_knowledge_job": MagicMock(value="know-job"),
+}
+
+
+class TestDeployRunsTheKnowledgeJob:
+    def test_with_the_hub_it_runs_third(self, patched_deploy):
+        load_config, get_stack, order = patched_deploy
+        config = _cfg(hub_enabled=True)
+        load_config.return_value = config
+        get_stack.return_value = _stack(dict(KNOW_OUTPUTS))
+
+        deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
+
+        names = [c[0] for c in order.mock_calls]
+        assert names == ["realm", "job", "job", "job"]
+        db, init, know = order.job.call_args_list
+        assert db.kwargs["container"] == "console-db"
+        assert init.kwargs["container"] == "console-init"
+        assert know.args == (
+            config,
+            "know-job",
+            "Setting up knowledge for existing organizations",
+        )
+        assert know.kwargs["container"] == "console-know"
+
+    def test_without_the_hub_it_is_not_expected(self, patched_deploy):
+        load_config, get_stack, order = patched_deploy
+        load_config.return_value = _cfg(hub_enabled=False)
+        get_stack.return_value = _stack(dict(KNOW_OUTPUTS))
+
+        deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
+
+        containers = [c.kwargs["container"] for c in order.job.call_args_list]
+        assert containers == ["console-db", "console-init"]
+
+    def test_failure_names_the_backfill(self, patched_deploy):
+        load_config, get_stack, order = patched_deploy
+        load_config.return_value = _cfg(hub_enabled=True)
+        get_stack.return_value = _stack(dict(KNOW_OUTPUTS))
+        order.job.side_effect = [None, None, DeploymentError("know blew up")]
+
+        with pytest.raises(
+            DeploymentError,
+            match="Infrastructure deployed, but setting up knowledge for existing "
+            "organizations did not finish: know blew up",
+        ):
+            deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
+
+    def test_with_the_hub_a_missing_export_is_an_error(self, patched_deploy):
+        load_config, get_stack, order = patched_deploy
+        load_config.return_value = _cfg(hub_enabled=True)
+        outputs = dict(KNOW_OUTPUTS)
+        del outputs["console_knowledge_job"]
+        get_stack.return_value = _stack(outputs)
+
+        with pytest.raises(DeploymentError, match="console_knowledge_job"):
+            deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
+        assert order.job.call_count == 2

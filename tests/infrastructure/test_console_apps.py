@@ -641,3 +641,73 @@ def test_no_role_assignments_or_access_policies(mocks):
         or r.typ == "azure-native:keyvault:AccessPolicy"
         for r in resources
     )
+
+
+# --- the knowledge backfill job ----------------------------------------------
+
+SECRET_TYPE = "azure-native:keyvault:Secret"
+
+
+def _main_vault_secrets(resources):
+    return {
+        r.inputs["secretName"]: r
+        for r in resources
+        if r.typ == SECRET_TYPE and r.name.startswith("kv-secret-console-main-")
+    }
+
+
+def _broker_vault_secrets(resources):
+    return {
+        r.inputs["secretName"]: r
+        for r in resources
+        if r.typ == SECRET_TYPE and r.name.startswith("kv-secret-console-broker-")
+    }
+
+
+def _value(secret):
+    value = secret.inputs["properties"]["value"]
+    return value.get("value") if isinstance(value, dict) else value
+
+
+def test_without_a_hub_there_is_no_knowledge_job(mocks):
+    config, resources = _create(mocks)
+    name = console_job_name(*_names(config), "know")
+    assert name not in {r.inputs["jobName"] for r in _of_type(resources, JOB_TYPE)}
+    assert "console-broker-db-url" not in _main_vault_secrets(resources)
+
+
+def test_with_a_hub_the_knowledge_job_runs_the_backfill(mocks):
+    config, resources = _create(mocks, hub_url=HUB_URL)
+    assert len(_of_type(resources, JOB_TYPE)) == 3
+    job = _job(resources, config, "know")
+    _assert_manual_job_on_main_vault(job, resources)
+    container = _container(job)
+    assert container["name"] == "console-know"
+    assert container["image"] == config.console.image
+    assert container["args"] == ["python", "knowledge_backfill.py"]
+    broker_env = _env(_app(resources, config, CONSOLE_BROKER_APP_SUFFIX))
+    assert _env(job) == {
+        "LITELLM_URL": f"https://{LITELLM_FQDN}",
+        "LITELLM_ADMIN_KEY_FILE": "/run/console/admin-key",
+        **{k: broker_env[k] for k in KNOWLEDGE_ENV},
+    }
+    assert _refs(job) == {
+        "CONSOLE_BROKER_DATABASE_URL": "console-broker-db-url",
+        "KEYCLOAK_PROVISIONER_CLIENT_SECRET": "console-provisioner-secret",
+        "KNOWLEDGE_READER_CLIENT_SECRET": "console-knowledge-secret",
+    }
+    assert set(_secrets(job)) == set(_refs(job).values())
+
+
+def test_the_knowledge_job_reads_the_admin_key_from_the_read_only_storage(mocks):
+    config, resources = _create(mocks, hub_url=HUB_URL)
+    volume, mount = _mount(_job(resources, config, "know"))
+    assert volume["storageName"] == "console-run-ro"
+    assert mount["mountPath"] == "/run/console"
+
+
+def test_with_a_hub_the_main_vault_holds_the_brokers_database_url(mocks):
+    _, resources = _create(mocks, hub_url=HUB_URL)
+    main = _main_vault_secrets(resources)["console-broker-db-url"]
+    broker = _broker_vault_secrets(resources)["console-broker-db-url"]
+    assert _value(main) == _value(broker)

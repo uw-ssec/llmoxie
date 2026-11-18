@@ -803,6 +803,8 @@ def create_pulumi_program(config_path: Path):
             pulumi.export("console_url", f"https://{config.console.hostname}")
             pulumi.export("console_db_job", console_apps.db_job.name)
             pulumi.export("console_init_job", console_apps.init_job.name)
+            if console_apps.knowledge_job is not None:
+                pulumi.export("console_knowledge_job", console_apps.knowledge_job.name)
             pulumi.export(
                 "console_mail_verification_records", mail.verification_records
             )

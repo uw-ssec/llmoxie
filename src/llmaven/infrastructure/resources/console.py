@@ -13,6 +13,9 @@ environment storage, not per mount, so the share is registered twice.
 
 ``console-db`` and ``console-init`` are manual jobs that run as the shared
 identity and read the main vault; ``infra deploy`` starts them after ``up``.
+With a knowledge hub, ``console-know`` follows them: it sets up knowledge for
+organizations made while the hub was off, as the broker would, with the
+broker's knowledge settings and the read-only share's LiteLLM key.
 """
 
 import re
@@ -62,6 +65,8 @@ class ConsoleApps:
     broker: azure_native.app.ContainerApp
     db_job: azure_native.app.Job
     init_job: azure_native.app.Job
+    # The knowledge backfill; only with a knowledge hub.
+    knowledge_job: azure_native.app.Job | None = None
 
 
 def console_storage_account_name(project: str, environment: str, location: str) -> str:
@@ -459,4 +464,28 @@ def create_console(
         ),
         **job_args,
     )
-    return ConsoleApps(web=web, broker=broker, db_job=db_job, init_job=init_job)
+    knowledge_job = None
+    if knowledge_hub_url is not None:
+        knowledge_job = _job(
+            "know",
+            script="knowledge_backfill.py",
+            env={
+                "LITELLM_URL": litellm_url,
+                "LITELLM_ADMIN_KEY_FILE": ADMIN_KEY_FILE,
+                **broker_knowledge_env,
+            },
+            secret_refs=secrets.knowledge_job_secret_names,
+            storage_name=RO_STORAGE,
+            opts=pulumi.ResourceOptions.merge(
+                after_secrets,
+                pulumi.ResourceOptions(depends_on=[storages[RO_STORAGE]]),
+            ),
+            **job_args,
+        )
+    return ConsoleApps(
+        web=web,
+        broker=broker,
+        db_job=db_job,
+        init_job=init_job,
+        knowledge_job=knowledge_job,
+    )

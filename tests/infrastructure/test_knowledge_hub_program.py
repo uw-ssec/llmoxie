@@ -149,6 +149,7 @@ def _depends_on(opts) -> list[str]:
 def test_hub_off_creates_nothing_of_the_hub(hub_off):
     created, exports, apps, calls, _ = hub_off
     assert "knowledge_hub_url" not in exports
+    assert "console_knowledge_job" not in exports
     assert HUB not in apps
     assert not [r.name for r in created if "okf-hub" in r.name]
     for name in HUB_CREATORS:
@@ -184,6 +185,9 @@ def test_hub_on_creates_the_app_and_exports_its_url(hub_on):
     created, exports, apps, calls, _ = hub_on
     assert HUB in apps
     assert exports["knowledge_hub_url"] == HUB_URL
+    assert exports["console_knowledge_job"] == console_job_name(
+        "llmaven", "dev", "know"
+    )
     for name in HUB_CREATORS:
         assert name in calls, name
     vaults = {r.name for r in created if r.typ == "azure-native:keyvault:Vault"}

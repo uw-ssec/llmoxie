@@ -10,7 +10,7 @@ exported. Database passwords are generated without special characters, so they
 can sit unescaped in the ``postgresql://`` URLs.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import pulumi
@@ -60,6 +60,9 @@ class ConsoleSecrets:
     # None while knowledge_hub is off.
     provisioner_secret_name: str | None = None
     knowledge_secret_name: str | None = None
+    # env var -> secret name in the main vault, for the knowledge backfill
+    # job; empty while knowledge_hub is off.
+    knowledge_job_secret_names: dict[str, str] = field(default_factory=dict)
 
 
 def _password(name: str, environment: str) -> pulumi.Output[str]:
@@ -205,7 +208,8 @@ def create_console_secrets(
     put(web_vault, "web", CALLER_SECRET, caller)
     put(web_vault, "web", WEB_DB_URL, db_url(WEB_DB_ROLE, web_pw))
     put(broker_vault, "broker", CALLER_SECRET, caller)
-    put(broker_vault, "broker", BROKER_DB_URL, db_url(BROKER_DB_ROLE, broker_pw))
+    broker_db_url = db_url(BROKER_DB_ROLE, broker_pw)
+    put(broker_vault, "broker", BROKER_DB_URL, broker_db_url)
     put(broker_vault, "broker", ACS_SECRET, mail_connection_string)
     main_oidc_secret = put(main_vault, "main", OIDC_SECRET, oidc)
     put(main_vault, "main", WEB_DB_PASSWORD, web_pw)
@@ -220,6 +224,10 @@ def create_console_secrets(
             value = _password(secret_name, environment)
             put(broker_vault, "broker", secret_name, value)
             put(main_vault, "main", secret_name, value)
+        # The knowledge backfill job does the broker's work as the broker's
+        # database role, and jobs read only the main vault. That vault
+        # already holds the role's password, for the console-db job.
+        put(main_vault, "main", BROKER_DB_URL, broker_db_url)
 
     return ConsoleSecrets(
         web_identity=web_identity,
@@ -251,4 +259,13 @@ def create_console_secrets(
         main_oidc_secret=main_oidc_secret,
         provisioner_secret_name=PROVISIONER_SECRET if hub else None,
         knowledge_secret_name=KNOWLEDGE_SECRET if hub else None,
+        knowledge_job_secret_names=(
+            {
+                "CONSOLE_BROKER_DATABASE_URL": BROKER_DB_URL,
+                "KEYCLOAK_PROVISIONER_CLIENT_SECRET": PROVISIONER_SECRET,
+                "KNOWLEDGE_READER_CLIENT_SECRET": KNOWLEDGE_SECRET,
+            }
+            if hub
+            else {}
+        ),
     )
