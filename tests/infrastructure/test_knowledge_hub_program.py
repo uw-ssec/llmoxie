@@ -221,13 +221,19 @@ def test_turning_the_hub_off_keeps_its_data(hub_on):
 
 def test_the_blob_container_is_in_the_console_account_after_it_exists(hub_on):
     created, _, _, calls, _ = hub_on
-    [container] = [r for r in created if r.typ == "azure-native:storage:BlobContainer"
-                   and r.inputs["containerName"] == "okf-hub"]
+    [container] = [
+        r
+        for r in created
+        if r.typ == "azure-native:storage:BlobContainer"
+        and r.inputs["containerName"] == "okf-hub"
+    ]
     account = calls["create_knowledge_hub_storage"]["storage_account_name"]
     assert container.inputs["accountName"] == account
     init_job = calls["create_console.result"].init_job
     assert init_job in calls["create_knowledge_hub_storage"]["opts"].depends_on
-    assert init_job in calls["create_knowledge_hub_storage_secret"]["storage_depends_on"]
+    assert (
+        init_job in calls["create_knowledge_hub_storage_secret"]["storage_depends_on"]
+    )
 
 
 def test_the_console_db_job_creates_the_hub_role(hub_on):
