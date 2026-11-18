@@ -919,3 +919,83 @@ unverified.
   policies, the Communication resources, the storage account and environment
   storage.
 - Re-enabling after a disable, as above.
+
+## The knowledge hub
+
+`knowledge_hub.enabled` (off by default) runs
+[okf-hub](https://github.com/uw-ssec/okf-hub), the organizations' shared
+knowledge store, as an internal-only Container App beside the console. Design:
+`docs/superpowers/specs/2026-11-17-okf-hub-container-design.md`. Source:
+`resources/knowledge_hub.py` (identity, vault, secrets, Blob container, app),
+`resources/keycloak_realm.py` (the role and clients), `resources/traefik.py`
+(the `/mcp` route), `resources/console.py` (the broker's settings).
+
+It needs `console.enabled` and `keycloak.enabled`; `image` must be pinned as
+`<name>:<tag>@sha256:<digest>` (the default `:latest` is fine only while the hub
+is off).
+
+```yaml
+knowledge_hub:
+  enabled: true
+  image: ghcr.io/uw-ssec/okf-hub:container-8e3081d@sha256:90d230fb85f9ce685fcf39edf9f5e04481a8acfbe7b6f4379103f173b9ecf067
+  cpu: 0.5
+  memory: 1Gi
+```
+
+**Turning it on.**
+
+- Generate the master key once, into the sops env file:
+  `LLMAVEN_SECRETS_OKF_HUB_MASTER_KEY=$(openssl rand -hex 32)` (64 lowercase hex
+  characters). It encrypts the hub's vault, so it **can never change while any
+  bundle exists**; losing it makes the stored data unreadable. Pulumi never
+  generates it. `infra validate` and `infra deploy` stop before `up` when it is
+  missing or malformed. It is kept out of the main vault: only the hub's own
+  vault holds it.
+- The image is built from the `container` branch of `uw-ssec/okf-hub`. It is
+  private until the owner makes that repository public, and Container Apps here
+  pull only public images, so the dev deploy waits for that.
+- The hub is `<project>-<env>-okf-hub-<env>`: one replica
+  (`min_replicas = max_replicas = 1`), internal ingress, port 7878, probes on
+  `/healthz`. Its URL is
+  `https://<app name>.internal.<environment default domain>`. That one value is
+  the hub's `OIDC_AUDIENCE`, the console's `KNOWLEDGE_HUB_URL` and the audience
+  of `console-knowledge` and every `okf-org-*` client, so it must never change
+  for a stack.
+- The database `okf_hub` (owned by the role `okf_hub`, created by the
+  `console-db` job) and the Blob container `okf-hub` in the console's storage
+  account are both retained on delete.
+- The hub starts serving before its database role exists (`/healthz` 200
+  "starting", `/mcp` 503) and is ready once `console-db` has run, so the first
+  hub-on deploy does not deadlock.
+- The realm gains the role `knowledge-reader` and the clients
+  `console-provisioner` and `console-knowledge`. The broker gets
+  `KNOWLEDGE_HUB_URL`, `KEYCLOAK_ADMIN_URL`, `KEYCLOAK_TOKEN_URL` and the
+  provisioner and knowledge client ids and secrets.
+- The gateway host routes `/mcp` and `/mcp/` (exact paths) to LiteLLM when the
+  hub is on; nothing else changes there.
+
+**What the deploy runs.** After `up`: the realm job, then `console-db`,
+`console-init` and `console-know`, each waited for. `console-know` sets up
+knowledge (Keycloak client and MCP server) for organizations that existed before
+the hub; it is idempotent, and suspended organizations' teams stay closed.
+
+**Turning it off.** Set `knowledge_hub.enabled: false` and deploy. The app,
+identity and vault are removed. Organizations keep their MCP servers in LiteLLM,
+now pointing at the missing hub, and team pages keep listing the tools. The
+`okf_hub` database and the `okf-hub` Blob container stay but are no longer in
+Pulumi state, so turning the hub back on fails until they are imported
+(`pulumi import`), as for `console_db`, and the vault names need recovering as
+in the console's re-enable steps above. Re-enabling needs the same master key.
+
+**Unverified until dev:**
+
+- The internal FQDN as the token audience, end to end.
+- The hub reaching Keycloak's JWKS at the internal FQDN while the tokens' issuer
+  is the public hostname.
+- The Blob connection string taken from `listKeys`.
+- Whether a key-bearing MCP client needs LiteLLM routes beyond `/mcp`.
+- How Container Apps treats the hub's first revision while it answers
+  "starting".
+- The brief two-replica overlap while a revision rolls over: Postgres
+  compare-and-swap protects the data, but what okf does on a 409 is unverified.
+- Re-enabling after a disable, as above.

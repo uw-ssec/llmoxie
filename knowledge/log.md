@@ -1,3 +1,7 @@
+## 2026-11-18
+* **Update**: Linked `decisions/knowledge-hub-on-azure.md` to `decisions/console-on-azure.md` (The hub extends the console's Azure rollout and reuses its database job, storage and realm).
+* **Creation**: Documented concept `decisions/knowledge-hub-on-azure.md` (Knowledge hub on Azure).
+
 ## 2026-11-16
 * **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
 * **Update**: Updated concept `bugs/key-vault-access-policy-replace.md`.
