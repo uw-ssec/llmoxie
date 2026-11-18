@@ -11,7 +11,10 @@ them). It does what the local stack's superuser script (`db/console-db.sql`) doe
      first, since ARM may have made the database owned by another role (azure_pg_admin)
   3. close the other databases on the server (`CONSOLE_OTHER_DATABASES`) to PUBLIC, keeping CONNECT
      for the admin login, so the console roles cannot reach them
-  4. apply the schema, once: the text of `console-db.sql` after its `\\c console_db` line. Everything
+  4. with `OKF_HUB_DB_PASSWORD` set, give the knowledge hub its own login role `okf_hub` (same password
+     handling as step 1), make it the owner of the database `okf_hub` and close that database to PUBLIC,
+     keeping CONNECT for the admin login. Without the variable this step does nothing.
+  5. apply the schema, once: the text of `console-db.sql` after its `\\c console_db` line. Everything
      before that line is a superuser's setup, replaced by steps 1 to 3. The schema ran unchanged under
      a non-superuser admin; nothing had to be adapted.
 
@@ -27,6 +30,9 @@ from psycopg import sql
 
 DB = "console_db"
 ROLES = {"console_web": "CONSOLE_WEB_DB_PASSWORD", "console_broker": "CONSOLE_BROKER_DB_PASSWORD"}
+HUB_ROLE = "okf_hub"
+HUB_DB = "okf_hub"
+HUB_PASSWORD_ENV = "OKF_HUB_DB_PASSWORD"
 META_LINE = "\\c console_db"
 
 
@@ -56,15 +62,35 @@ def _connect(dbname: str) -> psycopg.Connection:
     )
 
 
+def _set_password(conn: psycopg.Connection, role: str, password: str) -> None:
+    # Send a SCRAM verifier, as psql's \password does, so the cleartext never appears in a statement
+    # the server may log or keep (log_min_error_statement, pg_stat_statements, pgaudit).
+    verifier = conn.pgconn.encrypt_password(password.encode(), role.encode(), b"scram-sha-256").decode()
+    conn.execute(sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(verifier)))
+
+
 def create_roles(conn: psycopg.Connection) -> None:
     for role, env in ROLES.items():
         exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
         if not exists:
             conn.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(role)))
-        # Send a SCRAM verifier, as psql's \password does, so the cleartext never appears in a statement
-        # the server may log or keep (log_min_error_statement, pg_stat_statements, pgaudit).
-        verifier = conn.pgconn.encrypt_password(os.environ[env].encode(), role.encode(), b"scram-sha-256").decode()
-        conn.execute(sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(verifier)))
+        _set_password(conn, role, os.environ[env])
+
+
+def create_hub_role(conn: psycopg.Connection, password: str) -> None:
+    """The knowledge hub's role: owner of its own database, which nobody else may connect to."""
+    exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (HUB_ROLE,)).fetchone()
+    if not exists:
+        conn.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(HUB_ROLE)))
+    _set_password(conn, HUB_ROLE, password)
+    # PostgreSQL 16 lets a database change owners only to a role the admin may SET ROLE to; the admin
+    # created the role, so it holds ADMIN OPTION on it but not SET, and grants itself the latter.
+    conn.execute(
+        sql.SQL("GRANT {} TO {} WITH SET TRUE").format(sql.Identifier(HUB_ROLE), sql.Identifier(os.environ["PGUSER"]))
+    )
+    # Give the admin its own CONNECT first: once the owner changes, it may no longer reach the database.
+    close_other_databases(conn, [HUB_DB])
+    conn.execute(sql.SQL("ALTER DATABASE {} OWNER TO {}").format(sql.Identifier(HUB_DB), sql.Identifier(HUB_ROLE)))
 
 
 def lock_down_console_db(conn: psycopg.Connection) -> None:
@@ -111,6 +137,11 @@ def main() -> int:
             lock_down_console_db(conn)
             step = "close the other databases to the console roles"
             close_other_databases(conn, others)
+        hub_password = os.environ.get(HUB_PASSWORD_ENV)
+        if hub_password:
+            step = f"create the {HUB_ROLE} role and give it {HUB_DB}"
+            with _connect("postgres") as conn:
+                create_hub_role(conn, hub_password)
         step = f"apply the schema in {DB}"
         apply_schema(schema_text)
     except Exception as exc:  # never str(exc): a driver message could carry a value

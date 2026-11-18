@@ -56,6 +56,10 @@ class ConsoleSecrets:
     resources: list[pulumi.Resource]  # for depends_on
     # The main vault's copy of the OIDC client secret, which the realm job reads.
     main_oidc_secret: azure_native.keyvault.Secret
+    # The knowledge hub's two client secrets (main and broker vault copies);
+    # None while knowledge_hub is off.
+    provisioner_secret_name: str | None = None
+    knowledge_secret_name: str | None = None
 
 
 def _password(name: str, environment: str) -> pulumi.Output[str]:
@@ -208,6 +212,15 @@ def create_console_secrets(
     put(main_vault, "main", BROKER_DB_PASSWORD, broker_pw)
     put(main_vault, "main", DB_ADMIN_PASSWORD, admin_password)
 
+    hub = config.knowledge_hub.enabled
+    if hub:
+        # One value per secret, in the main vault (the realm job reads it) and
+        # the broker vault (the broker authenticates with it).
+        for secret_name in (PROVISIONER_SECRET, KNOWLEDGE_SECRET):
+            value = _password(secret_name, environment)
+            put(broker_vault, "broker", secret_name, value)
+            put(main_vault, "main", secret_name, value)
+
     return ConsoleSecrets(
         web_identity=web_identity,
         broker_identity=broker_identity,
@@ -236,4 +249,6 @@ def create_console_secrets(
             *secrets,
         ],
         main_oidc_secret=main_oidc_secret,
+        provisioner_secret_name=PROVISIONER_SECRET if hub else None,
+        knowledge_secret_name=KNOWLEDGE_SECRET if hub else None,
     )

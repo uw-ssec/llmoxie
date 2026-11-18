@@ -280,6 +280,7 @@ def create_console(
     postgres_host: pulumi.Input[str],
     tags: dict[str, str],
     opts: pulumi.ResourceOptions | None = None,
+    knowledge_hub_job_secret_names: dict[str, str] | None = None,
 ) -> ConsoleApps:
     """Create the console's apps, share and jobs (spec sections 4 to 6)."""
     console = config.console
@@ -414,7 +415,11 @@ def create_console(
             ),
         },
         # PGPASSWORD is the console's own copy of the server admin password.
-        secret_refs=secrets.job_secret_names,
+        secret_refs={
+            **secrets.job_secret_names,
+            # The knowledge hub's database password, when the hub is on.
+            **(knowledge_hub_job_secret_names or {}),
+        },
         opts=after_secrets,
         **job_args,
     )

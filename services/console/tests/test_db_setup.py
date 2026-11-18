@@ -23,7 +23,9 @@ from db_setup import main, schema_statements
 
 SCHEMA = Path(__file__).resolve().parent.parent / "db" / "console-db.sql"
 # Throwaway role passwords, made per run so no password literal sits in the source.
-PW = {name: secrets.token_urlsafe(16) for name in ("super", "admin", "web-1", "web-2", "broker-1", "wrong")}
+PW = {
+    name: secrets.token_urlsafe(16) for name in ("super", "admin", "web-1", "web-2", "broker-1", "wrong", "hub")
+}
 SUPER_PW = os.environ.get("DB_SETUP_TEST_PG_PASSWORD") or PW["super"]
 ADMIN_PW = PW["admin"]
 OTHERS = ("litellm_db", "mlflow_db")
@@ -86,9 +88,9 @@ def pg(server, monkeypatch):
     """A clean server per test: azadmin (CREATEROLE CREATEDB, no superuser) owns the databases."""
     host, port = server
     with superuser(server) as conn:
-        for db in ("console_db", *OTHERS):
+        for db in ("console_db", "okf_hub", *OTHERS):
             conn.execute(f"DROP DATABASE IF EXISTS {db} WITH (FORCE)")
-        for role in ("console_web", "console_broker", "azadmin", "pgadmin_group"):
+        for role in ("console_web", "console_broker", "okf_hub", "azadmin", "pgadmin_group"):
             conn.execute(f"DROP ROLE IF EXISTS {role}")
         conn.execute(f"CREATE ROLE azadmin LOGIN CREATEROLE CREATEDB PASSWORD '{ADMIN_PW}'")
         conn.execute("GRANT azadmin TO postgres")
@@ -99,6 +101,7 @@ def pg(server, monkeypatch):
         conn.execute("CREATE DATABASE console_db OWNER azadmin")
         for db in OTHERS:
             conn.execute(f"CREATE DATABASE {db} OWNER pgadmin_group")
+        conn.execute("CREATE DATABASE okf_hub OWNER azadmin")
     for key, value in {
         "PGHOST": host, "PGPORT": port, "PGUSER": "azadmin", "PGPASSWORD": ADMIN_PW,
         "PGSSLMODE": "disable",  # the throwaway server has no TLS; main() defaults to verify-full
@@ -183,6 +186,53 @@ def test_admin_keeps_connect_on_console_db_it_does_not_own(pg):
             "WHERE d.datname = 'console_db' AND a.grantee = 'azadmin'::regrole AND a.privilege_type = 'CONNECT'"
         ).fetchone()[0]
     assert granted == 1
+
+
+def test_without_the_hub_password_no_okf_hub_role_is_made(pg):
+    assert main() == 0
+    with superuser(pg) as conn:
+        assert conn.execute("SELECT 1 FROM pg_roles WHERE rolname = 'okf_hub'").fetchone() is None
+
+
+def test_okf_hub_role_owns_its_database_and_others_cannot_connect(pg, monkeypatch):
+    monkeypatch.setenv("OKF_HUB_DB_PASSWORD", PW["hub"])
+    assert main() == 0
+    with connect_as(pg, "okf_hub", PW["hub"], "okf_hub") as conn:
+        conn.execute("CREATE TABLE t (x int)")
+        conn.execute("INSERT INTO t VALUES (1)")
+    for role, password in (("console_web", PW["web-1"]), ("console_broker", PW["broker-1"])):
+        with pytest.raises(psycopg.OperationalError, match="permission denied for database"):
+            connect_as(pg, role, password, db_setup.HUB_DB)
+    with superuser(pg) as conn:
+        owner = conn.execute(
+            "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'okf_hub'"
+        ).fetchone()[0]
+    assert owner == "okf_hub"
+
+
+def test_okf_hub_role_cannot_connect_to_the_console_database(pg, monkeypatch):
+    monkeypatch.setenv("OKF_HUB_DB_PASSWORD", PW["hub"])
+    assert main() == 0
+    with pytest.raises(psycopg.OperationalError, match="permission denied for database"):
+        connect_as(pg, "okf_hub", PW["hub"], "console_db")
+
+
+def test_okf_hub_setup_runs_twice_and_a_changed_password_takes(pg, monkeypatch):
+    monkeypatch.setenv("OKF_HUB_DB_PASSWORD", PW["hub"])
+    assert main() == 0 and main() == 0
+    monkeypatch.setenv("OKF_HUB_DB_PASSWORD", PW["wrong"])
+    assert main() == 0
+    connect_as(pg, "okf_hub", PW["wrong"], "okf_hub").close()
+    with pytest.raises(psycopg.OperationalError, match="password authentication failed"):
+        connect_as(pg, "okf_hub", PW["hub"], "okf_hub")
+
+
+def test_okf_hub_password_is_a_scram_verifier(pg, monkeypatch):
+    monkeypatch.setenv("OKF_HUB_DB_PASSWORD", PW["hub"])
+    assert main() == 0
+    with superuser(pg) as conn:
+        (verifier,) = conn.execute("SELECT rolpassword FROM pg_authid WHERE rolname = 'okf_hub'").fetchone()
+    assert verifier.startswith("SCRAM-SHA-256$")
 
 
 def test_broker_sees_rls(pg):

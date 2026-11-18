@@ -3,6 +3,7 @@
 This module provides the implementation for the 'llmaven validate' command.
 """
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -275,6 +276,16 @@ def check_secrets(
                 )
                 messages.append(f"  ✗ Missing: {secret_name} (set {env_var_name})")
                 all_secrets_found = False
+
+    # The knowledge hub's vault master key is never generated, so it must be set
+    if config.knowledge_hub.enabled:
+        from ..infrastructure.resources.knowledge_hub import master_key_from_env
+
+        try:
+            master_key_from_env(os.environ)
+        except ValueError as e:
+            messages.append(f"  ✗ {e}")
+            all_secrets_found = False
 
     # Check for placeholder values
     placeholder_patterns = [
