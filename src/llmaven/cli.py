@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, NoReturn
 import typer
 from rich.console import Console
 
+from llmaven.ops import build_ops_app
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import date
@@ -31,6 +33,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
     help="LLMaven - CLI for Scientific Discovery",
     add_completion=False,
+    pretty_exceptions_show_locals=False,
 )
 
 # Create subcommand for infrastructure management
@@ -39,6 +42,7 @@ infra_app = typer.Typer(
     pretty_exceptions_show_locals=False,
     help="Infrastructure deployment and management commands",
     add_completion=False,
+    pretty_exceptions_show_locals=False,
 )
 app.add_typer(infra_app)
 
@@ -48,8 +52,15 @@ backup_infra_app = typer.Typer(
     pretty_exceptions_show_locals=False,
     help="Backup storage infrastructure commands",
     add_completion=False,
+    pretty_exceptions_show_locals=False,
 )
 app.add_typer(backup_infra_app)
+
+# Operator reports. The lambda defers the credential lookup because
+# _get_litellm_credentials is defined further down this module.
+app.add_typer(
+    build_ops_app(lambda env_file: _get_litellm_credentials(env_file)), name="ops"
+)
 
 
 # Shared --env-file option: enforces consistent Typer Path validation

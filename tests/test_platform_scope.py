@@ -93,6 +93,7 @@ def test_cli_exposes_only_platform_commands() -> None:
     assert set(typer.main.get_command(app).commands) == {
         "infra",
         "backup-infra",
+        "ops",
         "version",
     }
 
