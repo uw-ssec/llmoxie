@@ -22,12 +22,24 @@ LITELLM_LOGIN_APP_SUFFIX = "llm-auth"
 CONSOLE_WEB_APP_SUFFIX = "con-web"
 CONSOLE_BROKER_APP_SUFFIX = "con-broker"
 CONSOLE_DB = "console_db"
+KNOWLEDGE_HUB_APP_SUFFIX = "okf-hub"
+KNOWLEDGE_HUB_DB = "okf_hub"
+KNOWLEDGE_HUB_PORT = 7878
+KNOWLEDGE_HUB_MASTER_KEY_ENV = "LLMAVEN_SECRETS_OKF_HUB_MASTER_KEY"
 # Azure caps a Key Vault name at 24 characters.
 KEY_VAULT_NAME_MAX = 24
 # Azure caps a Container App or Job name at 32 characters.
 CONTAINER_APP_NAME_MAX = 32
 # Clients the stack's realm import defines; realm.overrides cannot redefine them.
-STACK_CLIENT_IDS = ("mlflow-gate", "litellm-gate", "litellm", "llmaven-cli", "console")
+STACK_CLIENT_IDS = (
+    "mlflow-gate",
+    "litellm-gate",
+    "litellm",
+    "llmaven-cli",
+    "console",
+    "console-provisioner",
+    "console-knowledge",
+)
 _APP_ENVIRONMENTS = ("dev", "staging", "prod", "test")
 
 
@@ -55,9 +67,9 @@ def container_app_name(project_name: str, environment: str, suffix: str) -> str:
 
 
 def console_job_name(
-    project_name: str, environment: str, kind: Literal["db", "init"]
+    project_name: str, environment: str, kind: Literal["db", "init", "know"]
 ) -> str:
-    """A console Container Apps Job's name: the database job or the init job."""
+    """A console Container Apps Job's name: the database, init or knowledge job."""
     return f"{project_name}-con{kind}-{environment}"
 
 
@@ -66,6 +78,11 @@ def console_vault_name(
 ) -> str:
     """The console web or broker Key Vault's name."""
     return f"kv-{project_name}-{environment}-c{which[0]}"[:24]
+
+
+def knowledge_hub_vault_name(project_name: str, environment: str) -> str:
+    """The knowledge hub's Key Vault name."""
+    return f"kv-{project_name}-{environment}-kh"[:24]
 
 
 def edge_app_name(project_name: str, environment: str) -> str:
@@ -1129,6 +1146,20 @@ class ConsoleConfig(BaseModel):
     check_hostname = field_validator("hostname")(_check_hostname)
 
 
+class KnowledgeHubConfig(BaseModel):
+    """The okf-hub knowledge hub, run internally on Azure Container Apps."""
+
+    enabled: bool = Field(default=False, description="Run the knowledge hub")
+    image: str = Field(
+        default="ghcr.io/uw-ssec/okf-hub:latest",
+        description="Hub image. The default is a moving tag, which is fine while "
+        "the hub is off; once knowledge_hub.enabled is true it must be "
+        "<name>:<tag>@sha256:<digest>",
+    )
+    cpu: float = Field(default=0.5, description="Hub CPU cores")
+    memory: str = Field(default="1Gi", description="Hub memory")
+
+
 class LLMavenAPIConfig(ContainerAppConfig):
     """LLMaven API-specific configuration."""
 
@@ -1383,6 +1414,10 @@ class LLMavenConfig(BaseModel):
         default_factory=ConsoleConfig,
         description="LLMoxie console behind the edge",
     )
+    knowledge_hub: KnowledgeHubConfig = Field(
+        default_factory=KnowledgeHubConfig,
+        description="okf-hub knowledge hub behind the console",
+    )
     llmaven_api: LLMavenAPIConfig = Field(
         default_factory=LLMavenAPIConfig, description="LLMaven API container app"
     )
@@ -1488,6 +1523,7 @@ class LLMavenConfig(BaseModel):
         self._validate_edge()
         self._validate_keycloak()
         self._validate_console()
+        self._validate_knowledge_hub()
         self._validate_app_names()
 
     def _validate_keycloak(self) -> None:
@@ -1590,6 +1626,24 @@ class LLMavenConfig(BaseModel):
             )
         if CONSOLE_DB not in self.database.databases:
             self.database.databases.append(CONSOLE_DB)
+
+    def _validate_knowledge_hub(self) -> None:
+        if not self.knowledge_hub.enabled:
+            return
+        missing = [
+            flag
+            for flag, ok in (
+                ("console.enabled", self.console.enabled),
+                ("keycloak.enabled", self.keycloak.enabled),
+            )
+            if not ok
+        ]
+        if missing:
+            raise ValueError(
+                f"knowledge_hub.enabled needs {' and '.join(missing)}: the hub "
+                "is reached only through the console and trusts Keycloak tokens."
+            )
+        _check_digest(self.knowledge_hub.image, "knowledge_hub.image")
 
     def _validate_app_names(self) -> None:
         """Azure caps Container App and Job names; check those that will exist."""
