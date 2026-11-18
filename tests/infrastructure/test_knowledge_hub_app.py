@@ -74,9 +74,9 @@ def test_hub_url_is_the_apps_internal_fqdn():
     )
 
 
-def _create_app():
+def _create_app(**hub):
     """Run the creator against a stubbed helper; return its kwargs, env resolved."""
-    config = LLMavenConfig.model_validate(_hub_data())
+    config = LLMavenConfig.model_validate(_hub_data(**hub))
     captured: dict = {"secrets": _secrets()}
 
     @pulumi.runtime.test
@@ -117,6 +117,13 @@ def test_the_app_is_internal_on_port_7878_with_one_replica():
     assert kwargs["cpu"] == config.knowledge_hub.cpu
     assert kwargs["memory"] == config.knowledge_hub.memory
     assert kwargs["environment"] == "dev"
+
+
+def test_the_refresh_trigger_is_fixed_so_a_deploy_does_not_roll_a_revision():
+    _, kwargs, _ = _create_app()
+    assert kwargs["refresh_trigger"] == "okf-hub"
+    _, kwargs, _ = _create_app(refresh_trigger="2026-11-18")
+    assert kwargs["refresh_trigger"] == "2026-11-18"
 
 
 def test_the_app_runs_as_the_hub_identity_and_reads_its_vault():

@@ -1181,6 +1181,12 @@ class KnowledgeHubConfig(BaseModel):
     )
     cpu: float = Field(default=0.5, description="Hub CPU cores")
     memory: str = Field(default="1Gi", description="Hub memory")
+    refresh_trigger: str | None = Field(
+        default=None,
+        description="Fixed REFRESH_TRIGGER value for the hub app; unset, a "
+        "constant is used, so a deploy rolls a new revision only when something "
+        "else changes",
+    )
 
 
 class LLMavenAPIConfig(ContainerAppConfig):

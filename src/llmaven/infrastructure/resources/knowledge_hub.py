@@ -49,6 +49,9 @@ STORAGE_CONNECTION_SECRET = "okf-hub-storage-connection"
 # The main-vault copy of the database password, read by the console-db job.
 DB_PASSWORD_SECRET = "okf-hub-db-password"
 HEALTH_PATH = "/healthz"
+# REFRESH_TRIGGER when knowledge_hub.refresh_trigger is unset: a constant, so a
+# deploy that changes nothing else does not roll a new revision.
+REFRESH_TRIGGER = "okf-hub"
 # Who may do what, read by the hub: each OIDC actor writes its own bundle, and
 # the knowledge-reader role reads every organization's bundle.
 OIDC_GRANTS = (
@@ -361,6 +364,7 @@ def create_knowledge_hub_app(
         ingress_external=False,
         health_probe_port=KNOWLEDGE_HUB_PORT,
         health_probe_path=HEALTH_PATH,
+        refresh_trigger=config.knowledge_hub.refresh_trigger or REFRESH_TRIGGER,
         opts=pulumi.ResourceOptions.merge(
             opts, pulumi.ResourceOptions(depends_on=secrets.resources)
         ),
