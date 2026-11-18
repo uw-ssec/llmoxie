@@ -406,3 +406,48 @@ def test_the_db_job_reads_the_extra_main_vault_secrets(mocks):
         s["name"] for s in job.inputs["configuration"]["secrets"]
     }
     assert "PGPASSWORD" in _refs(job)
+
+
+# --- the master key stays out of the main vault ----------------------------
+
+
+def _upload_names(mocks, monkeypatch, upload):
+    for name in list(os.environ):
+        if name.startswith("LLMAVEN_SECRETS_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv(KNOWLEDGE_HUB_MASTER_KEY_ENV, KEY)
+    monkeypatch.setenv("LLMAVEN_SECRETS_OTHER_THING", "other-value")
+
+    @pulumi.runtime.test
+    def run():
+        upload(pulumi.Output.from_input("rg"), pulumi.Output.from_input("kv-main"))
+
+    run()
+    return {r.inputs["secretName"] for r in mocks.resources if r.typ == SECRET_TYPE}
+
+
+def test_the_generic_upload_skips_the_hub_master_key(mocks, monkeypatch):
+    from llmaven.infrastructure.resources.key_vault import (
+        create_secrets_from_environment,
+    )
+
+    names = _upload_names(
+        mocks,
+        monkeypatch,
+        lambda rg, vault: create_secrets_from_environment(rg, vault, "dev"),
+    )
+    assert names == {"other-thing"}
+
+
+def test_the_secrets_manager_upload_skips_the_hub_master_key(mocks, monkeypatch):
+    from llmaven.infrastructure.resources.secrets_manager import SecretsManager
+
+    config = LLMavenConfig.model_validate(_hub_data())
+    names = _upload_names(
+        mocks,
+        monkeypatch,
+        lambda rg, vault: SecretsManager(
+            rg, vault, config, "dev"
+        ).create_user_provided_secrets(),
+    )
+    assert names == {"other-thing"}

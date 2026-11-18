@@ -1,7 +1,9 @@
 """The knowledge hub's identity, Key Vault, secrets and Blob container.
 
 The hub gets its own user-assigned identity and its own access-policy vault
-holding only the three secrets it reads, so no other app can read them. Policies
+holding the three secrets it reads. The master key is kept out of the main vault
+(the generic LLMAVEN_SECRETS_* upload skips it), so only the hub can read it; the
+database password is also written to the main vault for the console-db job. Policies
 are set inline when the vault is created; no role assignment is ever made.
 
 The master key comes from the deploy environment and is never generated here:
