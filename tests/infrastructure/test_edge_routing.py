@@ -9,10 +9,12 @@ from llmaven.infrastructure.resources.traefik import (
     build_edge_dynamic_config,
     build_edge_static_args,
     edge_policy_digest,
+    gateway_public_paths,
     render_edge_dynamic_config,
 )
 
 from .test_edge_config import LITELLM_HOST, MLFLOW_HOST, _config
+from .test_knowledge_hub_config import _hub_data
 
 BACKENDS = {
     "litellm": "https://litellm.internal.env.test",
@@ -146,3 +148,36 @@ def test_edge_digest_changes_with_policy():
         for c in (before, after)
     ]
     assert digests[0] != digests[1]
+
+
+def _hub_edge_config(enabled: bool) -> LLMavenConfig:
+    data = _hub_data()
+    data["knowledge_hub"]["enabled"] = enabled
+    return LLMavenConfig.model_validate(data)
+
+
+def _public_rule(config: LLMavenConfig) -> str:
+    backends = {
+        **BACKENDS,
+        "keycloak": "https://keycloak.internal.env.test",
+        "mlflow-auth": "https://ml-auth.internal.env.test",
+        "litellm-auth": "https://li-auth.internal.env.test",
+    }
+    http = build_edge_dynamic_config(config, backends)["http"]
+    return http["routers"]["litellm-public"]["rule"]
+
+
+def test_mcp_is_not_routed_with_the_hub_off():
+    config = _hub_edge_config(False)
+    assert "/mcp" not in _public_rule(config)
+    assert gateway_public_paths(config) == config.litellm.public_paths
+
+
+def test_mcp_is_two_exact_paths_with_the_hub_on():
+    config = _hub_edge_config(True)
+    off = _hub_edge_config(False)
+    assert gateway_public_paths(config) == [*off.litellm.public_paths, "/mcp", "/mcp/"]
+    rule = _public_rule(config)
+    assert rule.endswith(" || Path(`/mcp`) || Path(`/mcp/`))")
+    assert "PathPrefix" not in rule
+    assert "/mcp/sse" not in rule
