@@ -751,7 +751,7 @@ def create_pulumi_program(config_path: Path):
 
             # Before the console: its console-db job reads the hub's database
             # password and must wait for it. The Blob connection string needs
-            # the console's storage account, so it comes after.
+            # the hub's storage account, so it comes after, with the app.
             pulumi.log.info("Creating the knowledge hub's secrets...")
             knowledge_hub_secrets = create_knowledge_hub_secrets(
                 config=config,
@@ -809,36 +809,35 @@ def create_pulumi_program(config_path: Path):
                 "console_mail_verification_records", mail.verification_records
             )
 
-        # 8.6. The knowledge hub's Blob container and app. After the console,
-        # whose storage account holds the container; its init job waits for
-        # the account, so waiting for the job waits for the account.
+        # 8.6. The knowledge hub's storage account, Blob container and app.
+        # The account is the hub's own and retained, so its bundles outlive
+        # the hub and the console alike.
         if knowledge_hub_enabled:
-            from llmaven.infrastructure.resources.console import (
-                console_storage_account_name,
-            )
             from llmaven.infrastructure.resources.knowledge_hub import (
                 create_knowledge_hub_app,
                 create_knowledge_hub_storage,
+                create_knowledge_hub_storage_account,
                 create_knowledge_hub_storage_secret,
             )
 
             pulumi.log.info("Creating the knowledge hub...")
-            hub_storage_account = console_storage_account_name(
-                project_name, environment, location
+            hub_storage_account = create_knowledge_hub_storage_account(
+                config=config,
+                resource_group_name=resource_group,
+                location=location,
+                tags=config.tags,
             )
             hub_storage_secret = create_knowledge_hub_storage_secret(
                 config=config,
                 resource_group_name=resource_group,
                 secrets=knowledge_hub_secrets,
-                storage_account_name=hub_storage_account,
-                storage_depends_on=[console_apps.init_job],
+                storage_account_name=hub_storage_account.name,
             )
             hub_container = create_knowledge_hub_storage(
                 config=config,
                 resource_group_name=resource_group,
-                storage_account_name=hub_storage_account,
+                storage_account_name=hub_storage_account.name,
                 tags=config.tags,
-                opts=pulumi.ResourceOptions(depends_on=[console_apps.init_job]),
             )
             create_knowledge_hub_app(
                 config=config,

@@ -85,6 +85,29 @@ def knowledge_hub_vault_name(project_name: str, environment: str) -> str:
     return f"kv-{project_name}-{environment}-kh"[:24]
 
 
+_STORAGE_ACCOUNT_NAME = re.compile(r"[a-z0-9]{3,24}")
+
+
+def knowledge_hub_storage_account_name(
+    project_name: str, environment: str, location: str
+) -> str:
+    """The knowledge hub's storage account: ``<project><env><region>okf``.
+
+    Built like the console's (region prefix, hyphens dropped), so it is
+    deterministic per stack. The app and vault name checks keep project and
+    environment to 17 characters together, so this fits in 24; dev
+    (``llmaven-dev``, ``dev``, ``westus2``) gives ``llmavendevdevwestokf``, 20.
+    """
+    region = location[:4].replace("-", "").lower()
+    name = f"{project_name}{environment}{region}okf".replace("-", "").lower()
+    if not _STORAGE_ACCOUNT_NAME.fullmatch(name):
+        raise ValueError(
+            f"Knowledge hub storage account name {name!r} is not 3-24 lowercase "
+            "letters and digits, which Azure requires. Shorten project.name."
+        )
+    return name
+
+
 def edge_app_name(project_name: str, environment: str) -> str:
     """The edge Container App's real name, as Azure sees it."""
     return container_app_name(project_name, environment, EDGE_APP_SUFFIX)

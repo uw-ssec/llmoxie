@@ -13,6 +13,7 @@ from llmaven.infrastructure.config.schema import (
     KNOWLEDGE_HUB_MASTER_KEY_ENV,
     console_job_name,
     container_app_name,
+    knowledge_hub_storage_account_name,
     realm_job_name,
 )
 from llmaven.infrastructure.resources import console as console_module
@@ -34,6 +35,7 @@ REALM_JOB = realm_job_name("llmaven", "dev")
 MAIN_PASSWORD_SECRET = "kv-secret-okf-hub-main-okf-hub-db-password-dev"
 HUB_CREATORS = (
     "create_knowledge_hub_secrets",
+    "create_knowledge_hub_storage_account",
     "create_knowledge_hub_storage_secret",
     "create_knowledge_hub_storage",
     "create_knowledge_hub_app",
@@ -86,6 +88,7 @@ def _spied_run(tmp_path, monkeypatch, config: dict):
     for module, cls in (
         (azure_native.dbforpostgresql, "Database"),
         (azure_native.storage, "BlobContainer"),
+        (azure_native.storage, "StorageAccount"),
     ):
         real_cls = getattr(module, cls)
 
@@ -217,27 +220,38 @@ def test_hub_on_the_database_is_created_and_retained(hub_on):
 
 
 def test_turning_the_hub_off_keeps_its_data(hub_on):
-    """The database and the Blob container outlive the block."""
+    """The database, the storage account and the Blob container outlive the block."""
     opts = hub_on[4]
     assert opts[f"postgres-db-{KNOWLEDGE_HUB_DB}-dev"].retain_on_delete is True
+    assert opts["okf-hub-storage-dev"].retain_on_delete is True
     assert opts["okf-hub-blob-dev"].retain_on_delete is True
 
 
-def test_the_blob_container_is_in_the_console_account_after_it_exists(hub_on):
+def test_the_blob_container_is_in_the_hubs_own_account(hub_on):
+    """Not the console's: turning the console off cannot delete the bundles."""
     created, _, _, calls, _ = hub_on
-    [container] = [
+    name = knowledge_hub_storage_account_name("llmaven", "dev", "eastus")
+    [account] = [
         r
         for r in created
-        if r.typ == "azure-native:storage:BlobContainer"
-        and r.inputs["containerName"] == "okf-hub"
+        if r.typ == "azure-native:storage:StorageAccount"
+        and r.name == "okf-hub-storage-dev"
     ]
-    account = calls["create_knowledge_hub_storage"]["storage_account_name"]
-    assert container.inputs["accountName"] == account
-    init_job = calls["create_console.result"].init_job
-    assert init_job in calls["create_knowledge_hub_storage"]["opts"].depends_on
-    assert (
-        init_job in calls["create_knowledge_hub_storage_secret"]["storage_depends_on"]
+    assert account.inputs["accountName"] == name
+    assert name != console_module.console_storage_account_name(
+        "llmaven", "dev", "eastus"
     )
+    # The mocks echo no account name, so check the Output handed over.
+    hub_account = calls["create_knowledge_hub_storage_account.result"]
+    assert calls["create_knowledge_hub_storage"]["storage_account_name"] is (
+        hub_account.name
+    )
+    assert calls["create_knowledge_hub_storage_secret"]["storage_account_name"] is (
+        hub_account.name
+    )
+    # The account is waited for through its name, not through a console job.
+    assert calls["create_knowledge_hub_storage"].get("opts") is None
+    assert "storage_depends_on" not in calls["create_knowledge_hub_storage_secret"]
 
 
 def test_the_console_db_job_creates_the_hub_role(hub_on):

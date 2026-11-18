@@ -1,4 +1,4 @@
-"""The knowledge hub's identity, Key Vault, secrets, Blob container and app.
+"""The knowledge hub's identity, Key Vault, secrets, storage and app.
 
 The hub gets its own user-assigned identity and its own access-policy vault
 holding the three secrets it reads. The master key is kept out of the main vault
@@ -11,10 +11,11 @@ losing it would make the hub's stored data unreadable. The database password is
 generated and written to this vault (inside the database URL) and to the main
 vault, which is where the console-db job reads every role password.
 
-The Blob connection string needs the console's storage account, which the
-console creates; the console-db job needs the hub's database password. So the
-secrets that need no storage are made before the console, and the connection
-string, the Blob container and the app after it.
+The hub has its own storage account, kept when the hub or the console is
+turned off, so its bundles outlive both alongside the retained database. The
+console-db job needs the hub's database password, so the secrets that need no
+storage are made before the console, and the storage, the connection string and
+the app after it.
 """
 
 import re
@@ -32,6 +33,7 @@ from ..config.schema import (
     LLMavenConfig,
     container_app_environment,
     container_app_name,
+    knowledge_hub_storage_account_name,
     knowledge_hub_vault_name,
 )
 from .console_secrets import _password
@@ -117,8 +119,8 @@ def create_knowledge_hub_secrets(
     """Create the hub's identity, vault and the secrets that need no storage.
 
     The Blob connection string, the third name in ``secret_names``, is written
-    by ``create_knowledge_hub_storage_secret`` once the console's storage
-    account exists.
+    by ``create_knowledge_hub_storage_secret`` once the hub's storage account
+    exists.
     """
     project = config.project.name
     environment = config.project.environment
@@ -196,22 +198,57 @@ def create_knowledge_hub_secrets(
     )
 
 
+def create_knowledge_hub_storage_account(
+    config: LLMavenConfig,
+    resource_group_name: pulumi.Input[str],
+    location: str,
+    tags: dict[str, str],
+    opts: pulumi.ResourceOptions | None = None,
+) -> azure_native.storage.StorageAccount:
+    """The hub's own storage account, kept when the stack is destroyed.
+
+    Set like the console's account (StorageV2, LRS, https only, TLS 1.2, no
+    public blob access), with shared-key access on, since the hub reads its
+    Blob container through a connection string. It is the hub's own, so turning
+    the console off cannot delete the bundles the retained database points at.
+    """
+    return azure_native.storage.StorageAccount(
+        f"okf-hub-storage-{config.project.environment}",
+        resource_group_name=resource_group_name,
+        account_name=knowledge_hub_storage_account_name(
+            config.project.name, config.project.environment, location
+        ),
+        location=location,
+        tags=tags,
+        sku=azure_native.storage.SkuArgs(
+            name=azure_native.storage.SkuName.STANDARD_LRS
+        ),
+        kind=azure_native.storage.Kind.STORAGE_V2,
+        is_hns_enabled=False,
+        enable_https_traffic_only=True,
+        minimum_tls_version=azure_native.storage.MinimumTlsVersion.TLS1_2,
+        allow_blob_public_access=False,
+        allow_shared_key_access=True,
+        opts=pulumi.ResourceOptions.merge(
+            opts, pulumi.ResourceOptions(retain_on_delete=True)
+        ),
+    )
+
+
 def create_knowledge_hub_storage_secret(
     config: LLMavenConfig,
     resource_group_name: pulumi.Input[str],
     secrets: KnowledgeHubSecrets,
     storage_account_name: pulumi.Input[str],
-    storage_depends_on: list[pulumi.Resource] | None = None,
 ) -> azure_native.keyvault.Secret:
-    """Write the Blob connection string for the console's storage account.
+    """Write the Blob connection string for the hub's storage account.
 
-    Pass an Output of the account, or a resource that waits for it in
-    ``storage_depends_on``, so the key lookup runs once the account exists.
+    Pass the account's ``name`` Output, so the key lookup runs once the account
+    exists.
     """
     keys = azure_native.storage.list_storage_account_keys_output(
         resource_group_name=resource_group_name,
         account_name=storage_account_name,
-        opts=pulumi.InvokeOutputOptions(depends_on=storage_depends_on or []),
     )
     connection_string = pulumi.Output.all(
         storage_account_name, keys.keys[0].value

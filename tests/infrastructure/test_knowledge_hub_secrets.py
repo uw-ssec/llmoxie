@@ -15,12 +15,10 @@ from llmaven.deployment import validate as validate_mod
 from llmaven.infrastructure.config.schema import (
     KNOWLEDGE_HUB_MASTER_KEY_ENV,
     LLMavenConfig,
+    knowledge_hub_storage_account_name,
     knowledge_hub_vault_name,
 )
-from llmaven.infrastructure.resources.console import (
-    console_storage_account_name,
-    create_console,
-)
+from llmaven.infrastructure.resources.console import create_console
 from llmaven.infrastructure.resources.console_secrets import (
     KNOWLEDGE_SECRET,
     PROVISIONER_SECRET,
@@ -31,6 +29,7 @@ from llmaven.infrastructure.resources import knowledge_hub
 from llmaven.infrastructure.resources.knowledge_hub import (
     create_knowledge_hub_secrets,
     create_knowledge_hub_storage,
+    create_knowledge_hub_storage_account,
     create_knowledge_hub_storage_secret,
     master_key_from_env,
 )
@@ -156,6 +155,8 @@ class _Recorder(_AppMocks):
         id_, outputs = super().new_resource(args)
         if args.typ == "azure-native:storage:BlobContainer":
             outputs["name"] = args.inputs["containerName"]
+        if args.typ == "azure-native:storage:StorageAccount":
+            outputs["name"] = args.inputs["accountName"]
         return id_, outputs
 
 
@@ -206,20 +207,22 @@ def _create(mocks, hub=True):
                 postgres_host=pulumi.Output.from_input(HOST),
                 master_key=KEY,
             )
+            out["account"] = create_knowledge_hub_storage_account(
+                config=config,
+                resource_group_name=rg,
+                location="westus2",
+                tags={},
+            )
             out["storage_secret"] = create_knowledge_hub_storage_secret(
                 config=config,
                 resource_group_name=rg,
                 secrets=out["hub"],
-                storage_account_name=console_storage_account_name(
-                    project, env, "westus2"
-                ),
+                storage_account_name=out["account"].name,
             )
             out["container"] = create_knowledge_hub_storage(
                 config=config,
                 resource_group_name=rg,
-                storage_account_name=console_storage_account_name(
-                    project, env, "westus2"
-                ),
+                storage_account_name=out["account"].name,
                 tags={},
             )
 
@@ -292,10 +295,10 @@ def test_the_database_url_names_the_role_and_database(mocks):
     assert url.endswith(f"@{HOST}:5432/okf_hub?sslmode=verify-full&sslrootcert=system")
 
 
-def test_the_connection_string_uses_the_console_storage_account(mocks):
+def test_the_connection_string_uses_the_hubs_own_storage_account(mocks):
     out, config, resources = _create(mocks)
     name = knowledge_hub_vault_name(config.project.name, config.project.environment)
-    account = console_storage_account_name(
+    account = knowledge_hub_storage_account_name(
         config.project.name, config.project.environment, "westus2"
     )
     conn = _value(_secrets_in(resources, name)["okf-hub-storage-connection"])
@@ -330,6 +333,32 @@ def test_the_blob_container_is_private_and_retained():
     assert kwargs["account_name"] == "acct"
     assert kwargs["public_access"] == "None"
     assert kwargs["opts"].retain_on_delete is True
+
+
+def test_the_storage_account_is_the_hubs_own_and_retained(mocks):
+    """Set like the console's account, with shared keys for the connection string."""
+    out, config, resources = _create(mocks)
+    [account] = [r for r in resources if r.typ == "azure-native:storage:StorageAccount"]
+    assert account.name == f"okf-hub-storage-{config.project.environment}"
+    assert account.inputs["accountName"] == knowledge_hub_storage_account_name(
+        config.project.name, config.project.environment, "westus2"
+    )
+    assert account.inputs["kind"] == "StorageV2"
+    assert account.inputs["sku"] == {"name": "Standard_LRS"}
+    assert account.inputs["isHnsEnabled"] is False
+    assert account.inputs["enableHttpsTrafficOnly"] is True
+    assert account.inputs["minimumTlsVersion"] == "TLS1_2"
+    assert account.inputs["allowBlobPublicAccess"] is False
+    assert account.inputs["allowSharedKeyAccess"] is True
+    [container] = [r for r in resources if r.typ == "azure-native:storage:BlobContainer"]
+    assert container.inputs["accountName"] == account.inputs["accountName"]
+
+
+def test_the_storage_account_is_kept_on_delete():
+    config = LLMavenConfig.model_validate(_hub_data())
+    with patch.object(knowledge_hub.azure_native.storage, "StorageAccount") as acct:
+        create_knowledge_hub_storage_account(config, "rg", "westus2", {})
+    assert acct.call_args.kwargs["opts"].retain_on_delete is True
 
 
 def test_the_client_secrets_go_to_the_main_and_broker_vaults(mocks):

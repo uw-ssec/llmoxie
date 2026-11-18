@@ -6,7 +6,9 @@ from pydantic import ValidationError
 from llmaven.infrastructure.config.schema import (
     CONTAINER_APP_NAME_MAX,
     LLMavenConfig,
+    KEY_VAULT_NAME_MAX,
     console_job_name,
+    knowledge_hub_storage_account_name,
     knowledge_hub_vault_name,
 )
 
@@ -62,3 +64,32 @@ def test_the_vault_name_fits():
 def test_the_job_name_fits():
     name = console_job_name("llmaven", "staging", "know")
     assert len(name) <= CONTAINER_APP_NAME_MAX
+
+
+def test_the_storage_account_name_for_dev_fits_and_is_deterministic():
+    name = knowledge_hub_storage_account_name("llmaven-dev", "dev", "westus2")
+    assert name == "llmavendevdevwestokf"
+    assert len(name) == 20
+    assert name == knowledge_hub_storage_account_name("llmaven-dev", "dev", "westus2")
+
+
+@pytest.mark.parametrize(
+    ("project", "environment"),
+    [("abcdefghij", "staging"), ("llmaven-dev-x", "prod"), ("a-b-c-d-e-f-g", "test")],
+)
+def test_the_storage_account_name_fits_the_longest_valid_names(project, environment):
+    # The console vault check caps "kv-<project>-<env>-cw" at 24, so project
+    # and environment together are at most 17 characters.
+    assert len(f"kv-{project}-{environment}-cw") <= KEY_VAULT_NAME_MAX
+    name = knowledge_hub_storage_account_name(project, environment, "westus2")
+    assert 3 <= len(name) <= 24
+    assert name.isalnum() and name == name.lower()
+
+
+@pytest.mark.parametrize(
+    ("project", "environment"),
+    [("a" * 20, "dev"), ("bad_name", "dev")],
+)
+def test_the_storage_account_name_rejects_what_azure_would(project, environment):
+    with pytest.raises(ValueError, match="3-24 lowercase letters and digits"):
+        knowledge_hub_storage_account_name(project, environment, "westus2")
