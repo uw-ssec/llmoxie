@@ -281,6 +281,7 @@ def create_console(
     tags: dict[str, str],
     opts: pulumi.ResourceOptions | None = None,
     knowledge_hub_job_secret_names: dict[str, str] | None = None,
+    knowledge_hub_url: pulumi.Input[str] | None = None,
 ) -> ConsoleApps:
     """Create the console's apps, share and jobs (spec sections 4 to 6)."""
     console = config.console
@@ -348,6 +349,25 @@ def create_console(
             ),
         )
 
+    broker_knowledge_env: dict[str, pulumi.Input[str]] = {}
+    broker_knowledge_refs: dict[str, str] = {}
+    if knowledge_hub_url is not None:
+        # The broker provisions each organization's client and reads the hub;
+        # console-web never needs either.
+        broker_knowledge_env = {
+            "KNOWLEDGE_HUB_URL": knowledge_hub_url,
+            "KEYCLOAK_ADMIN_URL": pulumi.Output.concat(
+                "https://", keycloak_fqdn, f"/admin/realms/{realm}"
+            ),
+            "KEYCLOAK_TOKEN_URL": internal_oidc("token"),
+            "KEYCLOAK_PROVISIONER_CLIENT_ID": "console-provisioner",
+            "KNOWLEDGE_READER_CLIENT_ID": "console-knowledge",
+        }
+        broker_knowledge_refs = {
+            "KEYCLOAK_PROVISIONER_CLIENT_SECRET": secrets.provisioner_secret_name,
+            "KNOWLEDGE_READER_CLIENT_SECRET": secrets.knowledge_secret_name,
+        }
+
     broker = app(
         CONSOLE_BROKER_APP_SUFFIX,
         BROKER_PORT,
@@ -366,8 +386,9 @@ def create_console(
             "OIDC_CLIENT_ID": OIDC_CLIENT_ID,
             "OIDC_JWKS_URL": internal_oidc("certs"),
             "CONSOLE_PUBLIC_URL": public_url,
+            **broker_knowledge_env,
         },
-        secret_refs=secrets.broker_secret_names,
+        secret_refs={**secrets.broker_secret_names, **broker_knowledge_refs},
         storage_name=RO_STORAGE,
     )
     broker_url = broker.configuration.apply(

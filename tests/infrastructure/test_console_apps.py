@@ -8,6 +8,7 @@ import pulumi_azure_native as azure_native
 import pytest
 
 from llmaven.infrastructure.config.schema import (
+    LLMavenConfig,
     CONSOLE_BROKER_APP_SUFFIX,
     CONSOLE_DB,
     CONSOLE_WEB_APP_SUFFIX,
@@ -24,6 +25,7 @@ from llmaven.infrastructure.resources.console_secrets import create_console_secr
 from llmaven.infrastructure.resources.key_vault import create_key_vault
 
 from .test_console_config import CONSOLE_HOST, _config
+from .test_knowledge_hub_config import _hub_data
 from .test_edge_app import _isolated_mocks
 from .test_litellm_admin_host import ADMIN, KEYCLOAK_HOST
 from .test_edge_config import LITELLM_HOST
@@ -94,8 +96,16 @@ def mocks():
         yield recorder
 
 
-def _create(mocks, **console_overrides):
-    config = _config(**console_overrides)
+HUB_URL = "https://hub.internal.test"
+
+
+def _create(mocks, hub_url=None, **console_overrides):
+    if hub_url:
+        data = _hub_data()
+        data["console"].update(console_overrides)
+        config = LLMavenConfig.model_validate(data)
+    else:
+        config = _config(**console_overrides)
     out = {}
 
     @pulumi.runtime.test
@@ -136,6 +146,7 @@ def _create(mocks, **console_overrides):
             keycloak_fqdn=pulumi.Output.from_input(KC_FQDN),
             postgres_host=pulumi.Output.from_input(PG_HOST),
             tags={"env": "test"},
+            knowledge_hub_url=hub_url,
         )
 
     run()
@@ -372,6 +383,63 @@ def test_broker_env(mocks):
         "ACS_CONNECTION_STRING": "console-mail-connection",
     }
     assert "LITELLM_MASTER_KEY" not in _refs(broker)
+
+
+KNOWLEDGE_ENV = {
+    "KNOWLEDGE_HUB_URL",
+    "KEYCLOAK_ADMIN_URL",
+    "KEYCLOAK_TOKEN_URL",
+    "KEYCLOAK_PROVISIONER_CLIENT_ID",
+    "KNOWLEDGE_READER_CLIENT_ID",
+}
+KNOWLEDGE_REFS = {"KEYCLOAK_PROVISIONER_CLIENT_SECRET", "KNOWLEDGE_READER_CLIENT_SECRET"}
+
+
+def test_without_a_hub_the_apps_have_no_knowledge_settings(mocks):
+    config, resources = _create(mocks)
+    for suffix in (CONSOLE_BROKER_APP_SUFFIX, CONSOLE_WEB_APP_SUFFIX):
+        app = _app(resources, config, suffix)
+        assert not KNOWLEDGE_ENV & set(_env(app))
+        assert not KNOWLEDGE_REFS & set(_refs(app))
+
+
+def test_with_a_hub_the_broker_gets_its_knowledge_settings(mocks):
+    config, resources = _create(mocks, hub_url=HUB_URL)
+    realm = config.keycloak.realm.name
+    broker = _app(resources, config, CONSOLE_BROKER_APP_SUFFIX)
+    env = _env(broker)
+    assert {k: env[k] for k in KNOWLEDGE_ENV} == {
+        "KNOWLEDGE_HUB_URL": HUB_URL,
+        "KEYCLOAK_ADMIN_URL": f"https://{KC_FQDN}/admin/realms/{realm}",
+        "KEYCLOAK_TOKEN_URL": (
+            f"https://{KC_FQDN}/realms/{realm}/protocol/openid-connect/token"
+        ),
+        "KEYCLOAK_PROVISIONER_CLIENT_ID": "console-provisioner",
+        "KNOWLEDGE_READER_CLIENT_ID": "console-knowledge",
+    }
+    refs = _refs(broker)
+    assert {k: refs[k] for k in KNOWLEDGE_REFS} == {
+        "KEYCLOAK_PROVISIONER_CLIENT_SECRET": "console-provisioner-secret",
+        "KNOWLEDGE_READER_CLIENT_SECRET": "console-knowledge-secret",
+    }
+    own = _vault_uri(config, "broker")
+    for name in ("console-provisioner-secret", "console-knowledge-secret"):
+        assert _secrets(broker)[name]["keyVaultUrl"].startswith(f"{own}/secrets/")
+    assert _vault_uri(config, "web") not in json.dumps(broker.inputs)
+
+
+def test_with_a_hub_console_web_is_unchanged(mocks):
+    config, resources = _create(mocks)
+    before = _app(resources, config, CONSOLE_WEB_APP_SUFFIX)
+    env, refs = dict(_env(before)), dict(_refs(before))
+    env.pop("REFRESH_TRIGGER")  # a timestamp, different on every run
+    seen = len(mocks.resources)
+    hub_config, hub_resources = _create(mocks, hub_url=HUB_URL)
+    after = _app(hub_resources[seen:], hub_config, CONSOLE_WEB_APP_SUFFIX)
+    after_env = dict(_env(after))
+    after_env.pop("REFRESH_TRIGGER")
+    assert after_env == env
+    assert _refs(after) == refs
 
 
 def test_admin_subjects_are_joined_with_commas(mocks):

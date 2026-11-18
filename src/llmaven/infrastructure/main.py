@@ -780,6 +780,7 @@ def create_pulumi_program(config_path: Path):
                 ),
                 keycloak_fqdn=keycloak_fqdn,
                 postgres_host=postgres_server.fully_qualified_domain_name,
+                knowledge_hub_url=knowledge_hub_url,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
                     depends_on=[
