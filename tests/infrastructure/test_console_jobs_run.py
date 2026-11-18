@@ -248,6 +248,21 @@ class TestDeployRunsTheKnowledgeJob:
         ):
             deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
 
+    def test_realm_failure_names_the_skipped_knowledge_job(self, patched_deploy):
+        load_config, get_stack, order = patched_deploy
+        load_config.return_value = _cfg(hub_enabled=True)
+        get_stack.return_value = _stack(dict(KNOW_OUTPUTS))
+        order.realm.side_effect = DeploymentError("realm blew up")
+
+        with pytest.raises(
+            DeploymentError,
+            match=r"realm blew up\. The console database, key and knowledge jobs "
+            r"did not run \(console-db, console-init, console-know\)\.",
+        ):
+            deploy.deploy_infrastructure(Path("c.yaml"), auto_approve=True)
+
+        order.job.assert_not_called()
+
     def test_with_the_hub_a_missing_export_is_an_error(self, patched_deploy):
         load_config, get_stack, order = patched_deploy
         load_config.return_value = _cfg(hub_enabled=True)
