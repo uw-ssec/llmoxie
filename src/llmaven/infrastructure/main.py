@@ -84,6 +84,16 @@ def create_pulumi_program(config_path: Path):
             pulumi.log.error(f"Failed to load configuration: {e}")
             raise
 
+        # The hub's master key comes from the deploy env. Read it first, so a
+        # missing or malformed key stops the deploy before anything is made.
+        knowledge_hub_enabled = config.knowledge_hub.enabled
+        if knowledge_hub_enabled:
+            from llmaven.infrastructure.resources.knowledge_hub import (
+                master_key_from_env,
+            )
+
+            knowledge_hub_master_key = master_key_from_env(os.environ)
+
         # Project information
         project_name = config.project.name
         environment = config.project.environment
@@ -262,10 +272,22 @@ def create_pulumi_program(config_path: Path):
 
         # 4.1. Create databases
         pulumi.log.info("Creating PostgreSQL databases...")
+        database_names = config.database.databases
+        if knowledge_hub_enabled:
+            from llmaven.infrastructure.config.schema import KNOWLEDGE_HUB_DB
+
+            # Not added to config.database.databases, which would also give it
+            # an admin connection string in the main vault and list it in
+            # CONSOLE_OTHER_DATABASES: the hub's URL is in its own vault, and
+            # the console-db job gives the database to the hub's role.
+            database_names = [
+                *database_names,
+                *([] if KNOWLEDGE_HUB_DB in database_names else [KNOWLEDGE_HUB_DB]),
+            ]
         create_databases(
             resource_group_name=resource_group,
             server_name=postgres_server.name,
-            database_names=config.database.databases,
+            database_names=database_names,
             environment=environment,
             tags=config.tags,
         )
@@ -355,6 +377,14 @@ def create_pulumi_program(config_path: Path):
             config=config,
             tags=config.tags,
         )
+
+        # 7.0. The knowledge hub's URL, known before its app exists: the realm
+        # job and the console need it before the hub is created.
+        knowledge_hub_url = None
+        if knowledge_hub_enabled:
+            from llmaven.infrastructure.resources.knowledge_hub import hub_url
+
+            knowledge_hub_url = hub_url(container_env, project_name, environment)
 
         # 7.1. Create a single shared managed identity for all container apps.
         # Using one identity (and therefore one AccessPolicy) avoids the known issue
@@ -531,6 +561,7 @@ def create_pulumi_program(config_path: Path):
                 config=config,
                 keycloak_fqdn=keycloak_fqdn,
                 managed_identity_id=shared_managed_identity.id,
+                knowledge_hub_url=knowledge_hub_url,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
                     depends_on=[
@@ -712,6 +743,26 @@ def create_pulumi_program(config_path: Path):
         # 8.5. The console's apps and jobs. After Keycloak and LiteLLM, whose
         # FQDNs they need, and before the edge that routes to them.
         console_apps = None
+        knowledge_hub_secrets = None
+        if knowledge_hub_enabled:
+            from llmaven.infrastructure.resources.knowledge_hub import (
+                create_knowledge_hub_secrets,
+            )
+
+            # Before the console: its console-db job reads the hub's database
+            # password and must wait for it. The Blob connection string needs
+            # the console's storage account, so it comes after.
+            pulumi.log.info("Creating the knowledge hub's secrets...")
+            knowledge_hub_secrets = create_knowledge_hub_secrets(
+                config=config,
+                resource_group_name=resource_group,
+                location=location,
+                tenant_id=config.azure.tenant_id,
+                deployer_object_id=deployer_object_id,
+                main_vault=key_vault,
+                postgres_host=postgres_server.fully_qualified_domain_name,
+                master_key=knowledge_hub_master_key,
+            )
         if config.console.enabled:
             from llmaven.infrastructure.resources.console import create_console
 
@@ -731,7 +782,21 @@ def create_pulumi_program(config_path: Path):
                 postgres_host=postgres_server.fully_qualified_domain_name,
                 tags=config.tags,
                 opts=pulumi.ResourceOptions(
-                    depends_on=[shared_kv_access_policy, keycloak_app, litellm_app]
+                    depends_on=[
+                        shared_kv_access_policy,
+                        keycloak_app,
+                        litellm_app,
+                        *(
+                            knowledge_hub_secrets.job_secrets
+                            if knowledge_hub_secrets
+                            else []
+                        ),
+                    ]
+                ),
+                knowledge_hub_job_secret_names=(
+                    knowledge_hub_secrets.job_secret_names
+                    if knowledge_hub_secrets
+                    else None
                 ),
             )
             pulumi.export("console_url", f"https://{config.console.hostname}")
@@ -740,6 +805,51 @@ def create_pulumi_program(config_path: Path):
             pulumi.export(
                 "console_mail_verification_records", mail.verification_records
             )
+
+        # 8.6. The knowledge hub's Blob container and app. After the console,
+        # whose storage account holds the container; its init job waits for
+        # the account, so waiting for the job waits for the account.
+        if knowledge_hub_enabled:
+            from llmaven.infrastructure.resources.console import (
+                console_storage_account_name,
+            )
+            from llmaven.infrastructure.resources.knowledge_hub import (
+                create_knowledge_hub_app,
+                create_knowledge_hub_storage,
+                create_knowledge_hub_storage_secret,
+            )
+
+            pulumi.log.info("Creating the knowledge hub...")
+            hub_storage_account = console_storage_account_name(
+                project_name, environment, location
+            )
+            hub_storage_secret = create_knowledge_hub_storage_secret(
+                config=config,
+                resource_group_name=resource_group,
+                secrets=knowledge_hub_secrets,
+                storage_account_name=hub_storage_account,
+                storage_depends_on=[console_apps.init_job],
+            )
+            hub_container = create_knowledge_hub_storage(
+                config=config,
+                resource_group_name=resource_group,
+                storage_account_name=hub_storage_account,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(depends_on=[console_apps.init_job]),
+            )
+            create_knowledge_hub_app(
+                config=config,
+                resource_group_name=resource_group,
+                location=location,
+                container_env=container_env,
+                secrets=knowledge_hub_secrets,
+                keycloak_fqdn=keycloak_fqdn,
+                tags=config.tags,
+                opts=pulumi.ResourceOptions(
+                    depends_on=[hub_storage_secret, hub_container]
+                ),
+            )
+            pulumi.export("knowledge_hub_url", knowledge_hub_url)
 
         # 8.3. Traefik edge Container App (the only public entry point)
         edge_app = None

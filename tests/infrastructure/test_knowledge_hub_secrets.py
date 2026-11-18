@@ -31,6 +31,7 @@ from llmaven.infrastructure.resources import knowledge_hub
 from llmaven.infrastructure.resources.knowledge_hub import (
     create_knowledge_hub_secrets,
     create_knowledge_hub_storage,
+    create_knowledge_hub_storage_secret,
     master_key_from_env,
 )
 
@@ -38,7 +39,7 @@ from . import PINNED_KEYCLOAK_IMAGE  # noqa: F401
 from .test_console_apps import _Mocks as _AppMocks
 from .test_console_apps import _job, _refs
 from .test_edge_app import _isolated_mocks
-from .test_knowledge_hub_config import HUB_IMAGE, _hub_data
+from .test_knowledge_hub_config import _hub_data
 
 HOST = "psql.example.postgres.database.azure.com"
 TENANT = "11111111-1111-1111-1111-111111111111"
@@ -78,9 +79,7 @@ def _write_config(tmp_path: Path, hub: bool) -> Path:
     }
     data["monitoring"] = {"alerts": {"email_receivers": ["ops@llmoxie.test"]}}
     data["litellm"]["config_file"] = str(stored)
-    data["litellm"]["key_vault_secret_refs"] = {
-        "LITELLM_SALT_KEY": "litellm-salt-key"
-    }
+    data["litellm"]["key_vault_secret_refs"] = {"LITELLM_SALT_KEY": "litellm-salt-key"}
     data["knowledge_hub"]["enabled"] = hub
     path = tmp_path / "llmaven-config.yaml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
@@ -142,7 +141,9 @@ def test_validate_accepts_a_good_master_key(tmp_path, monkeypatch):
 
 
 def test_validate_does_not_ask_for_the_key_when_the_hub_is_off(tmp_path, monkeypatch):
-    result, output = _validate(tmp_path, monkeypatch, False, ["LLMAVEN_SECRETS_FOO=bar"])
+    result, output = _validate(
+        tmp_path, monkeypatch, False, ["LLMAVEN_SECRETS_FOO=bar"]
+    )
     assert KNOWLEDGE_HUB_MASTER_KEY_ENV not in output
     assert result.exit_code == 0, output
 
@@ -203,10 +204,15 @@ def _create(mocks, hub=True):
                 deployer_object_id=DEPLOYER,
                 main_vault=main_vault,
                 postgres_host=pulumi.Output.from_input(HOST),
+                master_key=KEY,
+            )
+            out["storage_secret"] = create_knowledge_hub_storage_secret(
+                config=config,
+                resource_group_name=rg,
+                secrets=out["hub"],
                 storage_account_name=console_storage_account_name(
                     project, env, "westus2"
                 ),
-                master_key=KEY,
             )
             out["container"] = create_knowledge_hub_storage(
                 config=config,

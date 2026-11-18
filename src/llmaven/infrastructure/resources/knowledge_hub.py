@@ -1,4 +1,4 @@
-"""The knowledge hub's identity, Key Vault, secrets and Blob container.
+"""The knowledge hub's identity, Key Vault, secrets, Blob container and app.
 
 The hub gets its own user-assigned identity and its own access-policy vault
 holding the three secrets it reads. The master key is kept out of the main vault
@@ -10,6 +10,11 @@ The master key comes from the deploy environment and is never generated here:
 losing it would make the hub's stored data unreadable. The database password is
 generated and written to this vault (inside the database URL) and to the main
 vault, which is where the console-db job reads every role password.
+
+The Blob connection string needs the console's storage account, which the
+console creates; the console-db job needs the hub's database password. So the
+secrets that need no storage are made before the console, and the connection
+string, the Blob container and the app after it.
 """
 
 import re
@@ -20,12 +25,17 @@ import pulumi
 import pulumi_azure_native as azure_native
 
 from ..config.schema import (
+    KNOWLEDGE_HUB_APP_SUFFIX,
     KNOWLEDGE_HUB_DB,
     KNOWLEDGE_HUB_MASTER_KEY_ENV,
+    KNOWLEDGE_HUB_PORT,
     LLMavenConfig,
+    container_app_environment,
+    container_app_name,
     knowledge_hub_vault_name,
 )
 from .console_secrets import _password
+from .container_apps import create_container_app_with_key_vault_secrets
 from .helpers import create_user_assigned_managed_identity
 from .key_vault import deployer_access_policy
 
@@ -36,6 +46,13 @@ DATABASE_URL_SECRET = "okf-hub-database-url"
 STORAGE_CONNECTION_SECRET = "okf-hub-storage-connection"
 # The main-vault copy of the database password, read by the console-db job.
 DB_PASSWORD_SECRET = "okf-hub-db-password"
+HEALTH_PATH = "/healthz"
+# Who may do what, read by the hub: each OIDC actor writes its own bundle, and
+# the knowledge-reader role reads every organization's bundle.
+OIDC_GRANTS = (
+    '[{"bundle":"orgs/oidc-{actor}","access":"write"},'
+    '{"role":"knowledge-reader","bundle":"orgs/*","access":"read"}]'
+)
 
 _MASTER_KEY = re.compile(r"[0-9a-f]{64}")
 
@@ -60,6 +77,31 @@ class KnowledgeHubSecrets:
     job_secret_names: dict[str, str]
     db_password: pulumi.Output[str]
     resources: list[pulumi.Resource]  # for depends_on
+    # The main-vault secrets the console-db job reads, for its depends_on.
+    job_secrets: list[pulumi.Resource]
+
+
+def _put_secret(
+    config: LLMavenConfig,
+    resource_group_name: pulumi.Input[str],
+    target: azure_native.keyvault.Vault,
+    label: str,
+    name: str,
+    value: pulumi.Input,
+) -> azure_native.keyvault.Secret:
+    return azure_native.keyvault.Secret(
+        f"kv-secret-okf-hub-{label}-{name}-{config.project.environment}",
+        resource_group_name=resource_group_name,
+        vault_name=target.name,
+        secret_name=name,
+        properties=azure_native.keyvault.SecretPropertiesArgs(
+            value=pulumi.Output.secret(value),
+            content_type="text/plain",
+            attributes=azure_native.keyvault.SecretAttributesArgs(enabled=True),
+        ),
+        tags=config.tags,
+        opts=pulumi.ResourceOptions(additional_secret_outputs=["properties"]),
+    )
 
 
 def create_knowledge_hub_secrets(
@@ -70,15 +112,13 @@ def create_knowledge_hub_secrets(
     deployer_object_id: str | None,
     main_vault: azure_native.keyvault.Vault,
     postgres_host: pulumi.Input[str],
-    storage_account_name: pulumi.Input[str],
     master_key: str,
-    storage_depends_on: list[pulumi.Resource] | None = None,
 ) -> KnowledgeHubSecrets:
-    """Create the hub's identity, vault and secrets.
+    """Create the hub's identity, vault and the secrets that need no storage.
 
-    ``storage_account_name`` is the console's storage account. Pass an Output of
-    the account, or its resources in ``storage_depends_on``, so the key lookup
-    waits for the account to exist.
+    The Blob connection string, the third name in ``secret_names``, is written
+    by ``create_knowledge_hub_storage_secret`` once the console's storage
+    account exists.
     """
     project = config.project.name
     environment = config.project.environment
@@ -123,30 +163,6 @@ def create_knowledge_hub_secrets(
         ),
     )
 
-    secrets: list[pulumi.Resource] = []
-
-    def put(
-        target: azure_native.keyvault.Vault,
-        label: str,
-        name: str,
-        value: pulumi.Input,
-    ) -> None:
-        secrets.append(
-            azure_native.keyvault.Secret(
-                f"kv-secret-okf-hub-{label}-{name}-{environment}",
-                resource_group_name=resource_group_name,
-                vault_name=target.name,
-                secret_name=name,
-                properties=azure_native.keyvault.SecretPropertiesArgs(
-                    value=pulumi.Output.secret(value),
-                    content_type="text/plain",
-                    attributes=azure_native.keyvault.SecretAttributesArgs(enabled=True),
-                ),
-                tags=config.tags,
-                opts=pulumi.ResourceOptions(additional_secret_outputs=["properties"]),
-            )
-        )
-
     db_password = _password("okf-hub-db-password", environment)
     database_url = pulumi.Output.all(db_password, postgres_host).apply(
         lambda a: (
@@ -155,22 +171,15 @@ def create_knowledge_hub_secrets(
             "?sslmode=verify-full&sslrootcert=system"
         )
     )
-    keys = azure_native.storage.list_storage_account_keys_output(
-        resource_group_name=resource_group_name,
-        account_name=storage_account_name,
-        opts=pulumi.InvokeOutputOptions(depends_on=storage_depends_on or []),
-    )
-    connection_string = pulumi.Output.all(storage_account_name, keys.keys[0].value).apply(
-        lambda a: (
-            f"DefaultEndpointsProtocol=https;AccountName={a[0]};AccountKey={a[1]};"
-            "EndpointSuffix=core.windows.net"
-        )
-    )
 
-    put(vault, "hub", MASTER_KEY_SECRET, master_key)
-    put(vault, "hub", DATABASE_URL_SECRET, database_url)
-    put(vault, "hub", STORAGE_CONNECTION_SECRET, connection_string)
-    put(main_vault, "main", DB_PASSWORD_SECRET, db_password)
+    def put(target, label, name, value):
+        return _put_secret(config, resource_group_name, target, label, name, value)
+
+    hub_secrets = [
+        put(vault, "hub", MASTER_KEY_SECRET, master_key),
+        put(vault, "hub", DATABASE_URL_SECRET, database_url),
+    ]
+    main_password = put(main_vault, "main", DB_PASSWORD_SECRET, db_password)
 
     return KnowledgeHubSecrets(
         identity=identity,
@@ -182,7 +191,43 @@ def create_knowledge_hub_secrets(
         },
         job_secret_names={"OKF_HUB_DB_PASSWORD": DB_PASSWORD_SECRET},
         db_password=db_password,
-        resources=[identity, vault, *secrets],
+        resources=[identity, vault, *hub_secrets, main_password],
+        job_secrets=[main_password],
+    )
+
+
+def create_knowledge_hub_storage_secret(
+    config: LLMavenConfig,
+    resource_group_name: pulumi.Input[str],
+    secrets: KnowledgeHubSecrets,
+    storage_account_name: pulumi.Input[str],
+    storage_depends_on: list[pulumi.Resource] | None = None,
+) -> azure_native.keyvault.Secret:
+    """Write the Blob connection string for the console's storage account.
+
+    Pass an Output of the account, or a resource that waits for it in
+    ``storage_depends_on``, so the key lookup runs once the account exists.
+    """
+    keys = azure_native.storage.list_storage_account_keys_output(
+        resource_group_name=resource_group_name,
+        account_name=storage_account_name,
+        opts=pulumi.InvokeOutputOptions(depends_on=storage_depends_on or []),
+    )
+    connection_string = pulumi.Output.all(
+        storage_account_name, keys.keys[0].value
+    ).apply(
+        lambda a: (
+            f"DefaultEndpointsProtocol=https;AccountName={a[0]};AccountKey={a[1]};"
+            "EndpointSuffix=core.windows.net"
+        )
+    )
+    return _put_secret(
+        config,
+        resource_group_name,
+        secrets.vault,
+        "hub",
+        STORAGE_CONNECTION_SECRET,
+        connection_string,
     )
 
 
@@ -206,5 +251,80 @@ def create_knowledge_hub_storage(
         public_access=azure_native.storage.PublicAccess.NONE,
         opts=pulumi.ResourceOptions.merge(
             opts, pulumi.ResourceOptions(retain_on_delete=True)
+        ),
+    )
+
+
+def hub_url(
+    container_env: azure_native.app.ManagedEnvironment, project: str, environment: str
+) -> pulumi.Output[str]:
+    """The hub's internal https URL: its audience, and where the console calls it.
+
+    It is the FQDN Container Apps gives an app with internal ingress, so it is
+    known before the app exists and never changes for a stack.
+    """
+    name = container_app_name(project, environment, KNOWLEDGE_HUB_APP_SUFFIX)
+    return pulumi.Output.concat(
+        "https://", name, ".internal.", container_env.default_domain
+    )
+
+
+def create_knowledge_hub_app(
+    config: LLMavenConfig,
+    resource_group_name: pulumi.Input[str],
+    location: str,
+    container_env: azure_native.app.ManagedEnvironment,
+    secrets: KnowledgeHubSecrets,
+    keycloak_fqdn: pulumi.Input[str],
+    tags: dict[str, str],
+    opts: pulumi.ResourceOptions | None = None,
+) -> azure_native.app.ContainerApp:
+    """The hub's Container App: internal ingress, one replica, its own vault.
+
+    One replica, so every call for a vault runs through one engine (the spec
+    leaves more replicas until okf's handling of a 409 is known). Its probes
+    are HTTP checks of ``/healthz``: Container Apps ignores the image's
+    HEALTHCHECK, and the startup probe gives the database migration and the
+    Blob container check time to finish.
+    """
+    project = config.project.name
+    environment = config.project.environment
+    realm = config.keycloak.realm.name
+    base_name = f"{project}-{environment}-{KNOWLEDGE_HUB_APP_SUFFIX}"
+    return create_container_app_with_key_vault_secrets(
+        app_name=base_name,
+        resource_group_name=resource_group_name,
+        location=location,
+        managed_environment_id=container_env.id,
+        key_vault_uri=secrets.vault.properties.vault_uri,
+        container_image=config.knowledge_hub.image,
+        container_port=KNOWLEDGE_HUB_PORT,
+        cpu=config.knowledge_hub.cpu,
+        memory=config.knowledge_hub.memory,
+        min_replicas=1,
+        max_replicas=1,
+        env_vars={
+            # Tokens name the public issuer; the keys are fetched internally.
+            "OIDC_ISSUER": f"https://{config.keycloak.hostname}/realms/{realm}",
+            "OIDC_JWKS_URL": pulumi.Output.concat(
+                "https://",
+                keycloak_fqdn,
+                f"/realms/{realm}/protocol/openid-connect/certs",
+            ),
+            "OIDC_AUDIENCE": hub_url(container_env, project, environment),
+            "OIDC_GRANTS": OIDC_GRANTS,
+            "BLOB_CONTAINER": BLOB_CONTAINER,
+            "PORT": str(KNOWLEDGE_HUB_PORT),
+        },
+        key_vault_secret_refs=secrets.secret_names,
+        managed_identity_id=secrets.identity.id,
+        environment=container_app_environment(base_name),
+        tags=tags,
+        enable_ingress=True,
+        ingress_external=False,
+        health_probe_port=KNOWLEDGE_HUB_PORT,
+        health_probe_path=HEALTH_PATH,
+        opts=pulumi.ResourceOptions.merge(
+            opts, pulumi.ResourceOptions(depends_on=secrets.resources)
         ),
     )
