@@ -1,3 +1,6 @@
+## 2026-11-19
+* **Update**: Updated concept `facts/request-log-sources-differ.md`.
+
 ## 2026-11-16
 * **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
 * **Update**: Updated concept `bugs/key-vault-access-policy-replace.md`.

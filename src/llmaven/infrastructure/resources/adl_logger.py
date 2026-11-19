@@ -10,6 +10,11 @@ Log path layout: <container>/logs/<yyyy>/<mm>/<dd>/<request_id>.json
 One file per request, written atomically via BlobClient.upload_blob().
 The filename is the standard_logging_object["id"] (e.g. "chatcmpl-abc123"),
 guaranteeing uniqueness without any coordination across workers or replicas.
+
+Credentials are removed from each record before it is written: LiteLLM's
+callback kwargs carry the provider key it called the model with (which, with
+the console, an organization enters itself) and the caller's key in the
+request headers. Prompts and LiteLLM's hashed key ids are kept.
 """
 
 import json
@@ -32,6 +37,59 @@ logger = logging.getLogger(__name__)
 logger.addHandler(_handler)
 logger.setLevel(logging.INFO)
 logger.propagate = False  # Don't propagate to root logger
+
+
+# Field names that hold a credential in LiteLLM's callback kwargs.
+_SECRET_NAMES = {
+    "api_key",
+    "authorization",
+    "api-key",
+    "x-api-key",
+    "password",
+    "client_secret",
+    "vertex_credentials",
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "master_key",
+}
+# LiteLLM's own hashed key ids, kept so records can be grouped by key.
+_HASHED_ALREADY = ("user_api_key",)
+
+
+def _is_secret(name: str) -> bool:
+    name = name.lower()
+    if name.startswith(_HASHED_ALREADY):
+        return False
+    return name in _SECRET_NAMES or name.endswith(
+        ("api_key", "_secret", "_token", "_credentials")
+    )
+
+
+def _redact(value: Any, found: set[str]) -> Any:
+    """Copy `value` with credential fields blanked, collecting their values in `found`."""
+    if isinstance(value, dict):
+        clean = {}
+        for key, item in value.items():
+            if isinstance(key, str) and _is_secret(key) and item:
+                if isinstance(item, str) and len(item) >= 8:
+                    found.add(item)
+                clean[key] = "[redacted]"
+            else:
+                clean[key] = _redact(item, found)
+        return clean
+    if isinstance(value, (list, tuple)):
+        return [_redact(item, found) for item in value]
+    return value
+
+
+def _serialize(record: dict) -> bytes:
+    """JSON for one record, with no credential in it."""
+    found: set[str] = set()
+    text = json.dumps(_redact(record, found), default=str)
+    # Also where a credential was copied into another field or an object's repr.
+    for secret in found:
+        text = text.replace(secret, "[redacted]")
+    return text.encode("utf-8")
 
 
 class AdlLogger(CustomLogger):
@@ -103,7 +161,7 @@ class AdlLogger(CustomLogger):
                 ),
                 "cost": litellm.completion_cost(completion_response=response_obj),
             }
-            blob_data = json.dumps(record, default=str).encode("utf-8")
+            blob_data = _serialize(record)
 
             async with await self._get_blob_client(
                 self._record_path(request_id, start_time)
