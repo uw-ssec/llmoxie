@@ -149,11 +149,10 @@ export type KnowledgePage = {
     links_in: ConceptLink[]
   } | null
   graph: {
-    width: number
-    height: number
     hidden: number
-    nodes: { id: string; title: string; label: string; type: string; colour: string; x: number; y: number; selected: boolean; faded: boolean }[]
-    lines: { x1: number; y1: number; x2: number; y2: number; note: string | null; selected: boolean }[]
+    /** `links` counts every link the concept has, including those to concepts the graph leaves out. */
+    nodes: { id: string; title: string; type: string; colour: string; links: number }[]
+    edges: { source: string; target: string; note: string | null }[]
     legend: { type: string; colour: string }[]
   }
   log_html: string

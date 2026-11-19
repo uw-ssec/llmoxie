@@ -270,50 +270,25 @@
     @apply border border-border px-3 py-1.5 text-left;
   }
 
-  /* The knowledge graph (components/knowledge-graph.tsx). Six colours for concept types, from the
-     design system's palette; teal marks what is selected, as it marks the page you are on. */
+  /* The knowledge graph (components/knowledge-graph.tsx), drawn on a canvas that reads these. Six
+     colours for concept types, from the design system's palette; teal marks what is selected, as it
+     marks the page you are on. */
   .knowledge-graph {
-    @apply block h-auto w-full min-w-140;
+    --kg-t0: var(--color-purple-700);
+    --kg-t1: var(--color-gold-700);
+    --kg-t2: var(--color-teal-600);
+    --kg-t3: var(--color-pink-600);
+    --kg-t4: var(--color-green-600);
+    --kg-t5: var(--color-neutral-600);
+    --kg-line: var(--color-neutral-400);
+    --kg-lit: var(--color-teal-600);
+    --kg-text: var(--text-primary);
+    --kg-halo: var(--surface-primary);
   }
-  .knowledge-graph line {
-    stroke: var(--color-neutral-400);
-    stroke-width: 1;
-  }
-  .knowledge-graph line.on {
-    stroke: var(--color-teal-600);
-    stroke-width: 2;
-  }
-  .knowledge-graph marker path {
-    fill: var(--color-neutral-500);
-  }
-  .knowledge-graph text {
-    font-size: 11px;
-    fill: var(--text-primary);
-    paint-order: stroke;
-    stroke: var(--surface-primary);
-    stroke-width: 3px;
-  }
-  .knowledge-graph a {
-    @apply cursor-pointer no-underline;
-  }
-  .knowledge-graph a.faded {
-    opacity: 0.35;
-  }
-  .knowledge-graph circle {
-    stroke: var(--surface-primary);
-    stroke-width: 2;
-  }
-  .knowledge-graph a.on circle {
-    stroke: var(--color-teal-600);
-    stroke-width: 3;
-  }
-  .knowledge-graph a:is(:hover, :focus-visible) circle {
-    stroke: var(--color-purple-900);
-  }
-  :is(.knowledge-graph, .knowledge-graph-key) circle.t0 { fill: var(--color-purple-700); }
-  :is(.knowledge-graph, .knowledge-graph-key) circle.t1 { fill: var(--color-gold-700); }
-  :is(.knowledge-graph, .knowledge-graph-key) circle.t2 { fill: var(--color-teal-600); }
-  :is(.knowledge-graph, .knowledge-graph-key) circle.t3 { fill: var(--color-pink-600); }
-  :is(.knowledge-graph, .knowledge-graph-key) circle.t4 { fill: var(--color-green-600); }
-  :is(.knowledge-graph, .knowledge-graph-key) circle.t5 { fill: var(--color-neutral-600); }
+  .knowledge-graph-key circle.t0 { fill: var(--color-purple-700); }
+  .knowledge-graph-key circle.t1 { fill: var(--color-gold-700); }
+  .knowledge-graph-key circle.t2 { fill: var(--color-teal-600); }
+  .knowledge-graph-key circle.t3 { fill: var(--color-pink-600); }
+  .knowledge-graph-key circle.t4 { fill: var(--color-green-600); }
+  .knowledge-graph-key circle.t5 { fill: var(--color-neutral-600); }
 }
