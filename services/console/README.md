@@ -179,7 +179,8 @@ any `KEYCLOAK_*` or `KNOWLEDGE_*` setting. Creating an organization skips its
 Keycloak `okf-org-*` client and its MCP server, teams get no MCP server, and
 suspending or removing an organization skips the knowledge steps it never had.
 The knowledge page and the team page say "Knowledge isn't set up on this
-console." Set `KNOWLEDGE_HUB_URL` and the rest to turn it on.
+console." Set `KNOWLEDGE_HUB_URL` and the rest to turn it on. On Azure, `knowledge_hub.enabled`
+sets them all; see "The knowledge hub" in `.agents/rules/infrastructure.md`.
 
 ## On Azure
 

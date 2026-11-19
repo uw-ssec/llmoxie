@@ -11,7 +11,7 @@ import yaml
 
 from llmaven.infrastructure.config.schema import edge_app_base_name
 from llmaven.infrastructure.main import create_pulumi_program
-from llmaven.infrastructure.resources import console, helpers, keycloak
+from llmaven.infrastructure.resources import console, helpers, keycloak, knowledge_hub
 
 from .test_edge_app import _isolated_mocks
 
@@ -46,6 +46,9 @@ class _Mocks(pulumi.runtime.Mocks):
                 **outputs.get("properties", {}),
                 "vaultUri": "https://kv.vault.azure.net/",
             }
+        if args.typ == "azure-native:app:ManagedEnvironment":
+            # The domain the fake app FQDNs below use.
+            outputs["defaultDomain"] = "env.test"
         if args.typ == "azure-native:communication:Domain":
             record = {"name": "@", "ttl": 3600, "type": "TXT", "value": "ms-verify=x"}
             outputs["verificationRecords"] = {"domain": record, "sPF": record}
@@ -123,6 +126,9 @@ def _run(tmp_path: Path, monkeypatch, **overrides):
     )
     monkeypatch.setattr(
         console, "create_container_app_with_key_vault_secrets", fake_create_app
+    )
+    monkeypatch.setattr(
+        knowledge_hub, "create_container_app_with_key_vault_secrets", fake_create_app
     )
 
     # The realm job carries a managed identity, which trips the mock serializer.

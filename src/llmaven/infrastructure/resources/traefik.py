@@ -287,6 +287,15 @@ def _add_litellm_login_routes(
     }
 
 
+def gateway_public_paths(config: LLMavenConfig) -> list[str]:
+    """The exact paths the gateway host serves: the configured ones, plus the
+    knowledge hub's MCP endpoint (only ``/mcp`` and ``/mcp/``) when it is on."""
+    paths = list(config.litellm.public_paths)
+    if config.knowledge_hub.enabled:
+        paths += ["/mcp", "/mcp/"]
+    return paths
+
+
 def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -> dict:
     """Build the edge's Traefik file-provider config, routed by Host.
 
@@ -325,7 +334,7 @@ def build_edge_dynamic_config(config: LLMavenConfig, backends: dict[str, str]) -
         host = f"Host(`{litellm.hostname}`)"
         for name, paths, priority, limited in (
             ("litellm-health", litellm.health_paths, 300, False),
-            ("litellm-public", litellm.public_paths, 200, True),
+            ("litellm-public", gateway_public_paths(config), 200, True),
         ):
             if paths:
                 router = {

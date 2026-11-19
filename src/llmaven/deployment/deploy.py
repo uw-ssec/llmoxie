@@ -555,6 +555,19 @@ CONSOLE_JOBS = (
         "console-init",
     ),
 )
+KNOWLEDGE_JOB = (
+    "console_knowledge_job",
+    "Setting up knowledge for existing organizations",
+    "setting up knowledge for existing organizations",
+    "console-know",
+)
+
+
+def console_jobs(config) -> tuple[tuple[str, str, str, str], ...]:
+    """CONSOLE_JOBS, then the knowledge backfill when the hub is on."""
+    if config.knowledge_hub.enabled is True:
+        return (*CONSOLE_JOBS, KNOWLEDGE_JOB)
+    return CONSOLE_JOBS
 
 
 def _refuse_realm_rename(stack, configured: str) -> None:
@@ -764,18 +777,24 @@ def deploy_infrastructure(
                 try:
                     run_realm_job(config, job_output.value)
                 except DeploymentError as e:
-                    skipped = (
-                        ". The console database and key jobs did not run "
-                        "(console-db, console-init)."
-                        if config.console.enabled is True
-                        else ""
-                    )
+                    skipped = ""
+                    if config.console.enabled is True:
+                        skipped = (
+                            ". The console database and key jobs did not run "
+                            "(console-db, console-init)."
+                        )
+                        if config.knowledge_hub.enabled is True:
+                            skipped = (
+                                ". The console database, key and knowledge jobs "
+                                "did not run (console-db, console-init, "
+                                "console-know)."
+                            )
                     raise DeploymentError(
                         "Infrastructure deployed, but the Keycloak realm was not "
                         f"applied: {e}{skipped}"
                     )
                 if config.console.enabled is True:
-                    for output_name, purpose, failed, container in CONSOLE_JOBS:
+                    for output_name, purpose, failed, container in console_jobs(config):
                         job_output = (up_result.outputs or {}).get(output_name)
                         if job_output is None:
                             raise DeploymentError(

@@ -166,7 +166,7 @@ def test_a_lead_browses_the_orgs_knowledge_and_its_graph():
     assert all(set(c) == {"id", "title", "type", "description", "tags", "links", "written_at"} for c in view["concepts"])
     # The graph: a dot per concept, one arrow carrying the relation's description, and the bundle's own log.
     assert len(view["graph"]["nodes"]) == 2 and len(view["graph"]["legend"]) == 2
-    assert [line["note"] for line in view["graph"]["lines"]] == ["replaces"] and view["log_html"]
+    assert [edge["note"] for edge in view["graph"]["edges"]] == ["replaces"] and view["log_html"]
     # A body shows only once selected, and never as the Markdown it was written in.
     assert view["concept"] is None and f"DOOR-{RUN}" not in json.dumps({**view, "log_html": ""})
     assert '"body"' not in page.text and '"log"' not in page.text

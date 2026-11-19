@@ -10,7 +10,7 @@ exported. Database passwords are generated without special characters, so they
 can sit unescaped in the ``postgresql://`` URLs.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import pulumi
@@ -26,6 +26,10 @@ WEB_DB_ROLE = "console_web"
 BROKER_DB_ROLE = "console_broker"
 
 OIDC_SECRET = KEYCLOAK_SECRET_NAMES["client_console"]
+# Main-vault names of the knowledge hub's two Keycloak client secrets; the
+# realm job reads them, and the knowledge-hub secrets create them.
+PROVISIONER_SECRET = "console-provisioner-secret"
+KNOWLEDGE_SECRET = "console-knowledge-secret"
 CALLER_SECRET = "console-broker-caller-secret"
 WEB_DB_URL = "console-web-db-url"
 BROKER_DB_URL = "console-broker-db-url"
@@ -52,6 +56,13 @@ class ConsoleSecrets:
     resources: list[pulumi.Resource]  # for depends_on
     # The main vault's copy of the OIDC client secret, which the realm job reads.
     main_oidc_secret: azure_native.keyvault.Secret
+    # The knowledge hub's two client secrets (main and broker vault copies);
+    # None while knowledge_hub is off.
+    provisioner_secret_name: str | None = None
+    knowledge_secret_name: str | None = None
+    # env var -> secret name in the main vault, for the knowledge backfill
+    # job; empty while knowledge_hub is off.
+    knowledge_job_secret_names: dict[str, str] = field(default_factory=dict)
 
 
 def _password(name: str, environment: str) -> pulumi.Output[str]:
@@ -197,12 +208,26 @@ def create_console_secrets(
     put(web_vault, "web", CALLER_SECRET, caller)
     put(web_vault, "web", WEB_DB_URL, db_url(WEB_DB_ROLE, web_pw))
     put(broker_vault, "broker", CALLER_SECRET, caller)
-    put(broker_vault, "broker", BROKER_DB_URL, db_url(BROKER_DB_ROLE, broker_pw))
+    broker_db_url = db_url(BROKER_DB_ROLE, broker_pw)
+    put(broker_vault, "broker", BROKER_DB_URL, broker_db_url)
     put(broker_vault, "broker", ACS_SECRET, mail_connection_string)
     main_oidc_secret = put(main_vault, "main", OIDC_SECRET, oidc)
     put(main_vault, "main", WEB_DB_PASSWORD, web_pw)
     put(main_vault, "main", BROKER_DB_PASSWORD, broker_pw)
     put(main_vault, "main", DB_ADMIN_PASSWORD, admin_password)
+
+    hub = config.knowledge_hub.enabled
+    if hub:
+        # One value per secret, in the main vault (the realm job reads it) and
+        # the broker vault (the broker authenticates with it).
+        for secret_name in (PROVISIONER_SECRET, KNOWLEDGE_SECRET):
+            value = _password(secret_name, environment)
+            put(broker_vault, "broker", secret_name, value)
+            put(main_vault, "main", secret_name, value)
+        # The knowledge backfill job does the broker's work as the broker's
+        # database role, and jobs read only the main vault. That vault
+        # already holds the role's password, for the console-db job.
+        put(main_vault, "main", BROKER_DB_URL, broker_db_url)
 
     return ConsoleSecrets(
         web_identity=web_identity,
@@ -232,4 +257,15 @@ def create_console_secrets(
             *secrets,
         ],
         main_oidc_secret=main_oidc_secret,
+        provisioner_secret_name=PROVISIONER_SECRET if hub else None,
+        knowledge_secret_name=KNOWLEDGE_SECRET if hub else None,
+        knowledge_job_secret_names=(
+            {
+                "CONSOLE_BROKER_DATABASE_URL": BROKER_DB_URL,
+                "KEYCLOAK_PROVISIONER_CLIENT_SECRET": PROVISIONER_SECRET,
+                "KNOWLEDGE_READER_CLIENT_SECRET": KNOWLEDGE_SECRET,
+            }
+            if hub
+            else {}
+        ),
     )

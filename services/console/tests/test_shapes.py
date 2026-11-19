@@ -62,7 +62,7 @@ CONCEPTS = [{"id": "facts/door", "title": "Door", "type": "fact", "description":
 KNOWLEDGE_VIEW = {"org": {"id": "o-1", "name": "Astro", "slug": "astro", "status": "active"},
                   "tools": "knowledge_astro", "concepts": CONCEPTS,
                   "edges": [{"source": "facts/door", "target": "facts/door", "note": "self"}], "log": "RAW log"}
-GRAPH = {"width": 880, "height": 520, "nodes": [], "lines": [], "hidden": 0, "legend": []}
+GRAPH = {"nodes": [], "edges": [], "hidden": 0, "legend": []}
 
 DLP_VIEW = {"enabled": True, "shown": 100, "read": 12,
             "totals": [{"kind": "EMAIL", "action": "mask", "count": 3}],

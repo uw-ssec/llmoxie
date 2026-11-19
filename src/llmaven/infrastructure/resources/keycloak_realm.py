@@ -18,7 +18,15 @@ CLIENT_SECRET_ENV: dict[str, str] = {
     "litellm": "KC_CLIENT_SECRET_LITELLM",
     "llmaven-cli": "KC_CLIENT_SECRET_LLMAVEN_CLI",
     "console": "KC_CLIENT_SECRET_CONSOLE",
+    "console-provisioner": "KC_CLIENT_SECRET_CONSOLE_PROVISIONER",
+    "console-knowledge": "KC_CLIENT_SECRET_CONSOLE_KNOWLEDGE",
 }
+
+# The realm job's plain env var holding the knowledge hub's URL (its audience).
+KNOWLEDGE_HUB_URL_ENV = "KC_KNOWLEDGE_HUB_URL"
+# The realm role the hub's grants read with, and the org the console reads as.
+KNOWLEDGE_READER_ROLE = "knowledge-reader"
+KNOWLEDGE_READER_ORG = "console_reader"
 
 # Where the access token carries the user's realm roles.
 ROLES_CLAIM = "realm_access.roles"
@@ -119,6 +127,24 @@ def _audience_mapper(audience: str) -> dict:
             "access.token.claim": "true",
             "id.token.claim": "false",
         },
+    }
+
+
+def _service_client(client_id: str, name: str, mappers: list[dict]) -> dict:
+    """A confidential client that only signs in as its service account."""
+    return {
+        "clientId": client_id,
+        "name": name,
+        "enabled": True,
+        "protocol": "openid-connect",
+        "publicClient": False,
+        "clientAuthenticatorType": "client-secret",
+        "secret": _secret(client_id),
+        "standardFlowEnabled": False,
+        "implicitFlowEnabled": False,
+        "directAccessGrantsEnabled": False,
+        "serviceAccountsEnabled": True,
+        "protocolMappers": mappers,
     }
 
 
@@ -242,6 +268,69 @@ def build_realm_document(config: LLMavenConfig) -> dict:
             }
         )
         clients.append(client)
+        if config.knowledge_hub.enabled:
+            roles.append(
+                {
+                    "name": KNOWLEDGE_READER_ROLE,
+                    "description": "Read every org's knowledge bundle",
+                }
+            )
+            clients.append(
+                _service_client(
+                    "console-provisioner",
+                    "Console org provisioner",
+                    [],
+                )
+            )
+            users.append(
+                {
+                    "username": "service-account-console-provisioner",
+                    "enabled": True,
+                    "serviceAccountClientId": "console-provisioner",
+                    "clientRoles": {"realm-management": ["manage-clients"]},
+                }
+            )
+            clients.append(
+                _service_client(
+                    "console-knowledge",
+                    "Console knowledge reader",
+                    [
+                        {
+                            "name": "knowledge-hub-audience",
+                            "protocol": "openid-connect",
+                            "protocolMapper": "oidc-audience-mapper",
+                            "config": {
+                                "included.custom.audience": (
+                                    f"$(env:{KNOWLEDGE_HUB_URL_ENV})"
+                                ),
+                                "access.token.claim": "true",
+                                "id.token.claim": "false",
+                            },
+                        },
+                        {
+                            "name": "organization",
+                            "protocol": "openid-connect",
+                            "protocolMapper": "oidc-hardcoded-claim-mapper",
+                            "config": {
+                                "claim.name": "okf_org",
+                                "claim.value": KNOWLEDGE_READER_ORG,
+                                "jsonType.label": "String",
+                                "access.token.claim": "true",
+                                "id.token.claim": "false",
+                                "userinfo.token.claim": "false",
+                            },
+                        },
+                    ],
+                )
+            )
+            users.append(
+                {
+                    "username": "service-account-console-knowledge",
+                    "enabled": True,
+                    "serviceAccountClientId": "console-knowledge",
+                    "realmRoles": [KNOWLEDGE_READER_ROLE],
+                }
+            )
     roles = list({r["name"]: r for r in reversed(roles)}.values())[::-1]
     if roles:
         doc["roles"] = {"realm": roles}

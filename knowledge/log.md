@@ -1,3 +1,12 @@
+## 2026-11-19
+* **Update**: Linked `decisions/console-knowledge-graph-in-browser.md` to `decisions/console-react-front-end.md` (Drawn on a canvas because the front end's policy allows no inline styles).
+* **Creation**: Documented concept `decisions/console-knowledge-graph-in-browser.md` (The console's knowledge graph is laid out in the browser with d3-force on a canvas).
+
+## 2026-11-18
+* **Update**: Updated concept `decisions/knowledge-hub-on-azure.md`.
+* **Update**: Linked `decisions/knowledge-hub-on-azure.md` to `decisions/console-on-azure.md` (The hub extends the console's Azure rollout and reuses its database job, storage and realm).
+* **Creation**: Documented concept `decisions/knowledge-hub-on-azure.md` (Knowledge hub on Azure).
+
 ## 2026-11-16
 * **Update**: Updated concept `decisions/keycloak-identity-provider.md`.
 * **Update**: Updated concept `bugs/key-vault-access-policy-replace.md`.

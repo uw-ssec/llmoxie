@@ -110,12 +110,14 @@ export function KnowledgePageView() {
             title="Graph"
             description={
               <>
-                Each dot is a concept and each arrow a link from one to another. Select a dot to read the concept.
+                Each dot is a concept and each arrow a link from one to another. Hover a dot to see what it links to, select it for its
+                links and a way to read it, and Shift + select more to see what they share. Drag to move a dot or the whole graph; zoom
+                with the buttons or Ctrl/⌘ + scroll. Select a type below the graph to hide or show it.
                 {graph.hidden > 0 && ` Showing the ${graph.nodes.length} most linked; ${graph.hidden} more are in the list below.`}
               </>
             }
           >
-            <KnowledgeGraph graph={graph} label={`Knowledge graph of ${org.name}`} link={open} />
+            <KnowledgeGraph graph={graph} label={`Knowledge graph of ${org.name}`} selected={concept?.id ?? null} link={open} />
           </Section>
 
           <Section title="Concepts">
