@@ -1,4 +1,8 @@
 ## 2026-11-19
+* **Update**: Updated concept `decisions/local-console-stack-in-compose.md`.
+* **Update**: Linked `decisions/local-console-stack-in-compose.md` to `decisions/platform-only-scope.md` (The guard that names the stack's services, and the owner's choice of one compose file).
+* **Update**: Updated concept `decisions/platform-only-scope.md`.
+* **Creation**: Documented concept `decisions/local-console-stack-in-compose.md` (docker/docker-compose.yml runs the console and everything it needs, as a stopgap until the Helm chart).
 * **Update**: Linked `decisions/console-knowledge-graph-in-browser.md` to `decisions/console-react-front-end.md` (Drawn on a canvas because the front end's policy allows no inline styles).
 * **Creation**: Documented concept `decisions/console-knowledge-graph-in-browser.md` (The console's knowledge graph is laid out in the browser with d3-force on a canvas).
 
