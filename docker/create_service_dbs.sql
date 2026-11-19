@@ -48,3 +48,14 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO CURRENT_USER
 \echo 'Successfully created litellm_db and granted privileges'
 \echo 'Database: litellm_db'
 \echo 'Owner: ' :USER
+
+-- The console's and the knowledge hub's databases, empty. The console-db
+-- service (services/console/db_setup.py, the job Azure runs on every deploy)
+-- creates their roles, hands okf_hub to the hub's role and applies the
+-- console's schema. db-init runs this whole file on every start, so these
+-- also appear in a database volume made before they were added here.
+SELECT 'CREATE DATABASE console_db'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'console_db')\gexec
+
+SELECT 'CREATE DATABASE okf_hub'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'okf_hub')\gexec

@@ -1,0 +1,182 @@
+{
+  "realm": "litellm",
+  "enabled": true,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "mlflow-user",
+        "description": "May open MLflow"
+      },
+      {
+        "name": "litellm-admin",
+        "description": "May open LiteLLM's own UI and management API"
+      },
+      {
+        "name": "knowledge-reader",
+        "description": "May read every organization's knowledge in the hub (the console, for org leads)"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "console",
+      "name": "LLMoxie console",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "console-dev-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://console.localhost:8000/auth/callback"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://console.localhost:8000/*",
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "console-broker-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "console-broker",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mlflow-gate",
+      "name": "MLflow gate",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "mlflow-gate-dev-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://analysis.localhost:8000/oauth2/callback"]
+    },
+    {
+      "clientId": "litellm",
+      "name": "LiteLLM UI sign-in",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "litellm-dev-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://litellm.localhost:8000/*"],
+      "webOrigins": ["http://litellm.localhost:8000"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://litellm.localhost:8000/*"
+      }
+    },
+    {
+      "clientId": "litellm-gate",
+      "name": "LiteLLM UI gate",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "litellm-gate-dev-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://litellm.localhost:8000/oauth2/callback"]
+    },
+    {
+      "clientId": "console-provisioner",
+      "name": "Console: creates each organization's knowledge client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "console-provisioner-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "console-knowledge",
+      "name": "Console: reads organizations' knowledge for their leads",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "console-knowledge-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "knowledge-hub-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "http://okf.localhost:7878",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "organization",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "okf_org",
+            "claim.value": "console_reader",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-litellm", "mlflow-user", "litellm-admin"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice123",
+          "temporary": false
+        }
+      ],
+      "id": "6f1c2a34-5b6d-4e7f-8a90-b1c2d3e4f501"
+    },
+    {
+      "username": "service-account-console-provisioner",
+      "enabled": true,
+      "serviceAccountClientId": "console-provisioner",
+      "clientRoles": {
+        "realm-management": ["manage-clients"]
+      }
+    },
+    {
+      "username": "service-account-console-knowledge",
+      "enabled": true,
+      "serviceAccountClientId": "console-knowledge",
+      "realmRoles": ["knowledge-reader"]
+    }
+  ],
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "verifyEmail": true,
+  "resetPasswordAllowed": true,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@llmoxie.localhost",
+    "fromDisplayName": "LLMoxie sign-in"
+  }
+}

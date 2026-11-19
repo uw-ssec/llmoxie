@@ -1,0 +1,122 @@
+# Traefik routes for the local stack. Every web app shares one entrypoint
+# (port 8000) and is picked by hostname: console / gateway / litellm / auth /
+# analysis / mail .localhost. Names under .localhost resolve to this machine
+# without any setup. The Host header is passed through unchanged, which Keycloak
+# depends on.
+#
+# Like the Azure edge: MLflow and LiteLLM's own UI get a Keycloak login from an
+# oauth2-proxy container (mlflow-auth, litellm-auth); the gateway exposes only
+# LiteLLM's AI paths, /mcp and liveness.
+#
+# Traefik renders this file as a Go template; MLFLOW_PORT comes from docker/.env.
+http:
+  routers:
+    keycloak:
+      entryPoints: [web]
+      rule: Host(`auth.localhost`)
+      service: keycloak
+    console:
+      entryPoints: [web]
+      rule: Host(`console.localhost`)
+      service: console-web
+    # LiteLLM's AI paths, and nothing else. Exact paths only: a prefix such as
+    # /v1/ would also expose management routes. Any other path has no route and
+    # gets 404. Same list as DEFAULT_PUBLIC_PATHS in
+    # src/llmaven/infrastructure/config/schema.py.
+    litellm-ai:
+      entryPoints: [web]
+      rule: >-
+        Host(`gateway.localhost`) && ( Path(`/v1/chat/completions`) ||
+        Path(`/chat/completions`) || Path(`/v1/completions`) ||
+        Path(`/completions`) || Path(`/v1/embeddings`) || Path(`/embeddings`) ||
+        Path(`/v1/messages`) || Path(`/v1/messages/count_tokens`) ||
+        Path(`/v1/responses`) || Path(`/responses`) ||
+        Path(`/openai/v1/responses`) || Path(`/v1/rerank`) || Path(`/v2/rerank`)
+        || Path(`/rerank`) || Path(`/v1/models`) || Path(`/models`))
+      service: litellm
+      middlewares: [gateway-rate-limit]
+    # The organizations' knowledge tools (okf-hub), by LiteLLM key. Exact paths
+    # again; /mcp-rest/ and LiteLLM's MCP OAuth routes stay unreachable.
+    litellm-mcp:
+      entryPoints: [web]
+      rule: Host(`gateway.localhost`) && (Path(`/mcp`) || Path(`/mcp/`))
+      service: litellm
+      middlewares: [gateway-rate-limit]
+    litellm-health:
+      entryPoints: [web]
+      rule:
+        Host(`gateway.localhost`) && (Path(`/health/liveliness`) ||
+        Path(`/health/liveness`))
+      service: litellm
+    # LiteLLM's own UI and full API, for SSEC admins: every request passes
+    # litellm-auth first.
+    litellm-admin:
+      entryPoints: [web]
+      rule: Host(`litellm.localhost`)
+      service: litellm
+      middlewares: [litellm-login]
+    litellm-auth:
+      entryPoints: [web]
+      rule: Host(`litellm.localhost`) && PathPrefix(`/oauth2/`)
+      service: litellm-auth
+    mailpit:
+      entryPoints: [web]
+      rule: Host(`mail.localhost`)
+      service: mailpit
+    mlflow:
+      entryPoints: [web]
+      rule: Host(`analysis.localhost`)
+      service: mlflow
+      middlewares: [mlflow-login]
+    mlflow-auth:
+      entryPoints: [web]
+      rule: Host(`analysis.localhost`) && PathPrefix(`/oauth2/`)
+      service: mlflow-auth
+
+  middlewares:
+    # Per client IP.
+    gateway-rate-limit:
+      rateLimit:
+        average: 50
+        burst: 100
+    litellm-login:
+      forwardAuth:
+        address: http://litellm-auth:4180/
+        trustForwardHeader: true
+    mlflow-login:
+      forwardAuth:
+        address: http://mlflow-auth:4180/
+        trustForwardHeader: true
+
+  services:
+    keycloak:
+      loadBalancer:
+        servers:
+          - url: http://keycloak:8080
+    litellm:
+      loadBalancer:
+        # Send streamed tokens on as they arrive.
+        responseForwarding:
+          flushInterval: -1
+        servers:
+          - url: http://litellm:4000
+    console-web:
+      loadBalancer:
+        servers:
+          - url: http://console-web:8200
+    mailpit:
+      loadBalancer:
+        servers:
+          - url: http://mailpit:8025
+    mlflow:
+      loadBalancer:
+        servers:
+          - url: http://mlflow:{{ env "MLFLOW_PORT" }}
+    litellm-auth:
+      loadBalancer:
+        servers:
+          - url: http://litellm-auth:4180
+    mlflow-auth:
+      loadBalancer:
+        servers:
+          - url: http://mlflow-auth:4180

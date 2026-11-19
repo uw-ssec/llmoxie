@@ -102,6 +102,9 @@ status = { cmd = "docker-compose ps", cwd = "docker" }
 # Restart services
 restart = { cmd = "docker-compose restart", cwd = "docker" }
 
+# Run the console's end-to-end suite (services/console/tests) against the running stack
+console-test = { cmd = "docker-compose --profile test run --rm --build console-tests", cwd = "docker", description = "Run the console's end-to-end suite against the stack started by `up`" }
+
 # Clean up volumes (WARNING: This will delete all data)
 clean = { cmd = "docker-compose down -v", cwd = "docker" }
 

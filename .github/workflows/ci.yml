@@ -86,10 +86,45 @@ jobs:
         run: |
           pixi run -e llmaven pre-commit-all --show-diff-on-failure
 
+  console-e2e:
+    name: Console end-to-end
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: docker
+
+    steps:
+      - name: Checkout repository
+        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a # v1.8.1
+
+      # Throwaway values for this run only; nothing outside the runner sees them.
+      - name: Write docker/.env
+        run: |
+          cp .env.example .env
+          {
+            echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 32)"
+            echo "OKF_HUB_MASTER_KEY_HEX=$(openssl rand -hex 32)"
+          } >> .env
+
+      - name: Start the stack
+        run: docker compose up -d --build --wait --wait-timeout 900
+
+      - name: Run the console suite
+        run: docker compose --profile test run --rm --build console-tests
+
+      - name: Show the services' logs
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose --profile test down -v
+
   summary:
     name: CI Summary
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: [test-linux, pre-commit]
+    needs: [test-linux, pre-commit, console-e2e]
     if: always()
 
     steps:
@@ -100,10 +135,12 @@ jobs:
           echo "### Job Status" >> $GITHUB_STEP_SUMMARY
           echo "- Linux Tests: ${{ needs.test-linux.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Pre-commit Hooks: ${{ needs.pre-commit.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Console end-to-end: ${{ needs.console-e2e.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.test-linux.result }}" == "success" ] && \
-             [ "${{ needs.pre-commit.result }}" == "success" ]; then
+             [ "${{ needs.pre-commit.result }}" == "success" ] && \
+             [ "${{ needs.console-e2e.result }}" == "success" ]; then
             echo "✅ All checks passed!" >> $GITHUB_STEP_SUMMARY
           else
             echo "⚠️ Some checks failed or were skipped" >> $GITHUB_STEP_SUMMARY
