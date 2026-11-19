@@ -3,7 +3,7 @@ type: Decision
 title: The repo is the LiteLLM and MLflow platform and its console; RAG lives in llmoxie-rag
 description: "Sunset RAG removed the REST API, Streamlit UI, agentic RAG and Qdrant; the console in services/console is in scope since 2026-11-12, outside what tests/test_platform_scope.py checks."
 tags: [scope, sunset-rag, architecture, console]
-generated: { by: "claude-code:claude-fable-5-2", at: "2026-11-13T04:25:52Z" }
+generated: { by: "claude-code:claude-opus-5-5", at: "2026-11-19T05:05:36Z" }
 status: stable
 governance: constraint
 code_refs: [tests/test_platform_scope.py, src/llmaven/cli.py, docker/docker-compose.yml, pixi.toml, pyproject.toml]
@@ -13,11 +13,11 @@ sources:
   - resource: "PRs #128, #130, #137, #143, #144, #145, #147"
   - resource: tests/test_platform_scope.py
   - resource: "issue #193"
-  - resource: "owner decision in the 2026-11-12 session"
+  - resource: owner decision in the 2026-11-12 session
   - resource: services/console/README.md
 ---
 
-**Status at e248584:** implemented. **Amended 2026-11-12:** the console is part of the platform; see "The console" below.
+**Status at e248584:** implemented. **Amended 2026-11-12:** the console is part of the platform; see "The console" below. **Amended 2026-11-18:** the console and what it needs are in the local compose stack; see "The guard".
 
 `llmaven` is a CLI that stands up the LiteLLM gateway and MLflow. The REST API and Streamlit UI (#186), agentic RAG (#188), the RAG and ML dependencies, legacy notebooks, `eval/` and the `proxy` and `frontend` Pixi features (#189), Qdrant (#190), RAG-era CI and the SciPy 2024 devcontainer (#191), and `archive/` (#202) are all gone. Agentic RAG moved with its git history to `uw-ssec/llmoxie-rag`.
 
@@ -32,13 +32,15 @@ How it arrived, on the `llmoxie-console` branch (8827d7d to 01ae504):
 - Copied from `uw-ssec/llmoxie-console@feat/console` (d1056d5) as plain files, not as a git subtree or submodule. Its earlier history stays in that repository.
 - Without that repository's scaffolding: its agent rules and skills, GitHub workflows, dev container, pre-commit config, community files and its empty OKF bundle were dropped, and its Pixi manifest keeps only the Docker tasks.
 - The root `.pre-commit-config.yaml` excludes `services/console/`. The files were imported as-is and do not pass this repo's ruff and prettier hooks; prettier cannot parse two of the Jinja templates.
-- Its tests are end to end and need a running stack (Keycloak, LiteLLM, Postgres, Mailpit), so `pytest tests/` and `verify` do not run them. No workflow in this repo builds the console image or runs its tests yet.
+- Its tests are end to end and need a running stack (Keycloak, LiteLLM, Postgres, Mailpit), so `pytest tests/` and `verify` do not run them. Since 2026-11-18 the CI job `console-e2e` runs them against `docker/docker-compose.yml` (branch `feat/local-console-stack`).
 
 ## The guard
 
-`tests/test_platform_scope.py` is a deliberate guard. It pins the CLI to `infra`, `backup-infra` and `version`, compose to `db`, `mlflow`, `azurite` and `litellm`, and bans RAG and ML packages from the manifests. A failure there means a removed surface is coming back, so don't fix it by loosening the guard. References in that file are guards, not leftovers.
+`tests/test_platform_scope.py` is a deliberate guard. It pins the CLI to `infra`, `backup-infra` and `version`, compose to the platform services (`db`, `mlflow`, `azurite`, `litellm`) plus the console's stack, and bans RAG and ML packages from the manifests. A failure there means a removed surface is coming back, so don't fix it by loosening the guard. References in that file are guards, not leftovers.
 
-The guard passes with the console present because it reads only the root `pyproject.toml` and `pixi.toml`. It does not see `services/console/requirements.txt`, where the console pins `fastapi` and `uvicorn`, two of the banned packages. Keep the console's dependencies there: declaring them in the root manifests fails the guard. Adding the console to `docker/docker-compose.yml` fails it too, because compose is pinned to four services. Whether the guard should change to let the console into the local stack has not been decided; ask the owner before touching it.
+The guard passes with the console present because it reads only the root `pyproject.toml` and `pixi.toml`. It does not see `services/console/requirements.txt`, where the console pins `fastapi` and `uvicorn`, two of the banned packages. Keep the console's dependencies there: declaring them in the root manifests fails the guard.
+
+On 2026-11-18 the owner decided the console's stack goes into `docker/docker-compose.yml` itself, not a separate overlay file, and that the guard lists those services by name: `db-init`, `console-db`, `keycloak`, `traefik`, `litellm-auth`, `mlflow-auth`, `mailpit`, `hub`, `console-init`, `console-broker`, `console-web` and `console-tests`. Any other new compose service still fails it, so an API server, UI or RAG service cannot slip back in. See [the local console stack](local-console-stack-in-compose.md).
 
 What the guard doesn't cover: `LLMavenAPIConfig` and the `llmaven_api` block survive in the config schema and defaults, and #193 tracks them as leftovers.
 

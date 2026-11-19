@@ -105,9 +105,40 @@ services:
       - ./config.yaml:/app/config.yaml
       - ../src/llmaven/infrastructure/resources/adl_logger.py:/app/adl_logger.py
       - ../src/llmaven/infrastructure/resources/spend_logger.py:/app/spend_logger.py
+      - ./local_litellm_config.py:/opt/llmaven/local_litellm_config.py:ro
+    environment:
+      # LiteLLM's own UI signs in through Keycloak, as on Azure
+      # (src/llmaven/infrastructure/main.py): the browser goes to
+      # auth.localhost, LiteLLM itself calls keycloak:8080. Realm role
+      # litellm-admin makes a user proxy_admin. Reached at litellm.localhost:8000
+      # behind litellm-auth.
+      PROXY_BASE_URL: http://litellm.localhost:8000
+      GENERIC_CLIENT_ID: litellm
+      GENERIC_CLIENT_SECRET: litellm-dev-secret
+      GENERIC_AUTHORIZATION_ENDPOINT: http://auth.localhost:8000/realms/litellm/protocol/openid-connect/auth
+      GENERIC_TOKEN_ENDPOINT: http://keycloak:8080/realms/litellm/protocol/openid-connect/token
+      GENERIC_USERINFO_ENDPOINT: http://keycloak:8080/realms/litellm/protocol/openid-connect/userinfo
+      GENERIC_SCOPE: openid email profile
+      GENERIC_USER_ID_ATTRIBUTE: preferred_username
+      GENERIC_USER_EMAIL_ATTRIBUTE: email
+      GENERIC_USER_DISPLAY_NAME_ATTRIBUTE: name
+      GENERIC_ROLE_MAPPINGS_GROUP_CLAIM: realm_access.roles
+      GENERIC_ROLE_MAPPINGS_ROLES: "{'proxy_admin': ['litellm-admin']}"
+      AUTO_REDIRECT_UI_LOGIN_TO_SSO: "true"
+    # config.yaml is also the base of Azure's LiteLLM config, so what only this
+    # stack has (a mocked model, password login off) is added by
+    # local_litellm_config.py into a copy next to it, where LiteLLM also finds
+    # the logger modules.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        python /opt/llmaven/local_litellm_config.py /app/config.yaml
+        /app/local-config.yaml && exec docker/prod_entrypoint.sh "$$@"
+      - litellm-entrypoint
     command:
       - --config
-      - /app/config.yaml
+      - /app/local-config.yaml
     healthcheck:
       # Defines the health check configuration for the container
       # The LiteLLM image has no wget or curl; use its Python instead.
@@ -128,11 +159,421 @@ services:
     networks:
       - llmaven-network
 
+  # ── The console and what it needs ──────────────────────────────────────────
+  # Keycloak, the knowledge hub, the console, a local inbox and Traefik in
+  # front of them, so the console's end-to-end suite (services/console/tests)
+  # can run here and in CI. Every value below is a local development value.
+  # Browsers reach the apps at *.localhost:8000 through Traefik; containers
+  # call each other directly (keycloak:8080, litellm:4000, ...).
+
+  # Creates the databases the services below need (create_service_dbs.sql) on
+  # every start, so a database volume made before they existed gets them too.
+  db-init:
+    image: postgres:16
+    container_name: llmaven_db_init
+    env_file:
+      - .env
+    command:
+      - sh
+      - -c
+      - >-
+        PGPASSWORD="$$POSTGRES_PASSWORD" psql -h db -U "$$POSTGRES_USER" -d
+        "$$POSTGRES_DB" -v ON_ERROR_STOP=1 -q -f /sql/create_service_dbs.sql
+    volumes:
+      - ./create_service_dbs.sql:/sql/create_service_dbs.sql:ro
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - llmaven-network
+
+  # The console's roles and schema, and the hub's role, by the same script the
+  # Azure deploy runs as a job (services/console/db_setup.py).
+  console-db:
+    build: &console-build
+      context: ../services/console
+      target: app
+    image: llmoxie-console:dev
+    container_name: llmaven_console_db
+    command: python db_setup.py
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGSSLMODE: disable
+      # The roles' passwords: local only, so the superuser's from .env is reused.
+      CONSOLE_WEB_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CONSOLE_BROKER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CONSOLE_OTHER_DATABASES: ${POSTGRES_DB},litellm_db,mlflow_db
+      OKF_HUB_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - llmaven-network
+
+  # Sign-in for the console, LiteLLM's UI and MLflow. The realm is imported
+  # from keycloak/realm-litellm.json each time the container is created; there
+  # is no volume, so accounts made while it runs go away with it.
+  # User: alice / alice123 (SSEC admin, every realm role). Admin console:
+  # auth.localhost:8000, admin / admin.
+  keycloak:
+    # The version docker/dockerfiles/keycloak.dockerfile builds on, in dev mode.
+    image: quay.io/keycloak/keycloak:26.5.5@sha256:a7b0cb7a43a1235a61872883414d3f1d9a3ceac9df6e5907bd12202778a6265c
+    container_name: llmaven_keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Pins the token issuer to the browser's address, so tokens fetched by
+      # containers at keycloak:8080 carry the same issuer.
+      KC_HOSTNAME: http://auth.localhost:8000
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-litellm.json:/opt/keycloak/data/import/realm-litellm.json:ro
+    depends_on:
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      # The image has no curl; ask the management port with bash's /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready
+          HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep
+          -q '"UP"' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    networks:
+      - llmaven-network
+
+  # One entrypoint for every web app, told apart by hostname (traefik/dynamic.yml).
+  traefik:
+    image: docker.io/library/traefik:v3.7.17@sha256:321153f6f732f912cf5c6f0597fe38743fc7895d482d7d8804a479ae0403e151
+    container_name: llmaven_traefik
+    command:
+      - --entrypoints.web.address=:8000
+      - --entrypoints.ping.address=:8082
+      - --ping.entrypoint=ping
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --accesslog=true
+    environment:
+      MLFLOW_PORT: ${MLFLOW_PORT}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "traefik",
+          "healthcheck",
+          "--ping.entrypoint=ping",
+          "--entrypoints.ping.address=:8082",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      llmaven-network:
+        # Containers (the test suite, the hub) use the same addresses as a browser.
+        aliases:
+          - console.localhost
+          - gateway.localhost
+          - litellm.localhost
+          - auth.localhost
+          - analysis.localhost
+          - mail.localhost
+
+  # Keycloak logins in front of LiteLLM's own UI (realm role litellm-admin) and
+  # MLflow (mlflow-user), as on Azure. Traefik asks them about every request.
+  litellm-auth:
+    image: &oauth2-proxy quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048
+    container_name: llmaven_litellm_auth
+    environment:
+      <<: &keycloak-login
+        OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+        OAUTH2_PROXY_PROVIDER: keycloak-oidc
+        # No discovery: the issuer is the browser's address, which this
+        # container reaches only through Traefik; each endpoint is given instead.
+        OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+        OAUTH2_PROXY_OIDC_ISSUER_URL: http://auth.localhost:8000/realms/litellm
+        OAUTH2_PROXY_LOGIN_URL: http://auth.localhost:8000/realms/litellm/protocol/openid-connect/auth
+        OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/realms/litellm/protocol/openid-connect/token
+        OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/realms/litellm/protocol/openid-connect/certs
+        OAUTH2_PROXY_CODE_CHALLENGE_METHOD: S256
+        OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+        OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+        # Answer Traefik's checks: 202 when signed in, else a redirect.
+        OAUTH2_PROXY_REVERSE_PROXY: "true"
+        OAUTH2_PROXY_UPSTREAMS: static://202
+        # Local only; plain-http cookie because the stack has no TLS.
+        OAUTH2_PROXY_COOKIE_SECRET: local-dev-cookie-secret-32-bytes
+        OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_CLIENT_ID: litellm-gate
+      OAUTH2_PROXY_CLIENT_SECRET: litellm-gate-dev-secret
+      OAUTH2_PROXY_REDIRECT_URL: http://litellm.localhost:8000/oauth2/callback
+      # List options take the plural name; the singular is silently ignored.
+      OAUTH2_PROXY_ALLOWED_ROLES: litellm-admin
+      OAUTH2_PROXY_WHITELIST_DOMAINS: litellm.localhost:8000
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      - llmaven-network
+
+  mlflow-auth:
+    image: *oauth2-proxy
+    container_name: llmaven_mlflow_auth
+    environment:
+      <<: *keycloak-login
+      OAUTH2_PROXY_CLIENT_ID: mlflow-gate
+      OAUTH2_PROXY_CLIENT_SECRET: mlflow-gate-dev-secret
+      OAUTH2_PROXY_REDIRECT_URL: http://analysis.localhost:8000/oauth2/callback
+      OAUTH2_PROXY_ALLOWED_ROLES: mlflow-user
+      OAUTH2_PROXY_WHITELIST_DOMAINS: analysis.localhost:8000
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      - llmaven-network
+
+  # Local inbox for Keycloak's and the console's mail: mail.localhost:8000.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    container_name: llmaven_mailpit
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - llmaven-network
+
+  # The organizations' knowledge (uw-ssec/okf-hub), the image dev runs. Internal:
+  # people reach it as MCP tools through LiteLLM (gateway.localhost/mcp). Its
+  # alias okf.localhost:7878 is the audience its tokens must carry.
+  hub:
+    image: ghcr.io/uw-ssec/okf-hub:container-e3476d6@sha256:bd65dac5a200fb3c6dc5ffd32f67ca8e1915466ef2e1c9c0efe222374806ae4c
+    platform: linux/amd64 # the only platform the image is built for
+    container_name: llmaven_hub
+    environment:
+      PORT: "7878"
+      DATABASE_URL: postgres://okf_hub:${POSTGRES_PASSWORD}@db:5432/okf_hub
+      # Encrypts the hub's stored secrets. Set it once in .env and keep it:
+      # a new value cannot read what the old one wrote.
+      VAULT_MASTER_KEY_HEX:
+        ${OKF_HUB_MASTER_KEY_HEX:?set OKF_HUB_MASTER_KEY_HEX in docker/.env, see
+        .env.example}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      BLOB_CONTAINER: okf-hub
+      OIDC_ISSUER: http://auth.localhost:8000/realms/litellm
+      OIDC_JWKS_URL: http://keycloak:8080/realms/litellm/protocol/openid-connect/certs
+      OIDC_AUDIENCE: http://okf.localhost:7878
+      # Same grants as on Azure (knowledge_hub.py): an org writes its own bundle,
+      # the role knowledge-reader reads them all.
+      OIDC_GRANTS: '[{"bundle":"orgs/oidc-{actor}","access":"write"},{"role":"knowledge-reader","bundle":"orgs/*","access":"read"}]'
+      OIDC_ACTOR_CLAIM: okf_org
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      console-db:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:7878/healthz').then(r => process.exit(r.ok ?
+          0 : 1), () => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      llmaven-network:
+        aliases:
+          - okf.localhost
+
+  # The console (services/console). console-web is public and holds no LiteLLM
+  # credential; console-broker is internal, holds the LiteLLM admin key that
+  # console-init makes, and offers fixed operations only.
+  console-init:
+    build: *console-build
+    image: llmoxie-console:dev
+    container_name: llmaven_console_init
+    command: python init_admin_key.py
+    restart: "no"
+    environment:
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_ADMIN_KEY_FILE: /run/console/litellm-admin-key
+    volumes:
+      - console_secrets:/run/console
+    depends_on:
+      litellm:
+        condition: service_healthy
+    networks:
+      - llmaven-network
+
+  console-broker:
+    build: *console-build
+    image: llmoxie-console:dev
+    container_name: llmaven_console_broker
+    command: uvicorn console_app.broker.app:app --host 0.0.0.0 --port 8100
+    environment:
+      CONSOLE_BROKER_DATABASE_URL: postgresql://console_broker:${POSTGRES_PASSWORD}@db:5432/console_db
+      CONSOLE_BROKER_CALLER_SECRET: &caller-secret console-caller-dev-secret
+      CONSOLE_PUBLIC_URL: &console-url http://console.localhost:8000
+      # The first SSEC admin: alice's Keycloak user id, fixed in the realm file.
+      CONSOLE_ADMIN_SUBJECTS: 6f1c2a34-5b6d-4e7f-8a90-b1c2d3e4f501
+      # Development only: a provider "mock" that answers without a provider key.
+      CONSOLE_ENABLE_MOCK_PROVIDER: "true"
+      LITELLM_URL: http://litellm:4000
+      LITELLM_ADMIN_KEY_FILE: /run/console/litellm-admin-key
+      OIDC_ISSUER: &oidc-issuer http://auth.localhost:8000/realms/litellm
+      OIDC_CLIENT_ID: &oidc-client console
+      OIDC_JWKS_URL: &oidc-jwks http://keycloak:8080/realms/litellm/protocol/openid-connect/certs
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080/admin/realms/litellm
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/litellm/protocol/openid-connect/token
+      KEYCLOAK_PROVISIONER_CLIENT_ID: console-provisioner
+      KEYCLOAK_PROVISIONER_CLIENT_SECRET: console-provisioner-dev-secret
+      KNOWLEDGE_HUB_URL: &hub-url http://okf.localhost:7878
+      KNOWLEDGE_READER_CLIENT_ID: console-knowledge
+      KNOWLEDGE_READER_CLIENT_SECRET: console-knowledge-dev-secret
+    volumes:
+      - console_secrets:/run/console:ro
+    depends_on:
+      console-init:
+        condition: service_completed_successfully
+      console-db:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+      hub:
+        condition: service_healthy
+    healthcheck: &console-health
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;
+          urllib.request.urlopen('http://localhost:8100/healthz')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - llmaven-network
+
+  console-web:
+    build: *console-build
+    image: llmoxie-console:dev
+    container_name: llmaven_console_web
+    command: uvicorn console_app.web.app:app --host 0.0.0.0 --port 8200
+    environment:
+      CONSOLE_WEB_DATABASE_URL: postgresql://console_web:${POSTGRES_PASSWORD}@db:5432/console_db
+      CONSOLE_BROKER_URL: http://console-broker:8100
+      CONSOLE_BROKER_CALLER_SECRET: *caller-secret
+      CONSOLE_PUBLIC_URL: *console-url
+      GATEWAY_PUBLIC_URL: &gateway-url http://gateway.localhost:8000
+      LITELLM_ADMIN_URL: &litellm-admin-url http://litellm.localhost:8000
+      OIDC_ISSUER: *oidc-issuer
+      OIDC_CLIENT_ID: *oidc-client
+      OIDC_CLIENT_SECRET: &oidc-secret console-dev-secret
+      OIDC_JWKS_URL: *oidc-jwks
+      OIDC_AUTH_URL: http://auth.localhost:8000/realms/litellm/protocol/openid-connect/auth
+      OIDC_TOKEN_URL: http://keycloak:8080/realms/litellm/protocol/openid-connect/token
+      OIDC_LOGOUT_URL: http://auth.localhost:8000/realms/litellm/protocol/openid-connect/logout
+    depends_on:
+      console-broker:
+        condition: service_healthy
+    healthcheck:
+      <<: *console-health
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;
+          urllib.request.urlopen('http://localhost:8200/healthz')",
+        ]
+    networks:
+      - llmaven-network
+
+  # The console's end-to-end suite, against this stack:
+  #   docker-compose --profile test run --rm --build console-tests
+  # (pixi run -e llmaven console-test). test_dlp.py is left out: it needs
+  # ceil-dlp in LiteLLM, which llmoxie does not deploy.
+  console-tests:
+    profiles: [test]
+    build:
+      context: ../services/console
+      target: tests
+    image: llmoxie-console-tests:dev
+    command:
+      [
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--ignore=tests/test_dlp.py",
+        "tests",
+      ]
+    environment:
+      CONSOLE_URL: *console-url
+      GATEWAY_URL: *gateway-url
+      LITELLM_ADMIN_URL: *litellm-admin-url
+      KEYCLOAK_URL: http://auth.localhost:8000
+      BROKER_URL: http://console-broker:8100
+      LITELLM_URL: http://litellm:4000
+      MAILPIT_URL: http://mailpit:8025
+      MLFLOW_URL: http://mlflow:${MLFLOW_PORT}
+      KNOWLEDGE_HUB_URL: *hub-url
+      OIDC_CLIENT_ID: *oidc-client
+      OIDC_CLIENT_SECRET: *oidc-secret
+      CONSOLE_BROKER_CALLER_SECRET: *caller-secret
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      SUPERUSER_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/console_db
+      BROKER_DATABASE_URL: postgresql://console_broker:${POSTGRES_PASSWORD}@db:5432/console_db
+      WEB_DATABASE_URL: postgresql://console_web:${POSTGRES_PASSWORD}@db:5432/console_db
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+    depends_on:
+      console-web:
+        condition: service_healthy
+    networks:
+      - llmaven-network
+
 volumes:
   postgres_data:
     name: llmaven_postgres_data # Named volume for Postgres data persistence
   azurite_data:
     name: llmaven_azurite_data # Named volume for Azurite blob data (MLflow artifacts, LiteLLM logs)
+  console_secrets:
+    name: llmaven_console_secrets # The broker's LiteLLM admin key, written by console-init
 
 networks:
   llmaven-network:

@@ -174,12 +174,26 @@ def test_pixi_has_no_rag_environments_or_tasks() -> None:
 
 
 def test_compose_runs_only_platform_services() -> None:
+    # The platform, plus the console and what it needs (owner's decision,
+    # 2026-11-18): still no API server, UI or RAG service.
     compose = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text())
     assert set(compose["services"]) == {
         "db",
         "mlflow",
         "azurite",
         "litellm",
+        "db-init",
+        "console-db",
+        "keycloak",
+        "traefik",
+        "litellm-auth",
+        "mlflow-auth",
+        "mailpit",
+        "hub",
+        "console-init",
+        "console-broker",
+        "console-web",
+        "console-tests",
     }
 
 

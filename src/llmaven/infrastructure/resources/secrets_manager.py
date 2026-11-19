@@ -17,6 +17,7 @@ from ..utils.secrets import build_mlflow_tracking_uri, build_postgres_connection
 from .key_vault import (
     create_secret,
     get_llmaven_secrets_from_env,
+    get_main_vault_secrets_from_env,
 )
 
 
@@ -84,7 +85,7 @@ class SecretsManager:
         Returns:
             Dictionary mapping secret names to Secret resources
         """
-        env_secrets = get_llmaven_secrets_from_env()
+        env_secrets = get_main_vault_secrets_from_env()
 
         if not env_secrets:
             pulumi.log.warn(

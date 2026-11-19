@@ -15,7 +15,12 @@ from ..config.schema import (
     realm_job_name,
 )
 from .container_apps import create_container_app_with_key_vault_secrets
-from .keycloak_realm import CLIENT_SECRET_ENV, render_realm_document
+from .console_secrets import KNOWLEDGE_SECRET, PROVISIONER_SECRET
+from .keycloak_realm import (
+    CLIENT_SECRET_ENV,
+    KNOWLEDGE_HUB_URL_ENV,
+    render_realm_document,
+)
 from .secrets_manager import KEYCLOAK_SECRET_NAMES
 from .traefik import LOGIN_COOKIE
 
@@ -287,6 +292,9 @@ def _job_secret_refs(config: LLMavenConfig) -> dict[str, str]:
         refs[CLIENT_SECRET_ENV["console"]] = KEYCLOAK_SECRET_NAMES[
             _CLIENT_SECRET_KEY["console"]
         ]
+        if config.knowledge_hub.enabled:
+            refs[CLIENT_SECRET_ENV["console-provisioner"]] = PROVISIONER_SECRET
+            refs[CLIENT_SECRET_ENV["console-knowledge"]] = KNOWLEDGE_SECRET
     refs.update(config.keycloak.realm.secret_refs)
     return refs
 
@@ -299,6 +307,7 @@ def create_realm_job(
     config: LLMavenConfig,
     keycloak_fqdn: pulumi.Input[str],
     managed_identity_id: pulumi.Input[str],
+    knowledge_hub_url: pulumi.Input[str] | None = None,
     tags: dict[str, str] | None = None,
     opts: pulumi.ResourceOptions | None = None,
 ) -> azure_native.app.Job:
@@ -325,27 +334,30 @@ def create_realm_job(
         for secret_name in dict.fromkeys(refs.values())
     ]
 
+    plain_env = {
+        "KEYCLOAK_URL": pulumi.Output.concat("https://", keycloak_fqdn),
+        "KEYCLOAK_USER": KEYCLOAK_ADMIN_USER,
+        "KEYCLOAK_AVAILABILITYCHECK_ENABLED": "true",
+        # keycloak-config-cli 6.5.1 waits 120s by default
+        # (KeycloakConfigProperties.KeycloakAvailabilityCheck); a fresh
+        # stack's first Keycloak boot runs its database migrations first.
+        # It stays under REALM_REPLICA_TIMEOUT.
+        "KEYCLOAK_AVAILABILITYCHECK_TIMEOUT": "300s",
+        "IMPORT_FILES_LOCATIONS": f"{REALM_CONFIG_DIR}/{REALM_FILE}",
+        "IMPORT_VARSUBSTITUTION_ENABLED": "true",
+        "IMPORT_REMOTESTATE_ENABLED": "true",
+        "IMPORT_MANAGED_CLIENT": "no-delete",
+        "IMPORT_MANAGED_ROLE": "no-delete",
+        "IMPORT_MANAGED_IDENTITYPROVIDER": "no-delete",
+        "IMPORT_MANAGED_GROUP": "no-delete",
+        "IMPORT_MANAGED_CLIENTSCOPE": "no-delete",
+        REALM_DIGEST_ENV: digest,
+    }
+    if config.knowledge_hub.enabled and knowledge_hub_url is not None:
+        plain_env[KNOWLEDGE_HUB_URL_ENV] = knowledge_hub_url
     env = [
         azure_native.app.EnvironmentVarArgs(name=name, value=value)
-        for name, value in {
-            "KEYCLOAK_URL": pulumi.Output.concat("https://", keycloak_fqdn),
-            "KEYCLOAK_USER": KEYCLOAK_ADMIN_USER,
-            "KEYCLOAK_AVAILABILITYCHECK_ENABLED": "true",
-            # keycloak-config-cli 6.5.1 waits 120s by default
-            # (KeycloakConfigProperties.KeycloakAvailabilityCheck); a fresh
-            # stack's first Keycloak boot runs its database migrations first.
-            # It stays under REALM_REPLICA_TIMEOUT.
-            "KEYCLOAK_AVAILABILITYCHECK_TIMEOUT": "300s",
-            "IMPORT_FILES_LOCATIONS": f"{REALM_CONFIG_DIR}/{REALM_FILE}",
-            "IMPORT_VARSUBSTITUTION_ENABLED": "true",
-            "IMPORT_REMOTESTATE_ENABLED": "true",
-            "IMPORT_MANAGED_CLIENT": "no-delete",
-            "IMPORT_MANAGED_ROLE": "no-delete",
-            "IMPORT_MANAGED_IDENTITYPROVIDER": "no-delete",
-            "IMPORT_MANAGED_GROUP": "no-delete",
-            "IMPORT_MANAGED_CLIENTSCOPE": "no-delete",
-            REALM_DIGEST_ENV: digest,
-        }.items()
+        for name, value in plain_env.items()
     ] + [
         azure_native.app.EnvironmentVarArgs(name=name, secret_ref=secret_name)
         for name, secret_name in refs.items()

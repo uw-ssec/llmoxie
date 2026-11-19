@@ -179,7 +179,8 @@ any `KEYCLOAK_*` or `KNOWLEDGE_*` setting. Creating an organization skips its
 Keycloak `okf-org-*` client and its MCP server, teams get no MCP server, and
 suspending or removing an organization skips the knowledge steps it never had.
 The knowledge page and the team page say "Knowledge isn't set up on this
-console." Set `KNOWLEDGE_HUB_URL` and the rest to turn it on.
+console." Set `KNOWLEDGE_HUB_URL` and the rest to turn it on. On Azure, `knowledge_hub.enabled`
+sets them all; see "The knowledge hub" in `.agents/rules/infrastructure.md`.
 
 ## On Azure
 
@@ -393,7 +394,13 @@ gateway. It covers the gateway's path list, the full organization → team →
 participant → archive flow, every out-of-scope call being denied, connected
 services, each organization's knowledge, data loss prevention, and the
 admin-only LiteLLM UI. So it needs a complete running stack, and it runs in a
-container on that stack's Docker network:
+container on that stack's Docker network.
+
+The repository's own stack, `docker/docker-compose.yml`, is one: from the
+repository root, `pixi run -e llmaven up`, then `pixi run -e llmaven console-test`.
+CI runs it the same way. That stack has no ceil-dlp, so `test_dlp.py` is left
+out there; see "The Console Stack" in `docker/README.md`. Against any other
+stack:
 
 ```bash
 cp tests/env.example tests/.env   # then fill in the stack's addresses and secrets

@@ -13,6 +13,9 @@ environment storage, not per mount, so the share is registered twice.
 
 ``console-db`` and ``console-init`` are manual jobs that run as the shared
 identity and read the main vault; ``infra deploy`` starts them after ``up``.
+With a knowledge hub, ``console-know`` follows them: it sets up knowledge for
+organizations made while the hub was off, as the broker would, with the
+broker's knowledge settings and the read-only share's LiteLLM key.
 """
 
 import re
@@ -62,6 +65,8 @@ class ConsoleApps:
     broker: azure_native.app.ContainerApp
     db_job: azure_native.app.Job
     init_job: azure_native.app.Job
+    # The knowledge backfill; only with a knowledge hub.
+    knowledge_job: azure_native.app.Job | None = None
 
 
 def console_storage_account_name(project: str, environment: str, location: str) -> str:
@@ -280,6 +285,8 @@ def create_console(
     postgres_host: pulumi.Input[str],
     tags: dict[str, str],
     opts: pulumi.ResourceOptions | None = None,
+    knowledge_hub_job_secret_names: dict[str, str] | None = None,
+    knowledge_hub_url: pulumi.Input[str] | None = None,
 ) -> ConsoleApps:
     """Create the console's apps, share and jobs (spec sections 4 to 6)."""
     console = config.console
@@ -347,6 +354,25 @@ def create_console(
             ),
         )
 
+    broker_knowledge_env: dict[str, pulumi.Input[str]] = {}
+    broker_knowledge_refs: dict[str, str] = {}
+    if knowledge_hub_url is not None:
+        # The broker provisions each organization's client and reads the hub;
+        # console-web never needs either.
+        broker_knowledge_env = {
+            "KNOWLEDGE_HUB_URL": knowledge_hub_url,
+            "KEYCLOAK_ADMIN_URL": pulumi.Output.concat(
+                "https://", keycloak_fqdn, f"/admin/realms/{realm}"
+            ),
+            "KEYCLOAK_TOKEN_URL": internal_oidc("token"),
+            "KEYCLOAK_PROVISIONER_CLIENT_ID": "console-provisioner",
+            "KNOWLEDGE_READER_CLIENT_ID": "console-knowledge",
+        }
+        broker_knowledge_refs = {
+            "KEYCLOAK_PROVISIONER_CLIENT_SECRET": secrets.provisioner_secret_name,
+            "KNOWLEDGE_READER_CLIENT_SECRET": secrets.knowledge_secret_name,
+        }
+
     broker = app(
         CONSOLE_BROKER_APP_SUFFIX,
         BROKER_PORT,
@@ -365,8 +391,9 @@ def create_console(
             "OIDC_CLIENT_ID": OIDC_CLIENT_ID,
             "OIDC_JWKS_URL": internal_oidc("certs"),
             "CONSOLE_PUBLIC_URL": public_url,
+            **broker_knowledge_env,
         },
-        secret_refs=secrets.broker_secret_names,
+        secret_refs={**secrets.broker_secret_names, **broker_knowledge_refs},
         storage_name=RO_STORAGE,
     )
     broker_url = broker.configuration.apply(
@@ -414,7 +441,11 @@ def create_console(
             ),
         },
         # PGPASSWORD is the console's own copy of the server admin password.
-        secret_refs=secrets.job_secret_names,
+        secret_refs={
+            **secrets.job_secret_names,
+            # The knowledge hub's database password, when the hub is on.
+            **(knowledge_hub_job_secret_names or {}),
+        },
         opts=after_secrets,
         **job_args,
     )
@@ -433,4 +464,28 @@ def create_console(
         ),
         **job_args,
     )
-    return ConsoleApps(web=web, broker=broker, db_job=db_job, init_job=init_job)
+    knowledge_job = None
+    if knowledge_hub_url is not None:
+        knowledge_job = _job(
+            "know",
+            script="knowledge_backfill.py",
+            env={
+                "LITELLM_URL": litellm_url,
+                "LITELLM_ADMIN_KEY_FILE": ADMIN_KEY_FILE,
+                **broker_knowledge_env,
+            },
+            secret_refs=secrets.knowledge_job_secret_names,
+            storage_name=RO_STORAGE,
+            opts=pulumi.ResourceOptions.merge(
+                after_secrets,
+                pulumi.ResourceOptions(depends_on=[storages[RO_STORAGE]]),
+            ),
+            **job_args,
+        )
+    return ConsoleApps(
+        web=web,
+        broker=broker,
+        db_job=db_job,
+        init_job=init_job,
+        knowledge_job=knowledge_job,
+    )

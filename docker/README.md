@@ -11,13 +11,14 @@ observability, and storage solutions.
 3. [Prerequisites](#prerequisites)
 4. [Quick Start](#quick-start)
 5. [Services](#services)
-6. [Configuration](#configuration)
-7. [Usage](#usage)
-8. [Pixi Integration](#pixi-integration)
-9. [Monitoring and Logging](#monitoring-and-logging)
-10. [Troubleshooting](#troubleshooting)
-11. [Advanced Topics](#advanced-topics)
-12. [Resources](#resources)
+6. [The Console Stack](#the-console-stack)
+7. [Configuration](#configuration)
+8. [Usage](#usage)
+9. [Pixi Integration](#pixi-integration)
+10. [Monitoring and Logging](#monitoring-and-logging)
+11. [Troubleshooting](#troubleshooting)
+12. [Advanced Topics](#advanced-topics)
+13. [Resources](#resources)
 
 ## Overview
 
@@ -128,6 +129,8 @@ graph TB
   - 5432: PostgreSQL
   - 8080: MLflow
   - 10000: Azurite Blob service
+  - 8000: Traefik, on 127.0.0.1 only (the console, Keycloak, the LiteLLM UI,
+    MLflow's login and Mailpit; see [The Console Stack](#the-console-stack))
 
 ## Quick Start
 
@@ -149,9 +152,12 @@ AZURE_API_KEY=your-azure-api-key
 AZURE_API_BASE=https://your-resource.openai.azure.com/
 AZURE_API_VERSION=2024-12-01-preview
 
+# Required: LiteLLM's master key and the knowledge hub's key
+echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 32)" >> .env
+echo "OKF_HUB_MASTER_KEY_HEX=$(openssl rand -hex 32)" >> .env
+
 # Optional: Change default passwords (recommended for production)
 POSTGRES_PASSWORD=your-secure-password
-LITELLM_MASTER_KEY=your-master-key
 ```
 
 ### 2. Start Services
@@ -194,7 +200,9 @@ Expected output should show all services as "healthy" or "running".
 
 Once all services are healthy:
 
-- **LiteLLM UI**: http://localhost:4000
+- **Console**: http://console.localhost:8000 (sign in as `alice` / `alice123`)
+- **LiteLLM UI**: http://litellm.localhost:8000/ui, through a Keycloak sign-in
+  (`alice`); the UI no longer takes the master key
 - **LiteLLM API Documentation**: http://localhost:4000/docs
 - **MLflow UI**: http://localhost:8080
 - **Azurite Blob endpoint**: http://127.0.0.1:10000/devstoreaccount1 (no web UI;
@@ -417,6 +425,68 @@ automatically)
 `devstoreaccount1` and its public account key (see `.env.example`). Services
 connect through `AZURE_STORAGE_CONNECTION_STRING`, whose `BlobEndpoint` uses the
 compose hostname `azurite`.
+
+## The Console Stack
+
+`docker-compose.yml` also runs the [LLMoxie console](../services/console) and
+everything it needs, so the console can be tried and its end-to-end suite run on
+one machine. CI runs that suite the same way (the `console-e2e` job in
+`.github/workflows/ci.yml`). It is a stopgap until the Helm chart (#236)
+replaces docker-compose as the laptop and CI stack.
+
+| Service                                         | What it is                                                                                                                                                                             |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `traefik`                                       | The only entrypoint for browsers: `127.0.0.1:8000`, routed by hostname (`traefik/dynamic.yml`). The gateway hostname exposes only LiteLLM's AI paths, `/mcp` and liveness, as on Azure |
+| `keycloak`                                      | Sign-in, realm `litellm` imported from `keycloak/realm-litellm.json` each time the container is created                                                                                |
+| `litellm-auth`, `mlflow-auth`                   | oauth2-proxy logins in front of LiteLLM's UI (realm role `litellm-admin`) and MLflow (`mlflow-user`)                                                                                   |
+| `mailpit`                                       | Catches all mail (invitations, Keycloak's verification emails)                                                                                                                         |
+| `hub`                                           | The knowledge hub ([uw-ssec/okf-hub](https://github.com/uw-ssec/okf-hub)), the image dev runs; reached only as MCP tools through LiteLLM                                               |
+| `db-init`, `console-db`                         | One-shot: create `console_db` and `okf_hub`, then run `services/console/db_setup.py` (the job Azure runs) to make the roles and the console's schema                                   |
+| `console-init`, `console-broker`, `console-web` | The console, built from `services/console`                                                                                                                                             |
+| `console-tests`                                 | The suite, only under the `test` profile                                                                                                                                               |
+
+Addresses, all on port 8000:
+
+| Address                        | What                                                |
+| ------------------------------ | --------------------------------------------------- |
+| http://console.localhost:8000  | The console                                         |
+| http://gateway.localhost:8000  | LiteLLM's AI paths and `/mcp`, for API keys         |
+| http://litellm.localhost:8000  | LiteLLM's own UI, for realm role `litellm-admin`    |
+| http://analysis.localhost:8000 | MLflow, for realm role `mlflow-user`                |
+| http://auth.localhost:8000     | Keycloak; its admin console takes `admin` / `admin` |
+| http://mail.localhost:8000     | Mailpit                                             |
+
+Account: `alice` / `alice123` is an SSEC admin in the console and has every
+realm role; sign up for others on the Keycloak page. Keycloak keeps no volume,
+so accounts made while it runs (including the suite's) go away when its
+container is recreated, and edits to the realm file take effect then.
+
+`config.yaml` is also the base of the LiteLLM config the Azure deploy writes, so
+the local-only LiteLLM settings (the `fake-gpt` mock model and Keycloak-only
+login to the UI) are added at start by `local_litellm_config.py`; put local-only
+settings there, not in `config.yaml`.
+
+Every secret in `docker-compose.yml` is a local development value. The console's
+and the hub's database roles reuse `POSTGRES_PASSWORD`, and `LITELLM_MASTER_KEY`
+and `OKF_HUB_MASTER_KEY_HEX` are set per install; all three come from `.env`.
+
+What differs from Azure: Keycloak runs in dev mode on its own storage, there is
+no TLS, and LiteLLM has no ceil-dlp guardrail, so
+`services/console/tests/test_dlp.py` is left out of the suite here.
+
+### Running the console's suite
+
+```bash
+pixi run -e llmaven up             # start the stack; the first build takes a while
+pixi run -e llmaven console-test   # build the suite's image and run it against the stack
+```
+
+The suite creates organizations, teams and accounts with a random suffix on
+every run and leaves them in place. `pixi run -e llmaven clean` removes them
+along with every other volume.
+
+A database volume made before the console was added gets its databases from
+`db-init`, which runs on every start.
 
 ## Configuration
 

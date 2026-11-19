@@ -127,9 +127,9 @@ def create_postgres_server(
 
 
 # Databases that outlive their config entry. keycloak_db holds every user,
-# credential and grant, and console_db every account and invitation, so turning
-# either off must not drop it.
-RETAINED_DATABASES = frozenset({"keycloak_db", "console_db"})
+# credential and grant, console_db every account and invitation, and okf_hub
+# every knowledge bundle, so turning any of them off must not drop it.
+RETAINED_DATABASES = frozenset({"keycloak_db", "console_db", "okf_hub"})
 
 
 def create_databases(

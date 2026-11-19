@@ -41,7 +41,7 @@ import pulumi
 import pulumi_azure_native as azure_native
 from pulumi import Output
 
-from ..config.schema import LLMavenConfig
+from ..config.schema import KNOWLEDGE_HUB_MASTER_KEY_ENV, LLMavenConfig
 
 
 def deployer_access_policy(
@@ -309,6 +309,20 @@ def transform_env_var_to_secret_name(env_var_name: str) -> str:
     return secret_name
 
 
+def get_main_vault_secrets_from_env() -> dict[str, str]:
+    """The LLMAVEN_SECRETS_* values that go into the main vault.
+
+    That is all of them except the knowledge hub's master key, which only the
+    hub's own vault may hold: the main vault is readable by the shared identity.
+    """
+    hub_key = transform_env_var_to_secret_name(KNOWLEDGE_HUB_MASTER_KEY_ENV)
+    return {
+        name: value
+        for name, value in get_llmaven_secrets_from_env().items()
+        if name != hub_key
+    }
+
+
 def create_secrets_from_environment(
     resource_group_name: Output[str],
     vault_name: Output[str],
@@ -329,7 +343,7 @@ def create_secrets_from_environment(
         Dictionary mapping secret names to Secret resources
     """
     secrets = {}
-    env_secrets = get_llmaven_secrets_from_env()
+    env_secrets = get_main_vault_secrets_from_env()
 
     if not env_secrets:
         pulumi.log.warn(
