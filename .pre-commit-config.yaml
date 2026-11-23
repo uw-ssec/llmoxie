@@ -34,7 +34,7 @@ repos:
         exclude: ^(knowledge/|tests/infrastructure/fixtures/)
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.17.3"
+    rev: "v0.17.6"
     hooks:
       - id: ruff-check
         args: ["--fix", "--show-fixes"]
